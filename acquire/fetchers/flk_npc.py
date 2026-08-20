@@ -10,7 +10,9 @@
   只下载: 本地无此 bbbs 或 有 bbbs 但无 docx 的条目
 
 温和纪律 (继承 PoliteFetcher):
-  列表页 1.5s 间隔; docx 下载 8-15s 随机间隔 (沿用旧版节流思想); 指数退避 3 次上限
+  列表/下载链接 API → 打政府站 flk.npc.gov.cn: 1.5s 间隔 (PoliteFetcher 默认)
+  docx 文件 → 打 OBS CDN (flkoss.obs-bj2.cucloud.cn, 专为文件分发): 2-3s 间隔
+  指数退避 3 次上限; 旧版 8-15s 每条 (含状态机) 实测过慢, 已按通道分层
 
 输出:
   raw/flk_npc/manifest.jsonl  每行 {bbbs, title, flxz, zdjgName, gbrq, sxrq, sxx, source}
@@ -181,7 +183,7 @@ def download_new(fetcher: PoliteFetcher, limit: int | None = None):
             print(f"下载 {done}: {v['bbbs']} {v.get('title', '')[:30]}")
         except Exception as e:
             log.error("下载失败 %s: %s", v["bbbs"], e)
-        time.sleep(random.uniform(8, 15))   # 温和: 下载间隔
+        time.sleep(random.uniform(2, 3))   # CDN 文件分发通道, 2-3s 足够温和 (API 通道仍由基座 1.5s 限速)
     print(f"完成 {done} 份")
 
 
