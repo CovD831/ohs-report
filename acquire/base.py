@@ -46,21 +46,37 @@ class PoliteFetcher:
         """GET 并返回文本"""
         return self._request(url, headers)
 
+    def get_bytes(self, url: str, headers: dict | None = None) -> bytes:
+        """GET 并返回原始字节 (docx/pdf 等二进制)"""
+        return self._request(url, headers, binary=True)
+
     def get_json(self, url: str, headers: dict | None = None) -> dict:
         """GET 并解析 JSON"""
         return json.loads(self.get(url, headers))
 
+    def post_json(self, url: str, payload: dict, headers: dict | None = None) -> dict:
+        """POST JSON 并解析响应"""
+        body = json.dumps(payload).encode("utf-8")
+        hdrs = {"Content-Type": "application/json"}
+        if headers:
+            hdrs.update(headers)
+        text = self._request(url, headers=hdrs, data=body, method="POST")
+        return json.loads(text)
+
     # ---------- 核心: 指数退避重试 ----------
-    def _request(self, url: str, headers: dict | None = None) -> str:
+    def _request(self, url: str, headers: dict | None = None,
+                 data: bytes | None = None, method: str = "GET",
+                 binary: bool = False) -> str | bytes:
         self._throttle()
         hdrs = {"User-Agent": DEFAULT_UA, "Accept": "*/*"}
         if headers:
             hdrs.update(headers)
-        req = urllib.request.Request(url, headers=hdrs)
+        req = urllib.request.Request(url, headers=hdrs, data=data, method=method)
         for attempt in range(self.max_retries + 1):
             try:
                 with self._opener.open(req, timeout=self.timeout) as resp:
-                    return resp.read().decode("utf-8", errors="replace")
+                    raw = resp.read()
+                    return raw if binary else raw.decode("utf-8", errors="replace")
             except (urllib.error.URLError, urllib.error.HTTPError,
                     TimeoutError, ConnectionError) as e:
                 wait = BASE_BACKOFF * (2 ** attempt)   # 2s, 4s, 8s

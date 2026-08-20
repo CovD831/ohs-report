@@ -38,20 +38,20 @@
   name: 国家法律法规数据库 (全国人大)
   url: https://flk.npc.gov.cn
   content: 宪法、法律、行政法规、司法解释、地方性法规 (职业病防治法/安全生产法/各省条例)
-  format: html + docx
-  fetch: crawl4ai            # API 405 反爬, 需浏览器渲染后取 docx 下载链
-  schedule: on_demand        # 本地已复用 14,905 份原始 DOCX; 在线仅增量/补缺
+  format: json + docx
+  fetch: api                # 已实测纯 API 直连: /law-search/search/list + /download/pc
+  schedule: on_demand        # 增量按 bbbs 差集; 本地已复用 17,766 份原始 DOCX
   priority: high
-  status: partial
+  status: verified
   reuse_local: ~/Desktop/law/downloads   # 原始 DOCX 作为新管线输入, 清洗/结构化走新代码
-  cleanup_note: 地方性法规按省份归档; 报告按项目所在地注入
+  cleanup_note: 地方性法规按省份归档; 报告按项目所在地注入; sxx 时效性取值待清洗期核对(3/4/None)
 
 - id: nhc_occupational
   name: 国家卫健委·职业健康司
   url: https://www.nhc.gov.cn
   content: 职业病危害因素分类目录、建设项目风险分类目录(国卫办职健发〔2021〕5号)、职业病分类和目录(国卫疾控发〔2013〕48号)、公告
   format: html
-  fetch: crawl4ai            # 站内搜索 WAS5 为瑞数反爬, 内容页静态
+  fetch: jina                # 已实测: 瑞数WAF拦截本地无头浏览器(crawl4ai stealth 也失败), r.jina.ai 可过
   schedule: monthly
   priority: high
   status: partial
@@ -62,7 +62,7 @@
   url: https://www.nhc.gov.cn
   content: GBZ 标准发布公告与标准文本 (GBZ 2.1/2.2/1/159/188/229/300 系列等)
   format: pdf
-  fetch: crawl4ai
+  fetch: jina                # 公告页同 nhc 系, 瑞数WAF → r.jina.ai
   schedule: quarterly        # 本地已有 988 条元数据+13k 条款 (旧系统抓取), 增量更新即可
   priority: medium
   status: partial
