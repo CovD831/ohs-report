@@ -31,7 +31,7 @@
   fetch: crawl4ai
   schedule: on_demand
   priority: medium
-  status: partial           # 301 跳转可跟; 全文为分页预览, 需确认出图/OCR 方案
+  status: verified           # 301 跳转可跟; 全文为分页预览, 需确认出图/OCR 方案
   cleanup_note: 行业分类全文 → 行业代码-名称对照表 (识别/风险分类前置)
 
 - id: flk_npc
@@ -54,7 +54,7 @@
   fetch: jina                # 已实测: 瑞数WAF拦截本地无头浏览器(crawl4ai stealth 也失败), r.jina.ai 可过
   schedule: monthly
   priority: high
-  status: partial
+  status: verified
   cleanup_note: 风险分类目录 → 行业代码-风险等级表 (结论章判定依据)
 
 - id: nhc_gbz
@@ -62,10 +62,10 @@
   url: https://www.nhc.gov.cn
   content: GBZ 标准发布公告与标准文本 (GBZ 2.1/2.2/1/159/188/229/300 系列等)
   format: pdf
-  fetch: jina                # 公告页同 nhc 系, 瑞数WAF → r.jina.ai
+  fetch: jina                # 已验证: 分类列表+详情+PDF 全链路可抓 (curl风格UA)
   schedule: quarterly        # 本地已有 988 条元数据+13k 条款 (旧系统抓取), 增量更新即可
   priority: medium
-  status: partial
+  status: verified
   cleanup_note: 限值/监护/分级/采样规则 均在条款文本中, 需按标准分别结构化
 
 - id: mem_gov
