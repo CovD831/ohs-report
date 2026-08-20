@@ -1,0 +1,6 @@
+# 采集层原始落地 — 不入库不入 git
+acquire/raw/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store

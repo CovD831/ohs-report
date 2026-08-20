@@ -1,0 +1,104 @@
+# 数据源注册表 — 职业卫生报告系统采集层
+# 原则: 官方数据优先(可查、权威、确定), 报告只作结构/措辞参考
+# fetch: api = 官方 JSON 接口 | crawl4ai = 本地抓取器 | jina = r.jina.ai 转 markdown | browser = 浏览器自动化
+# 状态: verified = 实测可用 | partial = 可用但有限制 | todo = 待验证
+
+- id: std_samr
+  name: 全国标准信息公共服务平台
+  url: https://std.samr.gov.cn/gb/search/gbQueryPage
+  content: 全部国家标准目录、现行/废止状态、代替关系、发布/实施日期
+  format: json
+  fetch: api
+  schedule: weekly          # 标准时效核验: 生成报告前必查
+  priority: high
+  status: verified          # 已验证: JSON 直连可用
+  cleanup_note: 清洗时剥离 C_STD_CODE 中的 <sacinfo> 标签; STATE 字段即时效判定
+
+- id: openstd
+  name: 国家标准全文公开系统
+  url: https://openstd.samr.gov.cn/bzgk/gb/std_list
+  content: 国家标准全文在线预览 (如 GB/T 4754-2017 国民经济行业分类)
+  format: html
+  fetch: crawl4ai
+  schedule: on_demand
+  priority: medium
+  status: partial           # 301 跳转可跟; 全文为分页预览, 需确认出图/OCR 方案
+  cleanup_note: 行业分类全文 → 行业代码-名称对照表 (识别/风险分类前置)
+
+- id: flk_npc
+  name: 国家法律法规数据库 (全国人大)
+  url: https://flk.npc.gov.cn
+  content: 宪法、法律、行政法规、司法解释、地方性法规 (职业病防治法/安全生产法/各省条例)
+  format: html + docx
+  fetch: crawl4ai            # API 405 反爬, 需浏览器渲染后取 docx 下载链
+  schedule: monthly
+  priority: high
+  status: partial           # POST API 被 nginx 405 拦截; 浏览器环境待验证
+  cleanup_note: 地方性法规按省份归档; 报告按项目所在地注入
+
+- id: nhc_occupational
+  name: 国家卫健委·职业健康司
+  url: https://www.nhc.gov.cn
+  content: 职业病危害因素分类目录、建设项目风险分类目录(国卫办职健发〔2021〕5号)、职业病分类和目录(国卫疾控发〔2013〕48号)、公告
+  format: html
+  fetch: crawl4ai            # 站内搜索 WAS5 为瑞数反爬, 内容页静态
+  schedule: monthly
+  priority: high
+  status: partial
+  cleanup_note: 风险分类目录 → 行业代码-风险等级表 (结论章判定依据)
+
+- id: nhc_gbz
+  name: 卫健委 GBZ 标准公告 + PDF
+  url: https://www.nhc.gov.cn
+  content: GBZ 标准发布公告与标准文本 (GBZ 2.1/2.2/1/159/188/229/300 系列等)
+  format: pdf
+  fetch: crawl4ai
+  schedule: quarterly        # 本地已有 988 条元数据+13k 条款 (旧系统抓取), 增量更新即可
+  priority: medium
+  status: partial
+  cleanup_note: 限值/监护/分级/采样规则 均在条款文本中, 需按标准分别结构化
+
+- id: mem_gov
+  name: 应急管理部
+  url: https://www.mem.gov.cn
+  content: 危险化学品目录(2015版)、安监总局令第90号(三同时)、AQ 标准
+  format: html + pdf
+  fetch: crawl4ai
+  schedule: on_demand
+  priority: medium
+  status: todo
+  cleanup_note: 危化品目录 → CAS-名称-危害 表 (物料识别前置)
+
+- id: local_gov
+  name: 省级卫健委/应急管理厅 职业卫生规定
+  url: https://www.nhc.gov.cn (地方栏目) / 各省官网
+  content: 地方职业卫生条例、评审要求、实施细则
+  format: html
+  fetch: crawl4ai
+  schedule: quarterly
+  priority: medium
+  status: todo
+  cleanup_note: 按省归档; 生成报告时按项目所在地过滤注入
+
+- id: stats_gov
+  name: 国家统计局
+  url: https://www.stats.gov.cn
+  content: 国民经济行业分类实施文件 (GB/T 4754 配套)
+  format: html
+  fetch: jina
+  schedule: on_demand
+  priority: low
+  status: todo
+
+- id: jsfw
+  name: 全国职业卫生放射卫生技术服务机构管理信息系统
+  url: https://jsfw.zyjkfw.cn
+  content: 机构名录、报告公示信息 (摘要级)
+  format: html
+  fetch: browser
+  schedule: low
+  priority: low
+  status: todo
+  cleanup_note: 报告全文不公开; 摘要仅作措辞/编号规则参考
+
+# 明确排除: book118 / 百度文库 / 人人文库 (经核验为 AI 模板垃圾, 非真实报告)
