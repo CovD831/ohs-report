@@ -87,11 +87,21 @@ def _old_docx_bbbs() -> set:
 
 
 def has_docx(bbbs: str) -> bool:
-    """新 docx 目录存在 或 旧 downloads/ 已复用"""
+    """新 docx 目录存在 或 旧 downloads/ 已复用 (docx/doc 两种扩展名)"""
     global _OLD_DOCX_BBBS
     if _OLD_DOCX_BBBS is None:
         _OLD_DOCX_BBBS = _old_docx_bbbs()
-    return (DOCX_DIR / f"{bbbs}.docx").exists() or bbbs in _OLD_DOCX_BBBS
+    return (DOCX_DIR / f"{bbbs}.docx").exists() or (DOCX_DIR / f"{bbbs}.doc").exists() \
+        or bbbs in _OLD_DOCX_BBBS
+
+
+def detect_format(header: bytes) -> str:
+    """按魔数识别 Word 格式: PK→docx, OLE2→doc (flk CDN 对部分法律返回老版 .doc)"""
+    if header[:2] == b"PK":
+        return "docx"
+    if header[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        return "doc"
+    return "unknown"
 
 
 def build_local_manifest():
@@ -175,10 +185,12 @@ def download_new(fetcher: PoliteFetcher, limit: int | None = None):
                 log.error("无下载URL: %s %s", v["bbbs"], v.get("title"))
                 continue
             content = fetcher.get_bytes(url)
-            if len(content) < 1000:
-                log.warning("疑似非docx(过小): %s %d字节", v["bbbs"], len(content))
+            fmt = detect_format(content[:8])
+            if fmt == "unknown":
+                log.warning("非Word文件(魔数异常): %s %d字节", v["bbbs"], len(content))
                 continue
-            (DOCX_DIR / f"{v['bbbs']}.docx").write_bytes(content)
+            ext = ".doc" if fmt == "doc" else ".docx"
+            (DOCX_DIR / f"{v['bbbs']}{ext}").write_bytes(content)
             done += 1
             print(f"下载 {done}: {v['bbbs']} {v.get('title', '')[:30]}")
         except Exception as e:
