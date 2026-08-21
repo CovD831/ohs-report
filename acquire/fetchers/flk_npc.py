@@ -131,7 +131,11 @@ def build_local_manifest():
 
 
 def sync_list(fetcher: PoliteFetcher, max_pages: int | None = None):
-    """拉取在线全量列表, 只追加 manifest 中没有的 bbbs"""
+    """拉取在线全量列表, 只追加 manifest 中没有的 bbbs
+
+    完整性保证: 终止条件用 "已抓完的条数 >= total" 判断, 且必须 > (不是 >= 提前退出)。
+    在线 29,692 = 297 页 (最后一页 92 条), 若用 page*PAGE_SIZE >= total 判断会提前 1 页退出。
+    """
     m = load_manifest()
     payload = dict(SEARCH_PAYLOAD)
     payload["pageSize"] = PAGE_SIZE
@@ -141,22 +145,31 @@ def sync_list(fetcher: PoliteFetcher, max_pages: int | None = None):
         data = fetcher.post_json(SEARCH_URL, payload, headers=_headers())
         rows = data.get("rows", [])
         total = data.get("total", 0)
-        if not rows:
-            break
+        fetched = len(rows)
         fresh = [{
             "bbbs": r["bbbs"], "title": r.get("title"), "flxz": r.get("flxz"),
             "zdjgName": r.get("zdjgName"), "gbrq": r.get("gbrq"),
             "sxrq": r.get("sxrq"), "sxx": r.get("sxx"), "source": "online",
         } for r in rows if r["bbbs"] not in m]
         append_manifest(fresh)
+        for r in fresh:
+            m[r["bbbs"]] = r
         total_new += len(fresh)
-        print(f"页{page}: 新增 {len(fresh)} (累计新增 {total_new} / 在线总量 {total})")
+        print(f"页{page}: 本页{fetched}条 新增 {len(fresh)} (累计新增 {total_new} / 在线总量 {total})")
+        if fetched == 0:
+            if page * PAGE_SIZE < total:
+                # 未覆盖 total 就空页: 瞬时空响应可能, 记录并继续 (下次 sync 会重试该页)
+                log.error("页%d空响应但total=%d未覆盖, 继续下一页 (幂等, 下次补齐)", page, total)
+            else:
+                break  # 已覆盖全部, 正常结束
+        # 已抓到的条数是否覆盖全部: 用 (已抓页数*每页数) >= total 判断, 而非 page*size
+        # 因为 page 是"下一轮要抓的页码", 提前判断会漏最后一页 (非整页时)
+        if page * PAGE_SIZE >= total:
+            break
         page += 1
         if max_pages and page > max_pages:
             break
-        if page * PAGE_SIZE >= total:
-            break
-    print(f"同步完成: 新增 {total_new} 条, 在线总量 {total}")
+    print(f"同步完成: 新增 {total_new} 条, 在线总量 {total}, manifest 现有 {len(m)} 条")
 
 
 def diff() -> dict:

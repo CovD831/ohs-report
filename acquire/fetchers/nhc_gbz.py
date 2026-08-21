@@ -100,13 +100,19 @@ def enum(fetcher: PoliteFetcher, categories: list[str] | None = None) -> dict:
             cat = url.split("/")[-2]
             if categories and cat not in categories:
                 continue
-            page, cat_new, total = 1, 0, 0
+            page, cat_new, total, failed = 1, 0, 0, 0
             while True:
                 try:
                     d = (search_api(fetcher, cid, page) or {}).get("data") or {}
                 except Exception as e:
-                    log.error("枚举失败 %s 页%d: %s", cat, page, e)
-                    break
+                    # 单页失败不得静默放弃整个分类: 记录失败页, 跳到下一页继续
+                    # (enum 幂等, 下次重跑会补齐失败页; 若中途 break 则剩余页全部丢失且无痕)
+                    log.error("枚举失败 %s 页%d: %s (跳过该页, 下次重跑补齐)", cat, page, e)
+                    failed += 1
+                    page += 1
+                    if page * PAGE_SIZE >= (total or 0) and total:
+                        break
+                    continue
                 results = d.get("results") or []
                 total = d.get("total") or 0
                 if not results:
@@ -119,8 +125,9 @@ def enum(fetcher: PoliteFetcher, categories: list[str] | None = None) -> dict:
                 if page * PAGE_SIZE >= total or len(results) < PAGE_SIZE:
                     break
                 page += 1
-            report[cat] = {"total": total, "new": cat_new}
-            print(f"{cat}: total={report[cat]['total']} 新增={cat_new}")
+            report[cat] = {"total": total, "new": cat_new, "failed_pages": failed}
+            flag = " ⚠️有失败页" if failed else ""
+            print(f"{cat}: total={report[cat]['total']} 新增={cat_new} 失败页={failed}{flag}")
     return report
 
 
