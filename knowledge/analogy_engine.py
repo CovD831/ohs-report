@@ -64,6 +64,10 @@ def score_comparability(compare: dict[str, int | float]) -> dict:
         "level": level, "name": name,
         "zero_elements": [n for n, s in scores.items() if s == 0],
         "low_elements": [n for n, s in scores.items() if s <= 1],
+        # 依据诚实标注: 9要素为C.1原文; 阈值(≥14/≥9)为设计值(标准未量化)
+        "basis_type": "design",
+        "basis_note": "9要素(附录C C.1原文); 可比性阈值(14/9)为设计值, 标准未量化, "
+                      "建议人工校准",
     }
 
 

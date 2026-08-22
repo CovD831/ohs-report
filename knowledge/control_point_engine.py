@@ -83,6 +83,10 @@ def control_points(units: list[dict], judgements: list[dict] | None = None,
                 "scores": {"S1危害": s1, "S2人数": s2, "S3防护": s3},
                 "contact": n_post, "sealed": sealed,
                 "measures": measures, "level": level, "stars": stars,
+                # 依据诚实标注: 评分模型为设计权重(标准10.2.10仅说三要素, 未量化)
+                "basis_type": "design",
+                "basis_note": "GBZ/T 196—2025 10.2.10 未量化权重, 评分模型为设计性, "
+                              "输出建议级不可引为标准规定",
             })
     out.sort(key=lambda x: -x["score"])
     return out
