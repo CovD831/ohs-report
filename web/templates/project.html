@@ -355,8 +355,8 @@ async function loadSection(sec) {
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.sec === sec);
   });
-  document.getElementById('content').innerHTML = '<div class="content-header"><h1>生成中…</h1></div>';
-  document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">生成中…</div>';
+  document.getElementById('content').innerHTML = '<div class="content-header"><h1>加载中…</h1></div>';
+  document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">加载中…</div>';
   const r = await fetch(`/api/projects/${pid}/sections/${sec}`);
   const d = await r.json();
   // 章节状态
@@ -431,7 +431,7 @@ async function loadSubSection(sec, sub) {
     el.classList.toggle('active', el.dataset.sub === sub || (el.dataset.sec === sec && !el.dataset.sub));
   });
   const content = document.getElementById('content');
-  content.innerHTML = '<div class="content-header"><h1>生成中…</h1></div>';
+  content.innerHTML = '<div class="content-header"><h1>加载中…</h1></div>';
   const r = await fetch(`/api/projects/${pid}/sections/${sec}/${sub}`);
   const d = await r.json();
   const st = ALL_STATES[sub] || {};
