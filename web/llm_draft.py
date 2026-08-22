@@ -104,8 +104,21 @@ def _build_info(project: dict, assess: dict) -> str:
 
 
 # ===== 通用章节 prompt (结构=标准角度, 数据=info动态) =====
+def _design_base() -> str:
+    """标准措施条款摘要 (系统查询, 供建议类prompt)"""
+    conn = connect()
+    lines = []
+    for r in conn.execute("SELECT check_point, std_code, clause FROM protection_rule"):
+        lines.append(f"- [{r[1]} {r[2]}] {r[0][:40]}")
+    for r in conn.execute("SELECT require, std_code, clause FROM management_rule"):
+        lines.append(f"- [{r[1]} {r[2]}] {r[0][:40]}")
+    conn.close()
+    return "\n".join(l for l in lines if l)[:1500]
+
+
 def build_section_prompt(sec: str, info: str) -> str:
     """按章节返回通用 prompt (无写死数据, 结构跨项目)"""
+    DESIGN_BASE = _design_base()
     prompts = {
         "10.2.1": f"""撰写 10.2.1 总论的叙述。
 
@@ -161,18 +174,17 @@ def build_section_prompt(sec: str, info: str) -> str:
 4. 正式报告语言, 350-550字""",
 
         "10.2.11": f"""撰写 10.2.11 职业病防治措施的补充建议。
+相关标准措施条款（系统从标准库查询，建议必须引用这些条款）:
+{DESIGN_BASE}
 
 {info}
 
-要求 (六项通用建议):
-1. "三同时"落实 (防护设施同步设计施工投产)
-2. 职业病危害监测检测 (GBZ/T 225 4.5 定期委托检测)
-3. 职业健康监护 (GBZ 188: 上岗前/在岗/离岗/应急)
-4. 警示标识 (GBZ 158: 危害岗位设标识+中文说明)
-5. 职业卫生培训 (GBZ/T 225 4.10)
-6. 防治经费 (防护设施/检测/应急/PPE/体检/培训)
-7. 结合【检测数据】超标或接近限值的因素重点建议
-8. 正式报告语言, 350-550字""",
+要求:
+1. 每条建议引用上述标准条款（标准号+条款号）
+2. 六项通用建议: "三同时"/监测检测/健康监护/警示标识/培训/经费
+3. 结合【检测数据】超标或接近限值的因素重点建议
+4. 建议具体可执行（措施+依据）
+5. 正式报告语言, 400-600字""",
 
         "10.2.12": f"""撰写 10.2.12 结论与建议的叙述。
 

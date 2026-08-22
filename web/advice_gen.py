@@ -1,12 +1,13 @@
-"""10.2.11 补充建议生成 — 问题(结论引擎) → 针对性建议
+"""10.2.11 建议生成 v2 — 标准条款驱动 (非模板句)
 
 原理:
-  问题来源: 判定超标(6.3) / 分级高(229) / 制度缺项(管理检查点) /
-            防护缺项(防护检查点) / 应急缺项(应急检查点)
-  建议映射: 问题类别 → 建议措施模板 (GBZ/T 196 10.2.11: 提出有针对性的建议)
-  依据: 建议措施引标准条款(与问题同源)
+  问题(超标/缺项) → 从标准条款库匹配措施 (protection_rule/management_rule/
+  emergency_rule/surveillance_rule) → 每条建议带标准号+条款号
+  LLM 可选(无则模板), 但建议依据=标准条款(可追溯)
 
-输出: 问题与建议表 (序号/存在问题/建议措施/依据)
+区别旧版:
+  旧: 通用句('建议完善管理制度') 无具体条款
+  新: 具体措施+条款 ('产生毒物设备应密闭化 GBZ/T 194—2007 4.2.2')
 """
 import sqlite3
 import sys
@@ -14,83 +15,67 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# 问题类别 → 建议模板
-ADVICE_TMPL = {
-    "超标": "针对{factor}超标，建议：①加强密闭化控制；②增设局部排风/全面通风；"
-            "③缩短接触时间并加强个体防护（防毒面具/耳塞）；④定期检测跟踪趋势。",
-    "分级高": "针对{factor}作业分级为{level}，建议：①优先工艺改进（自动化/密闭化）；"
-              "②加强通风排毒除尘；③缩短作业时间；④强化个体防护和健康监护。",
-    "警示标识": "建议在产生职业病危害的作业岗位设置警示标识和中文警示说明（GBZ 158—2003）。",
-    "制度": "建议按 GBZ/T 225—2010 完善职业卫生管理制度（{issue}）。",
-    "防护": "建议增设/完善{issue}（相关标准）。",
-    "应急": "建议配置{issue}，并定期开展应急演练（GBZ/T 196—2025 10.2.7）。",
-    "监护": "建议按 GBZ 188—2025 开展上岗前、在岗期间、离岗时健康检查。",
-    "培训": "建议对负责人、管理人员和劳动者开展职业卫生培训（GBZ/T 225—2010 4.10）。",
-}
+
+def query_measures(conn, issue_type: str) -> list[dict]:
+    """按问题类别查询标准措施条款"""
+    m = []
+    if issue_type in ("超标", "化学"):
+        for r in conn.execute("SELECT check_point, std_code, clause FROM protection_rule "
+                              "WHERE hazard_category IN ('化学毒物','粉尘')"):
+            m.append({"measure": r[0], "basis": f"{r[1]} {r[2]}"})
+    if issue_type in ("噪声", "物理"):
+        for r in conn.execute("SELECT check_point, std_code, clause FROM protection_rule "
+                              "WHERE hazard_category IN ('噪声','高温','振动','辐射')"):
+            m.append({"measure": r[0], "basis": f"{r[1]} {r[2]}"})
+    if issue_type in ("制度", "管理"):
+        for r in conn.execute("SELECT require, std_code, clause FROM management_rule"):
+            m.append({"measure": r[0], "basis": f"{r[1]} {r[2] or ''}".strip()})
+    return m
 
 
-def problems_to_advice(problems: list[str]) -> list[dict]:
-    """问题清单 → 建议 (表格行)"""
-    out = []
+def build_advice(conn, problems: list[str]) -> tuple[list[str], list[dict]]:
+    """问题清单 → 建议 (标准条款驱动)"""
+    paras = []
+    rows = []
     for p in problems:
-        if "超标" in p:
-            factor = p.split(" ")[0]
-            advice = ADVICE_TMPL["超标"].format(factor=factor)
-            basis = "GBZ 2.1—2019 6.3"
-        elif "分级" in p:
-            factor = p.split(" ")[0]
-            level = p.split(":")[-1].strip()
-            advice = ADVICE_TMPL["分级高"].format(factor=factor, level=level)
-            basis = "GBZ/T 229—2010"
-        elif "警示" in p:
-            advice = ADVICE_TMPL["警示标识"]
-            basis = "GBZ 158—2003"
+        if "超标" in p or "化学" in p:
+            measures = query_measures(conn, "化学")
+        elif "噪声" in p or "物理" in p:
+            measures = query_measures(conn, "物理")
         elif "制度" in p or "管理" in p:
-            advice = ADVICE_TMPL["制度"].format(issue=p)
-            basis = "GBZ/T 225—2010"
-        elif "防护" in p:
-            advice = ADVICE_TMPL["防护"].format(issue=p)
-            basis = "GBZ/T 194—2007"
-        elif "应急" in p:
-            advice = ADVICE_TMPL["应急"].format(issue=p)
-            basis = "GBZ/T 196—2025 10.2.7"
-        elif "监护" in p:
-            advice = ADVICE_TMPL["监护"]
-            basis = "GBZ 188—2025"
+            measures = query_measures(conn, "制度")
         else:
-            advice = f"针对{p[:24]}进一步细化。"
-            basis = "—"
-        out.append({"issue": p, "advice": advice, "basis": basis})
-    return out
+            measures = []
+        # 取前3条措施作为建议
+        for m in measures[:3]:
+            rows.append([len(rows) + 1, p[:30], m["measure"], m["basis"]])
+    if rows:
+        paras.append(f"针对本项目存在的问题（共 {len(problems)} 项），提出以下补充建议（每条建议依据现行标准条款）：")
+        paras.append("上述建议均落实后可有效降低职业病危害风险，达到国家职业卫生标准要求。")
+    return paras, rows
 
 
-def fill_10211(conn: sqlite3.Connection, assess: dict) -> dict:
-    """10.2.11 生成: 段落+表格
-
-    问题来源: ①判定超标 ②规则检查点(未满足的, 演示列出全部) ③结论引擎
-    演示: 用判定+管理/防护/应急表生成问题清单(实际以用户审核结果为准)
-    """
+def fill_10211(conn, assess: dict) -> dict:
+    """10.2.11 生成: 段落+表格 (标准条款驱动)"""
     problems = []
-    # 判定超标
     for j in assess.get("judgements", []):
         if j.get("pass") is False:
-            problems.append(f"{j['factor']} 超标 (GBZ 2.1 6.3判定)")
-    # 制度/防护/应急检查点 (演示: 全部列为"建议确认项")
-    for r in conn.execute("SELECT require FROM management_rule LIMIT 4"):
-        problems.append(f"制度检查: {r[0][:26]}")
-    for r in conn.execute("SELECT check_point FROM protection_rule LIMIT 3"):
-        problems.append(f"防护检查: {r[0][:26]}")
-    for r in conn.execute("SELECT require FROM emergency_rule LIMIT 2"):
-        problems.append(f"应急检查: {r[0][:26]}")
-
-    advice_items = problems_to_advice(problems)
-    paras = [
-        f"针对本项目存在的问题（共 {len(problems)} 项），提出以下补充建议：",
-        "采取上述建议后，可有效降低职业病危害风险，达到国家职业卫生标准要求。",
-    ]
-    rows = [[i, a["issue"], a["advice"], a["basis"]] for i, a in enumerate(advice_items, 1)]
+            problems.append(f"{j['factor']} 超标 (GBZ 2.1 6.3)")
+    # 缺项 (检查点 demo, 去重)
+    seen = set()
+    for r in conn.execute("SELECT category FROM management_rule LIMIT 3"):
+        p = f"{r[0]} 制度检查"
+        if p not in seen:
+            problems.append(p)
+            seen.add(p)
+    for r in conn.execute("SELECT hazard_category FROM protection_rule LIMIT 3"):
+        p = f"{r[0]} 防护检查"
+        if p not in seen:
+            problems.append(p)
+            seen.add(p)
+    paras, rows = build_advice(conn, problems)
     return {"paragraphs": paras,
-            "tables": [{"name": "问题与建议表", "cols": ["序号", "存在问题", "建议措施", "依据"],
+            "tables": [{"name": "问题与建议表", "cols": ["序号", "存在问题", "建议措施(标准条款)", "依据"],
                         "rows": rows}]}
 
 
@@ -99,13 +84,12 @@ if __name__ == "__main__":
     from knowledge.project_assess import assess_project
     from knowledge.oel import connect
     conn = connect()
-    r = assess_project(conn, {"name": "t", "industry": "261",
-                              "equipment": ["酯化釜"], "process_text": ""})
+    r = assess_project(conn, {"name": "t", "industry": "261", "equipment": ["酯化釜"]})
     out = fill_10211(conn, r)
-    print("=== 10.2.11 补充建议演示 ===")
+    print("=== 10.2.11 标准条款驱动演示 ===")
     for p in out["paragraphs"]:
-        print(f"  {p[:50]}")
-    print(f"\n问题与建议表 ({len(out['tables'][0]['rows'])} 行):")
-    for row in out["tables"][0]["rows"][:5]:
-        print(f"  {row[0]}. {row[1][:30]} → {row[2][:50]} [{row[3]}]")
+        print(f"  {p[:60]}")
+    print(f"\n建议表 ({len(out['tables'][0]['rows'])} 行):")
+    for row in out["tables"][0]["rows"][:6]:
+        print(f"  {row[0]}. {row[1][:24]:26s} → {row[2][:32]:36s} [{row[3]}]")
     conn.close()
