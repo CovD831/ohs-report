@@ -21,6 +21,7 @@ from knowledge.evidence_engine import evidence_for_section  # noqa: E402
 from knowledge.report_skeleton import SECTION_SKELETON  # noqa: E402
 from knowledge.project_assess import assess_project  # noqa: E402
 from knowledge.oel import connect  # noqa: E402
+from web.projects_db import list_projects, get_project, create_project, update_project, seed_demo
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "data" / "ohs.db"
@@ -29,45 +30,90 @@ TEMPLATES = Path(__file__).resolve().parent.parent / "web" / "templates"
 app = FastAPI(title="职业病危害预评价报告工作台")
 env = Environment(loader=FileSystemLoader(str(TEMPLATES)), autoescape=True)
 
-# 演示项目 (长兴, 从报告提取) — 后续移到数据库
-DEMO_PROJECT = {
-    "id": "demo-cx",
-    "name": "长兴特殊材料年产27080吨高性能光固化涂料材料项目",
-    "industry": "261",
-    "status": "生成中",
-    "equipment": ["酯化釜", "纯化槽", "洗涤塔", "溶剂回收槽", "中和真空槽",
-                  "酯化第一冷凝器", "真空除沫器", "洗釜泵", "油相溶剂泵"],
-    "detections": [{"factor": "甲苯", "ctwa": 30, "cste": 95},
-                   {"factor": "环己烷", "ctwa": 0.3, "peak": 4.0}],
-}
+# 首次启动植入演示项目
+seed_demo()
 
 _cache = {}
 
 
-def _get_assess() -> dict:
+def _get_project_data(pid: str) -> dict:
+    """从数据库读项目输入 (评估管线输入格式)"""
+    p = get_project(pid)
+    if not p:
+        return {}
+    d = p["data"]
+    return {
+        "name": p["name"],
+        "industry": d.get("industry", ""),
+        "equipment": d.get("equipment", []),
+        "detections": d.get("detections", []),
+        "processes": d.get("processes", []),
+        "process_text": d.get("process_text", ""),
+    }
+
+
+def _get_assess(pid: str = "demo-cx") -> dict:
     """评估结果缓存 (项目数据变化时失效)"""
-    if "assess" not in _cache:
+    key = f"assess:{pid}"
+    if key not in _cache:
         conn = connect()
-        _cache["assess"] = assess_project(conn, DEMO_PROJECT)
+        _cache[key] = assess_project(conn, _get_project_data(pid))
         conn.close()
-    return _cache["assess"]
+    return _cache[key]
 
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    projects = [DEMO_PROJECT]
+    projects = list_projects()
     return env.get_template("index.html").render(projects=projects)
 
 
 @app.get("/projects/{pid}", response_class=HTMLResponse)
 def project_page(request: Request, pid: str):
-    result = _get_assess()
+    p = get_project(pid)
+    if not p:
+        return HTMLResponse("项目不存在", status_code=404)
     sections = []
     for sec, sk in SECTION_SKELETON.items():
         sections.append({"id": sec, "title": sk["title"],
                          "tables": len(sk["tables"]), "paragraphs": len(sk["paragraphs"])})
     return env.get_template("project.html").render(
-        project=DEMO_PROJECT, sections=sections, pid=pid)
+        project=p, sections=sections, pid=pid)
+
+
+@app.post("/api/projects", response_class=JSONResponse)
+def api_create_project(payload: dict):
+    """新建项目"""
+    name = payload.get("name", "未命名项目")
+    industry = payload.get("industry", "")
+    p = create_project(name, industry)
+    if not p:
+        return JSONResponse({"error": "create failed"}, status_code=500)
+    return {"id": p["id"], "name": p["name"]}
+
+
+@app.put("/api/projects/{pid}", response_class=JSONResponse)
+def api_update_project(pid: str, payload: dict):
+    """更新项目输入数据 (设备/检测/行业码) → 缓存失效"""
+    p = get_project(pid)
+    if not p:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    data = p["data"]
+    for k in ("industry", "equipment", "detections", "processes", "process_text"):
+        if k in payload:
+            data[k] = payload[k]
+    update_project(pid, payload.get("name", p["name"]), data)
+    _cache.pop(f"assess:{pid}", None)  # 失效缓存
+    return {"ok": True}
+
+
+@app.get("/api/projects/{pid}/data", response_class=JSONResponse)
+def api_project_data(pid: str):
+    """项目输入数据 (编辑表单用)"""
+    p = get_project(pid)
+    if not p:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return p["data"]
 
 
 @app.get("/api/projects/{pid}/overview", response_class=JSONResponse)

@@ -19,28 +19,110 @@ body { font-family: PingFang SC, Noto Sans SC, system-ui, -apple-system, sans-se
   font-size: 14px; line-height: 1.6; color: var(--text); background: var(--neutral); }
 .mono { font-family: JetBrains Mono, SF Mono, Menlo, Consolas, monospace; font-size: 13px; }
 a { color: var(--primary); text-decoration: none; }
-a:hover { color: var(--primary-strong); }
+
+.topbar { background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 24px; height: 56px; display: flex; align-items: center; gap: 16px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+.brand-logo { width: 28px; height: 28px; border-radius: var(--radius-sm);
+  background: var(--primary); color: white; display: flex; align-items: center;
+  justify-content: center; font-size: 13px; font-weight: 700; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; border: none;
+  border-radius: var(--radius-md); padding: 7px 14px; font-size: 13px; cursor: pointer;
+  font-family: inherit; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-strong); }
+.btn-secondary { background: var(--surface-muted); color: var(--text); }
+.btn-secondary:hover { background: var(--border); }
+
+.container { max-width: 1080px; margin: 0 auto; padding: var(--space-xl) var(--space-md); }
+.page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-lg); }
+.page-head h1 { font-size: 22px; font-weight: 600; }
+.project-grid { display: grid; gap: var(--space-md); }
+
+.card { background: var(--surface); border-radius: var(--radius-md); padding: var(--space-md);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04); border: 1px solid var(--border); }
+.project-card { display: flex; justify-content: space-between; align-items: center; }
+.project-card:hover { border-color: var(--primary); }
+.project-card .name { font-weight: 600; font-size: 15px; }
+.project-card .meta { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius-sm);
+  font-size: 11px; font-weight: 600; }
+.badge-status { background: var(--primary-soft); color: var(--primary-strong); }
+
+/* 新建表单 */
+.modal-mask { position: fixed; inset: 0; background: rgba(15,23,42,0.4); display: none;
+  align-items: center; justify-content: center; z-index: 200; }
+.modal-mask.show { display: flex; }
+.modal { background: var(--surface); border-radius: var(--radius-md); padding: 24px;
+  width: 440px; box-shadow: 0 8px 30px rgba(15,23,42,0.15); }
+.modal h3 { font-size: 16px; margin-bottom: 16px; }
+.modal label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+.modal input { width: 100%; padding: 8px 12px; border: 1px solid var(--border);
+  border-radius: var(--radius-md); font-size: 14px; margin-bottom: 16px; font-family: inherit; }
+.modal input:focus { outline: none; border-color: var(--primary); }
+.modal .actions { display: flex; justify-content: flex-end; gap: 8px; }
+.empty { color: var(--text-muted); text-align: center; padding: 48px 0; }
 </style>
 </head>
 <body>
-<div style="max-width:1080px;margin:0 auto;padding:var(--space-xl) var(--space-md);">
-  <h1 style="font-size:24px;font-weight:600;margin-bottom:var(--space-lg);">职业病危害预评价报告工作台</h1>
-  <div style="display:grid;gap:var(--space-md);">
-    {% for p in projects %}
-    <a href="/projects/{{ p['id'] }}" class="card"
-       style="display:flex;justify-content:space-between;align-items:center;
-              background:var(--surface);border-radius:var(--radius-md);padding:var(--space-md);
-              box-shadow:0 1px 2px rgba(15,23,42,0.04);">
-      <div>
-        <div style="font-weight:600;font-size:15px;color:var(--text);">{{ p['name'] }}</div>
-        <div style="color:var(--text-secondary);font-size:13px;margin-top:4px;">
-          行业码 <span class="mono">{{ p['industry'] }}</span> · 状态: {{ p['status'] }}
+<div class="topbar">
+  <div class="brand"><div class="brand-logo">预</div><span>职业病危害预评价报告工作台</span></div>
+</div>
+
+<div class="container">
+  <div class="page-head">
+    <h1>项目列表</h1>
+    <button class="btn btn-primary" onclick="showCreate()">＋ 新建项目</button>
+  </div>
+  <div class="project-grid">
+    {% if projects %}
+      {% for p in projects %}
+      <a href="/projects/{{ p['id'] }}" class="card project-card">
+        <div>
+          <div class="name">{{ p['name'] }}</div>
+          <div class="meta">行业码 <span class="mono">{{ p['data'].get('industry', '—') }}</span>
+            · 设备 {{ p['data'].get('equipment', []) | length }} 台
+            · 检测 {{ p['data'].get('detections', []) | length }} 条</div>
         </div>
-      </div>
-      <span style="color:var(--primary);">→</span>
-    </a>
-    {% endfor %}
+        <span class="badge badge-status">{{ p['status'] }}</span>
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="empty">暂无项目，点击"新建项目"开始</div>
+    {% endif %}
   </div>
 </div>
+
+<!-- 新建项目模态 -->
+<div class="modal-mask" id="createModal">
+  <div class="modal">
+    <h3>新建项目</h3>
+    <label>项目名称</label>
+    <input id="newName" placeholder="如：XX新材料年产X吨XX项目">
+    <label>行业码 (GB/T 4754 中类, 如 261)</label>
+    <input id="newIndustry" placeholder="261" class="mono">
+    <div class="actions">
+      <button class="btn btn-secondary" onclick="closeCreate()">取消</button>
+      <button class="btn btn-primary" onclick="createProject()">创建</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function showCreate() { document.getElementById('createModal').classList.add('show'); }
+function closeCreate() { document.getElementById('createModal').classList.remove('show'); }
+async function createProject() {
+  const name = document.getElementById('newName').value.trim() || '未命名项目';
+  const industry = document.getElementById('newIndustry').value.trim();
+  const r = await fetch('/api/projects', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ name, industry })
+  });
+  const d = await r.json();
+  if (d.id) location.href = '/projects/' + d.id;
+  else alert('创建失败');
+}
+</script>
 </body>
 </html>

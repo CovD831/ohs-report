@@ -123,6 +123,19 @@ table td.col-method { min-width: 100px; }
   padding-top: 12px; border-top: 1px solid var(--border); }
 .ev-loading { color: var(--text-muted); font-size: 13px; }
 
+/* 抽屉(数据源编辑) */
+.drawer-mask { position: fixed; inset: 0; background: rgba(15,23,42,0.35); display: none;
+  z-index: 200; }
+.drawer-mask.show { display: block; }
+.drawer { position: absolute; right: 0; top: 0; width: 480px; height: 100%;
+  background: var(--surface); box-shadow: -4px 0 24px rgba(15,23,42,0.12);
+  display: flex; flex-direction: column; }
+.drawer-head { display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.drawer-head h3 { font-size: 15px; font-weight: 600; }
+.drawer-body { padding: 20px; overflow-y: auto; }
+.drawer-body label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+
 /* 按钮 */
 .btn { display: inline-flex; align-items: center; gap: 6px; border: none;
   border-radius: var(--radius-md); padding: 7px 14px; font-size: 13px; cursor: pointer;
@@ -172,7 +185,30 @@ table td.col-method { min-width: 100px; }
 
   <!-- 中栏: 内容 -->
   <div class="content" id="content">
-    <div class="content-header"><h1>加载中…</h1></div>
+    <div class="content-header">
+      <h1>加载中…</h1>
+      <button class="btn btn-secondary" onclick="openDataEditor()" style="margin-left:auto;">⚙ 数据源编辑</button>
+    </div>
+  </div>
+
+  <!-- 数据源编辑抽屉 -->
+  <div class="drawer-mask" id="dataDrawer" onclick="if(event.target===this)closeDataEditor()">
+    <div class="drawer">
+      <div class="drawer-head"><h3>⚙ 项目数据源</h3>
+        <button class="btn btn-secondary" onclick="closeDataEditor()">关闭</button></div>
+      <div class="drawer-body">
+        <label>行业码 <span class="mono" style="color:var(--text-muted)">(GB/T 4754, 如 261)</span></label>
+        <input id="edIndustry" class="mono" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:12px;">
+        <label>设备清单 <span style="color:var(--text-muted)">(每行一台)</span></label>
+        <textarea id="edEquipment" rows="8" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:12px;font-family:mono;font-size:13px;"></textarea>
+        <label>检测数据 <span style="color:var(--text-muted)">(JSON, 如 {"factor":"甲苯","ctwa":30,"cste":95})</span></label>
+        <textarea id="edDetections" rows="5" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:16px;font-family:mono;font-size:13px;"></textarea>
+        <div class="actions" style="display:flex;justify-content:flex-end;gap:8px;">
+          <button class="btn btn-secondary" onclick="closeDataEditor()">取消</button>
+          <button class="btn btn-primary" onclick="saveData()">保存并重新生成</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- 右栏: 依据 -->
@@ -187,6 +223,31 @@ table td.col-method { min-width: 100px; }
 </div>
 
 <script>
+function openDataEditor() {
+  // 从 API 读当前项目数据填充
+  fetch(`/api/projects/${pid}/data`).then(r => r.json()).then(d => {
+    document.getElementById('edIndustry').value = d.industry || '';
+    document.getElementById('edEquipment').value = (d.equipment || []).join('\n');
+    document.getElementById('edDetections').value = JSON.stringify(d.detections || [], null, 2);
+  });
+  document.getElementById('dataDrawer').classList.add('show');
+}
+function closeDataEditor() { document.getElementById('dataDrawer').classList.remove('show'); }
+async function saveData() {
+  const industry = document.getElementById('edIndustry').value.trim();
+  const equipment = document.getElementById('edEquipment').value.split('\n').map(s => s.trim()).filter(Boolean);
+  let detections;
+  try { detections = JSON.parse(document.getElementById('edDetections').value || '[]'); }
+  catch (e) { alert('检测数据 JSON 格式错误'); return; }
+  await fetch(`/api/projects/${pid}`, {
+    method: 'PUT', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ industry, equipment, detections })
+  });
+  closeDataEditor();
+  await loadOverview();
+  loadSection(currentSec);
+}
+
 const pid = "{{ pid }}";
 const SEC = "10.2.5";
 let currentSec = SEC;
