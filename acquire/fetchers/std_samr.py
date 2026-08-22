@@ -47,8 +47,10 @@ def fetch(standards: list[str] | None = None) -> dict:
         try:
             url = f"{BASE}?searchText={urllib.parse.quote(code)}&type=all"
             data = fetcher.get_json(url)
+            # 响应结构: 有时顶层直接带 total/rows, 有时包在 data 里 (实测定两态)
+            payload = data.get("data") if isinstance(data.get("data"), dict) else data
             rows = []
-            for r in data.get("rows", []):
+            for r in payload.get("rows", []):
                 rows.append({
                     "code": strip_tags(r.get("C_STD_CODE")),
                     "name": r.get("C_C_NAME"),
