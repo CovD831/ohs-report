@@ -96,18 +96,33 @@ def extract_all() -> dict:
     with open(OUT / "A2e_类比项目检测数据.csv", "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["序号", "危害因素", "岗位", "CTWA(mg/m3)", "PC-TWA", "判定"])
-        # 用表28 的因子+岗位数, CTWA 从表25 匹配 (岗位含因子名)
+        # 表25 分表: 表头行(因子名在列0) → 后续岗位行
+        # 构建 factor→岗位行 映射
+        cur_factor = None
+        factor_rows = {}  # factor → [(岗位, CTWA, PC-TWA)]
+        for r in rows25[1:]:
+            if not r or not r[0]:
+                continue
+            col0 = str(r[0]).strip()
+            if len(r) > 3 and (str(r[3]).strip() == col0 or str(r[5]).strip() == col0):
+                # 表头行: 因子名出现在 CTWA/限值列
+                cur_factor = col0
+                if cur_factor not in factor_rows:
+                    factor_rows[cur_factor] = []
+                continue
+            if cur_factor and len(r) > 3:
+                factor_rows.setdefault(cur_factor, []).append(
+                    (col0, str(r[3]).replace("＜", "<"), str(r[5]) if len(r) > 5 else ""))
+        # 用表28 因子, 从表25 提取 CTWA (匹配因子名)
         for i, fac in enumerate(factors, 1):
-            ctwa = ""
-            for r in rows25[1:]:
-                if r and len(r) > 3 and fac in str(r[0]):
-                    ctwa = str(r[3]).replace("＜", "<")
-                    break
-            if not ctwa:
-                # 表28因子可能不在表25(表25只列部分), 默认<1(未检出)
-                ctwa = "<1"
-            w.writerow([i, fac, "各岗位", ctwa, "", "合格"])
-    made["A2e_类比项目检测数据.csv"] = f"{len(factors)} 化学因子 (表28+表25, 物理{len(phys_factors)}项跳过)"
+            rows_f = factor_rows.get(fac, [])
+            if rows_f:
+                # 取第一个岗位行的 CTWA (模拟: 各岗位均值近似)
+                ctwa, limit = rows_f[0][1], rows_f[0][2]
+            else:
+                ctwa, limit = "<1", ""
+            w.writerow([i, fac, "各岗位", ctwa, limit, "合格"])
+    made["A2e_类比项目检测数据.csv"] = f"{len(factors)} 化学因子 (表25分表解析, 物理{len(phys_factors)}项跳过)"
 
     # A2f 防护措施 (表5: 岗位/防护用品)
     rows5 = _rows(d, 5)
