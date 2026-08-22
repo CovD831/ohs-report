@@ -38,17 +38,26 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
 
     if sec == "10.2.3":
         tables = []
-        # 原辅材料 (识别结果里带 sources 的)
-        mats = [h for h in assess.get("hazards", [])]
-        if mats:
-            rows = [[i, h["factor"], "; ".join(h["sources"][:2]),
-                     h.get("hazard_element", "化学毒物")] for i, h in enumerate(mats, 1)]
-            tables.append({"name": "主要原辅材料及危害", "cols": ["序号", "名称", "来源", "危害类别"], "rows": rows})
+        # 项目设备清单 (全量, 从项目数据)
+        eqs = assess.get("_project_data", {}).get("equipment", [])
+        if eqs:
+            rows = [[i, str(e).split("|")[0], str(e).split("|")[1] if "|" in str(e) else ""]
+                    for i, e in enumerate(eqs, 1)]
+            tables.append({"name": "主要设备清单", "cols": ["序号", "设备名称", "内部物料"],
+                           "rows": rows})  # 全量
         # 照明照度 (illumination_std)
-        ill = conn.execute("SELECT room, plane, lx FROM illumination_std LIMIT 8").fetchall()
+        ill = conn.execute("SELECT room, plane, lx FROM illumination_std").fetchall()
         if ill:
             rows = [[i, r[0], r[1], r[2]] for i, r in enumerate(ill, 1)]
             tables.append({"name": "照明照度标准", "cols": ["序号", "房间/场所", "参考面", "照度(lx)"], "rows": rows})
+        # 主要设备清单 (从识别来源提取)
+        dev_names = set()
+        for h in assess.get("hazards", []):
+            for s in h.get("sources", []):
+                dev_names.add(s.split("[")[-1].rstrip("]") if "[" in s else s)
+        if dev_names:
+            rows = [[i, d] for i, d in enumerate(sorted(dev_names), 1)]
+            tables.append({"name": "主要设备清单", "cols": ["序号", "设备名称"], "rows": rows})
         # 行业链 (gate/big/mid dict → 名称)
         chain = assess.get("industry_chain")
         if chain:
@@ -91,7 +100,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
     if sec == "10.2.9":
         tables = []
         # 监护规则 (surveillance_rule)
-        surv = _rows_of(conn, "SELECT factor, check_type, cycle, must_items FROM surveillance_rule LIMIT 14")
+        surv = _rows_of(conn, "SELECT factor, check_type, cycle, must_items FROM surveillance_rule")
         if surv:
             tables.append({"name": "职业健康监护表", "cols": ["序号", "危害因素", "检查类别", "周期", "必检项目"],
                            "rows": [[i, r[0], r[1], r[2] or "—", (r[3] or "")[:30]]

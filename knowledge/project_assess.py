@@ -332,6 +332,7 @@ def assess_project(conn, project: dict) -> dict:
             levels.setdefault(lv, []).append(j["factor"])
     return {
         "project": project.get("name", ""),
+        "_project_data": project,  # 原文输入 (设备/检测/工艺) 供报告表格全量
         "industry_risk": risk,
         "industry_chain": chain,
         "hazards": hazards,

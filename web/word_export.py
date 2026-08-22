@@ -87,6 +87,7 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
         _para(doc, f"{sec}  {sk['title']}", HEI, 16, True)
         # 段落: 优先 LLM 生成正文, 否则机械模板句
         generated = (section_states or {}).get(sec, {}).get("text", "")
+        tables = None
         if generated:
             # LLM 正文 → 分段写入
             for line in generated.split("\n"):
@@ -94,16 +95,21 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                 if line and not line.startswith("#"):
                     _para(doc, line, FANGSONG, 14, indent=0.74)
         else:
-            paras = gen_paragraphs(conn, sec, assess) if sec != "10.2.11" else None
             if sec == "10.2.11":
                 built = fill_10211(conn, assess)
                 paras = built["paragraphs"]
+                tables = built["tables"]
+            else:
+                paras = gen_paragraphs(conn, sec, assess)
             for p in paras:
                 _para(doc, p, FANGSONG, 14, indent=0.74)
         # 表格
-        tables = fill_section(conn, sec, assess) if sec != "10.2.11" else None
-        if sec == "10.2.11":
-            tables = built["tables"]
+        if tables is None:
+            if sec == "10.2.11":
+                built = fill_10211(conn, assess)
+                tables = built["tables"]
+            else:
+                tables = fill_section(conn, sec, assess)
         for t in tables:
             if not t["rows"]:
                 continue
@@ -115,7 +121,7 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                 cell.text = ""
                 r = cell.paragraphs[0].add_run(c)
                 _set_font(r, SONG, 10.5, True)
-            for row in t["rows"][:20]:
+            for row in t["rows"]:
                 cells = dt.add_row().cells
                 for i, v in enumerate(row):
                     if i >= len(cells):

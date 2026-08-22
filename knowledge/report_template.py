@@ -61,13 +61,22 @@ def build_1025_section(assess_result: dict) -> dict:
                            str(j.get("checks", [{}])[0].get("value", "—") if j.get("checks") else "—"),
                            str(j.get("checks", [{}])[0].get("limit", "—") if j.get("checks") else "—"),
                            "—", "—", "合格" if j.get("pass") else "不合格"])
+    # 检测结果表 (从项目检测数据全量)
+    det_rows = []
+    dets = (assess_result.get("_project_data") or {}).get("detections", [])
+    for i, d in enumerate(dets, 1):
+        det_rows.append([i, d.get("factor", ""), d.get("ctwa", "—"), "见判定表",
+                         "合格" if d.get("ctwa") is not None and d.get("ctwa") < 100 else "—"])
+    tables = [
+        {"name": "识别表", "cols": TABLE_TPL["识别表"], "rows": rec_rows},
+        {"name": "检测结果表", "cols": ["序号", "危害因素", "检测值CTWA(mg/m³)", "PC-TWA", "判定"],
+         "rows": det_rows or []},
+        {"name": "判定表", "cols": TABLE_TPL["判定表"], "rows": judge_rows},
+    ]
     return {
         "section": "10.2.5",
         "paragraphs": [intro, src, judge_intro],
-        "tables": [
-            {"name": "识别表", "cols": TABLE_TPL["识别表"], "rows": rec_rows},
-            {"name": "判定表", "cols": TABLE_TPL["判定表"], "rows": judge_rows},
-        ],
+        "tables": tables,
     }
 
 

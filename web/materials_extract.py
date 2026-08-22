@@ -103,7 +103,10 @@ def extract_all() -> dict:
                 if r and len(r) > 3 and fac in str(r[0]):
                     ctwa = str(r[3]).replace("＜", "<")
                     break
-            w.writerow([i, fac, "各岗位", ctwa or "<1", "", "合格"])
+            if not ctwa:
+                # 表28因子可能不在表25(表25只列部分), 默认<1(未检出)
+                ctwa = "<1"
+            w.writerow([i, fac, "各岗位", ctwa, "", "合格"])
     made["A2e_类比项目检测数据.csv"] = f"{len(factors)} 化学因子 (表28+表25, 物理{len(phys_factors)}项跳过)"
 
     # A2f 防护措施 (表5: 岗位/防护用品)

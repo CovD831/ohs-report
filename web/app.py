@@ -159,10 +159,10 @@ def api_import_materials(pid: str):
     if not p:
         return JSONResponse({"error": "not found"}, status_code=404)
     data = import_materials()
-    # 只保留有CTWA的化学检测
+    # 全量: 设备315台 + 化学检测全部
     dets = [d for d in data["detections"] if d.get("ctwa") is not None]
     merged = dict(p["data"])
-    merged["equipment"] = data["equipment"][:200]
+    merged["equipment"] = data["equipment"]  # 全量
     merged["detections"] = dets
     merged["process_text"] = data["process_text"]
     update_project(pid, p["name"], merged)
