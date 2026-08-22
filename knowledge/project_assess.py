@@ -60,7 +60,7 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
                     if f:
                         h = hazards.setdefault(f, {"sources": set(), "via": set()})
                         h["sources"].add(f"工序[{u}/{p}]")
-    # 3) 附加 OEL 限值/方法/生物限值
+    # 3) 附加 OEL 限值/方法/生物限值/目录分类
     out = []
     for f, info in sorted(hazards.items()):
         oels = get_oel(conn, f)
@@ -69,6 +69,17 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
             (f"%{f}%",)).fetchone()
         bio = conn.execute(
             "SELECT COUNT(*) FROM bio_limit WHERE factor_name=?", (f,)).fetchone()[0]
+        # 目录分类标签: exact 直接查 hazard_factor → 否则走可信别名表(exact/core_eq)
+        cat_row = conn.execute(
+            "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1", (f,)).fetchone()
+        if not cat_row:
+            alias = conn.execute(
+                "SELECT catalog_name FROM hazard_factor_alias WHERE oel_name=? "
+                "AND match_type IN ('exact','core_eq') LIMIT 1", (f,)).fetchone()
+            if alias:
+                cat_row = conn.execute(
+                    "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1",
+                    (alias[0],)).fetchone()
         out.append({
             "factor": f,
             "sources": sorted(info["sources"]),
@@ -78,6 +89,7 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
             "method": method[0] if method else None,
             "has_bio": bio > 0,
             "needs_test": bool(oels),  # 有OEL需检测(mg/m3等数值对比)
+            "catalog": {"category": cat_row[0], "name": cat_row[1]} if cat_row else None,
         })
     return out
 
@@ -149,7 +161,8 @@ def main():
     for h in result["hazards"]:
         method = f" | 方法: {h['method']}" if h["method"] else " | 方法: 无GBZ/T300"
         bio = " | BEI:有" if h["has_bio"] else ""
-        print(f"  🔴 {h['factor']} [{'需检测' if h['needs_test'] else '定性'}]"
+        cat = f" [目录:{h['catalog']['category']}]" if h.get("catalog") else " [目录未收录]"
+        print(f"  🔴 {h['factor']}{cat} [{'需检测' if h['needs_test'] else '定性'}]"
               f" ← {'; '.join(h['sources'][:3])} (经物料: {'、'.join(h['via_materials'][:3])}){method}{bio}")
     print(f"\n📊 判定 ({len(result['judgements'])} 条):")
     for j in result["judgements"]:

@@ -1,0 +1,508 @@
+{
+  "_meta": {
+    "source_standard": "GBZ 2.2—2007",
+    "source_file": "~/Desktop/law/data/gbz_pdfs/GBZ 2.2-2007.pdf (扫描件, 视觉直读+人工核对)",
+    "read_date": "2026-08-22",
+    "note": "全部数值经视觉逐表读取, verified=0 待人工抽查核对。公式型条目(激光/修正因子)存 value=公式字符串。"
+  },
+  "rules": [
+    {
+      "factor_name": "噪声", "factor_type": "物理因素", "oel_type": "LEX,8h",
+      "value": "85", "unit": "dB(A)",
+      "conditions": "每周工作5d,每天工作8h,稳态或非稳态噪声等效声级",
+      "note": "GBZ 2.2—2007 11.2.1; 5d/周≥8h/d或≠5d/周时计算8h或40h等效声级,限值均为85"
+    },
+    {
+      "factor_name": "噪声", "factor_type": "物理因素", "oel_type": "LEX,40h",
+      "value": "85", "unit": "dB(A)",
+      "conditions": "每周工作不是5d",
+      "note": "计算40h等效声级,限值85"
+    },
+    {
+      "factor_name": "脉冲噪声", "factor_type": "物理因素", "oel_type": "声压级峰值",
+      "value": "140", "unit": "dB(A)",
+      "conditions": "工作日接触脉冲噪声次数n≤100",
+      "note": "GBZ 2.2—2007 表10"
+    },
+    {
+      "factor_name": "脉冲噪声", "factor_type": "物理因素", "oel_type": "声压级峰值",
+      "value": "130", "unit": "dB(A)",
+      "conditions": "100<n≤1000",
+      "note": "GBZ 2.2—2007 表10"
+    },
+    {
+      "factor_name": "脉冲噪声", "factor_type": "物理因素", "oel_type": "声压级峰值",
+      "value": "120", "unit": "dB(A)",
+      "conditions": "1000<n≤10000",
+      "note": "GBZ 2.2—2007 表10"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "30", "unit": "℃",
+      "conditions": "接触时间率100%, 体力劳动强度Ⅰ级",
+      "note": "本地区室外通风设计温度≥30℃地区,表中WBGT限值相应增加1℃ (10.2.2)"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "28", "unit": "℃",
+      "conditions": "接触时间率100%, 体力劳动强度Ⅱ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "26", "unit": "℃",
+      "conditions": "接触时间率100%, 体力劳动强度Ⅲ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "25", "unit": "℃",
+      "conditions": "接触时间率100%, 体力劳动强度Ⅳ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "31", "unit": "℃",
+      "conditions": "接触时间率75%, 体力劳动强度Ⅰ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "29", "unit": "℃",
+      "conditions": "接触时间率75%, 体力劳动强度Ⅱ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "28", "unit": "℃",
+      "conditions": "接触时间率75%, 体力劳动强度Ⅲ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "26", "unit": "℃",
+      "conditions": "接触时间率75%, 体力劳动强度Ⅳ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "32", "unit": "℃",
+      "conditions": "接触时间率50%, 体力劳动强度Ⅰ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "30", "unit": "℃",
+      "conditions": "接触时间率50%, 体力劳动强度Ⅱ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "29", "unit": "℃",
+      "conditions": "接触时间率50%, 体力劳动强度Ⅲ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "28", "unit": "℃",
+      "conditions": "接触时间率50%, 体力劳动强度Ⅳ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "33", "unit": "℃",
+      "conditions": "接触时间率25%, 体力劳动强度Ⅰ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "32", "unit": "℃",
+      "conditions": "接触时间率25%, 体力劳动强度Ⅱ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "31", "unit": "℃",
+      "conditions": "接触时间率25%, 体力劳动强度Ⅲ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "高温", "factor_type": "物理因素", "oel_type": "WBGT指数",
+      "value": "30", "unit": "℃",
+      "conditions": "接触时间率25%, 体力劳动强度Ⅳ级",
+      "note": "同上"
+    },
+    {
+      "factor_name": "手传振动", "factor_type": "物理因素", "oel_type": "4h等能量频率计权振动加速度",
+      "value": "5", "unit": "m/s²",
+      "conditions": "日接振时间不足或超过4h时换算为相当于接振4h的值",
+      "note": "GBZ 2.2—2007 表11"
+    },
+    {
+      "factor_name": "工频电场", "factor_type": "物理因素", "oel_type": "电场强度",
+      "value": "5", "unit": "kV/m",
+      "conditions": "频率50Hz, 8h工作场所",
+      "note": "GBZ 2.2—2007 表3"
+    },
+    {
+      "factor_name": "超高频辐射", "factor_type": "物理因素", "oel_type": "8h平均功率密度",
+      "value": "0.05", "unit": "mW/cm²",
+      "conditions": "连续波, 接触时间8h",
+      "note": "GBZ 2.2—2007 表1"
+    },
+    {
+      "factor_name": "超高频辐射", "factor_type": "物理因素", "oel_type": "8h平均电场强度",
+      "value": "14", "unit": "V/m",
+      "conditions": "连续波, 接触时间8h",
+      "note": "GBZ 2.2—2007 表1"
+    },
+    {
+      "factor_name": "超高频辐射", "factor_type": "物理因素", "oel_type": "8h平均功率密度",
+      "value": "0.025", "unit": "mW/cm²",
+      "conditions": "脉冲波, 接触时间8h",
+      "note": "GBZ 2.2—2007 表1"
+    },
+    {
+      "factor_name": "超高频辐射", "factor_type": "物理因素", "oel_type": "8h平均电场强度",
+      "value": "10", "unit": "V/m",
+      "conditions": "脉冲波, 接触时间8h",
+      "note": "GBZ 2.2—2007 表1"
+    },
+    {
+      "factor_name": "超高频辐射", "factor_type": "物理因素", "oel_type": "4h平均功率密度",
+      "value": "0.1", "unit": "mW/cm²",
+      "conditions": "连续波, 接触时间4h",
+      "note": "GBZ 2.2—2007 表1"
+    },
+    {
+      "factor_name": "超高频辐射", "factor_type": "物理因素", "oel_type": "4h平均电场强度",
+      "value": "19", "unit": "V/m",
+      "conditions": "连续波, 接触时间4h",
+      "note": "GBZ 2.2—2007 表1"
+    },
+    {
+      "factor_name": "超高频辐射", "factor_type": "物理因素", "oel_type": "4h平均功率密度",
+      "value": "0.05", "unit": "mW/cm²",
+      "conditions": "脉冲波, 接触时间4h",
+      "note": "GBZ 2.2—2007 表1"
+    },
+    {
+      "factor_name": "超高频辐射", "factor_type": "物理因素", "oel_type": "4h平均电场强度",
+      "value": "14", "unit": "V/m",
+      "conditions": "脉冲波, 接触时间4h",
+      "note": "GBZ 2.2—2007 表1"
+    },
+    {
+      "factor_name": "高频电磁场", "factor_type": "物理因素", "oel_type": "电场强度",
+      "value": "50", "unit": "V/m",
+      "conditions": "频率0.1≤f≤3MHz, 8h工作场所",
+      "note": "GBZ 2.2—2007 表2"
+    },
+    {
+      "factor_name": "高频电磁场", "factor_type": "物理因素", "oel_type": "磁感应强度",
+      "value": "5", "unit": "A/m",
+      "conditions": "频率0.1≤f≤3MHz, 8h工作场所",
+      "note": "GBZ 2.2—2007 表2"
+    },
+    {
+      "factor_name": "高频电磁场", "factor_type": "物理因素", "oel_type": "电场强度",
+      "value": "25", "unit": "V/m",
+      "conditions": "频率3.0<f≤30MHz, 8h工作场所",
+      "note": "GBZ 2.2—2007 表2"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "日剂量",
+      "value": "400", "unit": "μW·h/cm²",
+      "conditions": "全身辐射, 连续微波",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "8h平均功率密度",
+      "value": "50", "unit": "μW/cm²",
+      "conditions": "全身辐射, 连续微波",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "非8h平均功率密度",
+      "value": "400/t", "unit": "μW/cm²",
+      "conditions": "全身辐射, 连续微波, t为受辐射时间(h)",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "短时间接触功率密度",
+      "value": "5", "unit": "mW/cm²",
+      "conditions": "全身辐射, 连续微波",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "日剂量",
+      "value": "200", "unit": "μW·h/cm²",
+      "conditions": "全身辐射, 脉冲微波",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "8h平均功率密度",
+      "value": "25", "unit": "μW/cm²",
+      "conditions": "全身辐射, 脉冲微波",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "非8h平均功率密度",
+      "value": "200/t", "unit": "μW/cm²",
+      "conditions": "全身辐射, 脉冲微波, t为受辐射时间(h)",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "短时间接触功率密度",
+      "value": "5", "unit": "mW/cm²",
+      "conditions": "全身辐射, 脉冲微波",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "日剂量",
+      "value": "4000", "unit": "μW·h/cm²",
+      "conditions": "肢体局部辐射, 连续微波或脉冲微波",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "8h平均功率密度",
+      "value": "500", "unit": "μW/cm²",
+      "conditions": "肢体局部辐射, 连续微波或脉冲微波",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "非8h平均功率密度",
+      "value": "4000/t", "unit": "μW/cm²",
+      "conditions": "肢体局部辐射, t为受辐射时间(h)",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "微波辐射", "factor_type": "物理因素", "oel_type": "短时间接触功率密度",
+      "value": "5", "unit": "mW/cm²",
+      "conditions": "肢体局部辐射",
+      "note": "GBZ 2.2—2007 表6"
+    },
+    {
+      "factor_name": "中波紫外线", "factor_type": "物理因素", "oel_type": "8h辐照度",
+      "value": "0.26", "unit": "μW/cm²",
+      "conditions": "波长280nm≤λ<315nm, 8h工作场所",
+      "note": "GBZ 2.2—2007 表7"
+    },
+    {
+      "factor_name": "中波紫外线", "factor_type": "物理因素", "oel_type": "8h照射量",
+      "value": "3.7", "unit": "mJ/cm²",
+      "conditions": "波长280nm≤λ<315nm, 8h工作场所",
+      "note": "GBZ 2.2—2007 表7"
+    },
+    {
+      "factor_name": "短波紫外线", "factor_type": "物理因素", "oel_type": "8h辐照度",
+      "value": "0.13", "unit": "μW/cm²",
+      "conditions": "波长100nm≤λ<280nm, 8h工作场所",
+      "note": "GBZ 2.2—2007 表7"
+    },
+    {
+      "factor_name": "短波紫外线", "factor_type": "物理因素", "oel_type": "8h照射量",
+      "value": "1.8", "unit": "mJ/cm²",
+      "conditions": "波长100nm≤λ<280nm, 8h工作场所",
+      "note": "GBZ 2.2—2007 表7"
+    },
+    {
+      "factor_name": "电焊弧光", "factor_type": "物理因素", "oel_type": "8h辐照度",
+      "value": "0.24", "unit": "μW/cm²",
+      "conditions": "8h工作场所",
+      "note": "GBZ 2.2—2007 表7"
+    },
+    {
+      "factor_name": "电焊弧光", "factor_type": "物理因素", "oel_type": "8h照射量",
+      "value": "3.5", "unit": "mJ/cm²",
+      "conditions": "8h工作场所",
+      "note": "GBZ 2.2—2007 表7"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "3×10⁻³", "unit": "J/cm²",
+      "conditions": "紫外线200~400nm, 照射时间1×10⁻⁹~3×10⁻⁴s",
+      "note": "GBZ 2.2—2007 表4"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "6.3×10⁻⁵", "unit": "J/cm²",
+      "conditions": "紫外线300nm, 照射时间1×10⁻⁴~3×10⁴s",
+      "note": "GBZ 2.2—2007 表4"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "0.56t^(1/4)", "unit": "J/cm²",
+      "conditions": "紫外线400nm, 照射时间1×10⁻⁹~10s",
+      "note": "GBZ 2.2—2007 表4, t为照射时间"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "0.1", "unit": "J/cm²",
+      "conditions": "紫外线400nm, 照射时间10~3×10⁴s",
+      "note": "GBZ 2.2—2007 表4"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "5×10⁻⁷", "unit": "J/cm²",
+      "conditions": "可见光400~700nm, 照射时间1×10⁻⁹~1.2×10⁻⁵s",
+      "note": "GBZ 2.2—2007 表4"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "2.5t^(3/4)×10⁻³", "unit": "J/cm²",
+      "conditions": "可见光400~700nm, 照射时间1.2×10⁻⁵~10s, C_B校正",
+      "note": "GBZ 2.2—2007 表4, t为照射时间"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "辐照度",
+      "value": "1.4C_B×10⁻²", "unit": "W/cm²",
+      "conditions": "可见光400~700nm, 照射时间10~3×10⁴s, C_B校正",
+      "note": "GBZ 2.2—2007 表4, C_B为波长校正因子"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "5C_A×10⁻⁷", "unit": "J/cm²",
+      "conditions": "红外线700~1050nm, 照射时间1×10⁻⁹~1.2×10⁻⁵s, C_A校正",
+      "note": "GBZ 2.2—2007 表4, C_A为波长校正因子"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "2.5C_A t^(3/4)×10⁻³", "unit": "J/cm²",
+      "conditions": "红外线700~1050nm, 照射时间1.2×10⁻⁵~10s, C_A校正",
+      "note": "GBZ 2.2—2007 表4, t为照射时间"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "辐照度",
+      "value": "3.4C_A×10⁻⁵", "unit": "W/cm²",
+      "conditions": "红外线700~1050nm, 照射时间10~3×10⁴s, C_A校正",
+      "note": "GBZ 2.2—2007 表4"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "5×10⁻⁶", "unit": "J/cm²",
+      "conditions": "红外线1050~1400nm, 照射时间1×10⁻⁹~10⁻⁵s, C_A校正",
+      "note": "GBZ 2.2—2007 表4"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "12.5t^(3/4)×10⁻³", "unit": "J/cm²",
+      "conditions": "红外线1050~1400nm, 照射时间3×10⁻⁵~1×10³s, C_A校正",
+      "note": "GBZ 2.2—2007 表4, t为照射时间"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "辐照度",
+      "value": "4.44C_A×10⁻⁴", "unit": "W/cm²",
+      "conditions": "红外线1050~1400nm, 照射时间1×10³~3×10⁴s, C_A校正",
+      "note": "GBZ 2.2—2007 表4"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "0.01", "unit": "J/cm²",
+      "conditions": "远红外线1400~1×10⁶nm, 照射时间1×10⁻⁹~1×10⁻⁷s",
+      "note": "GBZ 2.2—2007 表4"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "0.56t^(1/4)", "unit": "J/cm²",
+      "conditions": "远红外线1400~1×10⁶nm, 照射时间1×10⁻⁷~10s",
+      "note": "GBZ 2.2—2007 表4, t为照射时间"
+    },
+    {
+      "factor_name": "激光辐射(眼直视)", "factor_type": "物理因素", "oel_type": "辐照度",
+      "value": "0.1", "unit": "W/cm²",
+      "conditions": "远红外线1400~1×10⁶nm, 照射时间>10s",
+      "note": "GBZ 2.2—2007 表4"
+    },
+    {
+      "factor_name": "激光辐射(皮肤)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "2C_A×10⁻²", "unit": "J/cm²",
+      "conditions": "可见光与红外线400~1400nm, 照射时间1×10⁻⁹~3×10⁻⁷s, C_A校正",
+      "note": "GBZ 2.2—2007 表5"
+    },
+    {
+      "factor_name": "激光辐射(皮肤)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "1.1C_A t^(1/4)", "unit": "J/cm²",
+      "conditions": "可见光与红外线400~1400nm, 照射时间1×10⁻⁷~10s, C_A校正",
+      "note": "GBZ 2.2—2007 表5, t为照射时间"
+    },
+    {
+      "factor_name": "激光辐射(皮肤)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "0.2C_A", "unit": "J/cm²",
+      "conditions": "可见光与红外线400~1400nm, 照射时间10~3×10⁴s, C_A校正",
+      "note": "GBZ 2.2—2007 表5"
+    },
+    {
+      "factor_name": "激光辐射(皮肤)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "同表4", "unit": "J/cm²",
+      "conditions": "紫外线200~400nm, 8h工作场所",
+      "note": "GBZ 2.2—2007 表5"
+    },
+    {
+      "factor_name": "激光辐射(皮肤)", "factor_type": "物理因素", "oel_type": "照射量",
+      "value": "同表4", "unit": "J/cm²",
+      "conditions": "远红外线1400~1×10⁶nm, 8h工作场所",
+      "note": "GBZ 2.2—2007 表5"
+    },
+    {
+      "factor_name": "体力劳动强度分级", "factor_type": "物理因素", "oel_type": "劳动强度指数n",
+      "value": "≤15", "unit": "无",
+      "conditions": "Ⅰ级",
+      "note": "GBZ 2.2—2007 表13, 用于高温WBGT判定"
+    },
+    {
+      "factor_name": "体力劳动强度分级", "factor_type": "物理因素", "oel_type": "劳动强度指数n",
+      "value": "15<n≤20", "unit": "无",
+      "conditions": "Ⅱ级",
+      "note": "GBZ 2.2—2007 表13"
+    },
+    {
+      "factor_name": "体力劳动强度分级", "factor_type": "物理因素", "oel_type": "劳动强度指数n",
+      "value": "20<n≤25", "unit": "无",
+      "conditions": "Ⅲ级",
+      "note": "GBZ 2.2—2007 表13"
+    },
+    {
+      "factor_name": "体力劳动强度分级", "factor_type": "物理因素", "oel_type": "劳动强度指数n",
+      "value": ">25", "unit": "无",
+      "conditions": "Ⅳ级",
+      "note": "GBZ 2.2—2007 表13"
+    },
+    {
+      "factor_name": "体力劳动心率", "factor_type": "物理因素", "oel_type": "最大心率",
+      "value": "150", "unit": "次/min",
+      "conditions": "工作日内单项体力工作时",
+      "note": "GBZ 2.2—2007 15.2.1"
+    },
+    {
+      "factor_name": "体力劳动心率", "factor_type": "物理因素", "oel_type": "平均心率",
+      "value": "120", "unit": "次/min",
+      "conditions": "各单项作业时",
+      "note": "GBZ 2.2—2007 15.2.1"
+    },
+    {
+      "factor_name": "体力劳动能量消耗", "factor_type": "物理因素", "oel_type": "8h总能量消耗",
+      "value": "6276", "unit": "kJ/d",
+      "conditions": "人工作日(8h)",
+      "note": "GBZ 2.2—2007 15.2.2"
+    },
+    {
+      "factor_name": "井下气象条件", "factor_type": "物理因素", "oel_type": "干球温度",
+      "value": "≤28", "unit": "℃",
+      "conditions": "风速v≤1.0m/s, 煤矿井下采掘工作场所, 上限",
+      "note": "GBZ 2.2—2007 表12"
+    },
+    {
+      "factor_name": "井下气象条件", "factor_type": "物理因素", "oel_type": "干球温度",
+      "value": "≤26", "unit": "℃",
+      "conditions": "风速0.3≤v≤0.5m/s, 煤矿井下采掘工作场所",
+      "note": "GBZ 2.2—2007 表12"
+    },
+    {
+      "factor_name": "井下气象条件", "factor_type": "物理因素", "oel_type": "风速",
+      "value": "0.3", "unit": "m/s",
+      "conditions": "煤矿井下采掘工作场所, 干球温度不低于某值(低温时), 增加工作服保暖量",
+      "note": "GBZ 2.2—2007 表12"
+    }
+  ]
+}
