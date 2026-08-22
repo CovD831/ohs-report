@@ -3,7 +3,7 @@
 # 用法: bash deploy.sh
 set -e
 SRV="ohs"                       # ssh 别名 (ohsdeploy@47.90.137.162)
-REMOTE_DIR="$HOME/ohs-report"   # 服务器上 ohsdeploy 可写的目录
+REMOTE_DIR='~/ohs-report'       # 服务器上 ohsdeploy 可写的目录 (远端展开)
 
 echo "=== 1. 传输镜像 (~250MB, 几分钟) ==="
 docker save ohs-report:latest | gzip | ssh $SRV 'gunzip | docker load'

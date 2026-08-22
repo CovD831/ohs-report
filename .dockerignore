@@ -1,0 +1,15 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+raw
+data
+node_modules
+.env*
+!.env.example
+*.docx
+*.log
+.DS_Store
+.claude
+plans
