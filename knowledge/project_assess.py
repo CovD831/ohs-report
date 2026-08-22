@@ -1,21 +1,27 @@
-"""项目评估管线 — 识别引擎 + 判定引擎一体 (职业病危害预评价核心)
+"""项目评估管线 — 识别引擎 + 判定引擎 + 9知识库全链 (职业病危害预评价核心)
 
 输入 (项目数据, 用户提供):
   name        项目名称
-  industry    行业码 (GB/T 4754, 如 C261)
+  industry    行业码 4位 (GB/T 4754 中类码, 如 261) — 注意: 不带门类字母C
   equipment   [设备名称, ...]        设备清单
   processes   [{unit, process}, ...] 生产单元/工序 (可选, 匹配工作单元规则)
   detections  [{factor, ctwa, cste, cme, peak, value, oel_type, rate, labor,
                 bio_value, bio_unit, indicator}...]  检测数据 (可选)
 
-输出 (报告 10.2.5 章节数据):
-  risk_level          行业风险分类 (risk_category, 严重/一般)
-  hazards             [{factor, source(识别来源), oel限值, 检测方法, 需检测}]  (10.2.5.2 识别)
-  judgements          [{factor, pass, checks, level}]                        (10.2.5.3 危害程度)
-  level_summary       接触水平分布 (6.5.1)
+输出 (报告 10.2 各章节数据):
+  10.2.1 总论        project_info (基础)
+  10.2.3.1 工程概况   industry_chain (行业分类全层级) + industry_risk (风险分类)
+  10.2.5.1 危害识别   hazards (设备/工序→危害→OEL/方法/分类/危化品)
+  10.2.5.2 健康效应   occupational_diseases (危害→可能职业病)
+  10.2.5.3 危害程度   judgements (判定) + grades (作业分级 229) + level_summary
+  10.2.8  PPE       ppe_recommendations (危害类别→防护装备)
+  10.2.9  健康监护   surveillance (危害→检查项目/周期)
+  10.2.3.7 建筑卫生学 illumination_check (车间→照度标准值)
+  10.2.3.8 辅助用室   gbz1_auxiliary (卫生特征→浴室/更衣室规则)
+  10.2.12 结论       final_conclusion (核心判定摘要)
 
-链路: 行业码→风险 | 设备→物料→OEL物质→危害 | 工序→规则→危害
-      | 危害×检测数据→判定(纯计算) | 无检测→状态待测
+链路: 行业码→行业链+风险 | 设备→物料→OEL物质→危害→职业病
+      | 危害→监护规则/PPE | 危害×检测→判定+作业分级 | 车间→照度检查
 用法: python3 -m knowledge.project_assess
 """
 import sys
@@ -26,6 +32,11 @@ from knowledge.oel import connect  # noqa: E402
 from knowledge.identify_demo import split_materials  # noqa: E402
 from knowledge.judge_cli import (judge_chemical, judge_physical, judge_bio,  # noqa: E402
                                  get_oel, level_of)
+from knowledge.grade_engine import grade_chemical, grade_dust, grade_heat  # noqa: E402
+
+# 物理因素→作业分级函数映射 (注意: 物理因素用 229 无单独函数, 高温/噪声走特殊)
+PHYSICAL_FACTORS = ("噪声", "高温", "手传振动", "工频电场", "微波辐射",
+                    "超高频辐射", "高频电磁场", "紫外辐射")
 
 
 def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = None) -> list[dict]:
@@ -60,16 +71,19 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
                     if f:
                         h = hazards.setdefault(f, {"sources": set(), "via": set()})
                         h["sources"].add(f"工序[{u}/{p}]")
-    # 3) 附加 OEL 限值/方法/生物限值/目录分类/危化品CAS标注
+    # 3) 附加 OEL 限值/方法/生物限值/目录分类/危化品CAS标注/监护/职业病
     out = []
     for f, info in sorted(hazards.items()):
+        # --- OEL ---
         oels = get_oel(conn, f)
+        # --- 检测方法 ---
         method = conn.execute(
             "SELECT standard_code FROM method_catalog WHERE factor LIKE ? LIMIT 1",
             (f"%{f}%",)).fetchone()
+        # --- BEI ---
         bio = conn.execute(
             "SELECT COUNT(*) FROM bio_limit WHERE factor_name=?", (f,)).fetchone()[0]
-        # 目录分类标签: exact 直接查 hazard_factor → 否则走可信别名表(exact/core_eq)
+        # --- 分类标签 ---
         cat_row = conn.execute(
             "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1", (f,)).fetchone()
         if not cat_row:
@@ -80,7 +94,7 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
                 cat_row = conn.execute(
                     "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1",
                     (alias[0],)).fetchone()
-        # 危化品标注: 该因素的CAS → 危化品目录 (剧毒/高毒标记)
+        # --- 危化品 CAS ---
         cas = conn.execute(
             "SELECT cas FROM oel_limit WHERE factor_name=? AND cas IS NOT NULL LIMIT 1",
             (f,)).fetchone()
@@ -92,6 +106,16 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
             if h:
                 hazchem = {"name": h[0], "note": h[1],
                            "is_toxic": bool(h[2])}
+        # --- 监护规则 (surveillance_rule) ---
+        surv = conn.execute(
+            "SELECT check_type, cycle, must_items, target_disease FROM surveillance_rule "
+            "WHERE factor LIKE ? AND check_type='在岗期间' LIMIT 1", (f"%{f}%",)).fetchone()
+        # --- 职业病 (occupational_disease: 危害名称→疾病, 用包含匹配) ---
+        diseases = []
+        for r in conn.execute(
+                "SELECT category, name FROM occupational_disease WHERE name LIKE ? OR name LIKE ? LIMIT 3",
+                (f"%{f}%", f"%{f.split('及其')[0]}%")):
+            diseases.append(r[0])
         out.append({
             "factor": f,
             "sources": sorted(info["sources"]),
@@ -103,21 +127,139 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
             "needs_test": bool(oels),  # 有OEL需检测(mg/m3等数值对比)
             "catalog": {"category": cat_row[0], "name": cat_row[1]} if cat_row else None,
             "hazchem": hazchem,
+            "surveillance": {"cycle": surv[0], "must_items": surv[1],
+                             "target_disease": surv[2]} if surv else None,
+            "diseases": diseases,
         })
     return out
 
 
+def industry_chain(conn, industry_code: str) -> dict | None:
+    """行业链: 4位中类码 → 门类/大类/中类/小类 全层级 (10.2.3.1)
+    industry_code: '261' (中类码) — 注意 GB/T 4754 代码表门类/大类/中类/小类分列"""
+    if not industry_code:
+        return None
+    # 中类: 直接查 3 位码 (261)
+    mid = conn.execute(
+        "SELECT code, name FROM industry_class WHERE code=? AND level='中类' LIMIT 1",
+        (industry_code,)).fetchone()
+    if not mid:
+        # 兼容: 用户给了 C261 → 取后3位
+        if len(industry_code) > 3 and industry_code[-3:].isdigit():
+            mid = conn.execute(
+                "SELECT code, name FROM industry_class WHERE code=? AND level='中类' LIMIT 1",
+                (industry_code[-3:],)).fetchone()
+            industry_code = industry_code[-3:]
+        if not mid:
+            return None
+    # 大类: 中类前2位 (261 → 26)
+    big = conn.execute(
+        "SELECT code, name FROM industry_class WHERE code=? AND level='大类' LIMIT 1",
+        (industry_code[:2],)).fetchone()
+    # 门类: 大类范围 (26 → C 13-43)
+    gate_code = None
+    for gate, (lo, hi) in GATE_RANGES.items():
+        if lo <= int(industry_code[:2]) <= hi:
+            gate_code = gate
+            break
+    if gate_code:
+        gate = conn.execute(
+            "SELECT code, name FROM industry_class WHERE code=? AND level='门类' LIMIT 1",
+            (gate_code,)).fetchone()
+    else:
+        gate = None
+    return {
+        "gate": gate.lastrowid if False else ({"code": gate[0], "name": gate[1]} if gate else None),
+        "big": {"code": big[0], "name": big[1]} if big else None,
+        "mid": {"code": mid[0], "name": mid[1]},
+        "full": " > ".join(filter(None, [
+            gate[1] if gate else None,
+            big[1] if big else None,
+            mid[1],
+        ])),
+    }
+
+
+# GB/T 4754 门类范围 (按大类码区间)
+GATE_RANGES = {
+    "A": (1, 5), "B": (6, 12), "C": (13, 43), "D": (44, 46),
+    "E": (47, 50), "F": (51, 52), "G": (53, 60), "H": (61, 62),
+    "I": (63, 65), "J": (66, 69), "K": (70, 70), "L": (71, 72),
+    "M": (73, 75), "N": (76, 79), "O": (80, 82), "P": (83, 84),
+    "Q": (85, 86), "R": (87, 88), "S": (89, 90), "T": (91, 96),
+}
+
+
+def ppe_for_hazards(conn, hazards: list[dict]) -> list[dict]:
+    """PPE 建议: 危害类别→防护装备 (GB 39800 9类, 规则映射+人工把关)
+    规则 (危害→装备, 按 GB 39800.1 4.3 危害评估逻辑):
+      粉尘→HX呼吸防护(op) + YM眼面 | 化学物→FZ化学防护服 + HX + YM
+      噪声→TL听力 | 高温→FZ隔热服 | 振动→SF手部 | 电离辐射→SF电离防护手套
+      生物→HX + FZ | 坠落→ZL | 物理(电场/微波)→YM + FZ
+    """
+    # 规则 (危害→装备, 按 GB 39800.1 4.3 危害评估逻辑):
+    # 条目用 精确 item_name (化学→化学防护服FZ-07, 呼吸→防毒面具, 眼面→职业眼面YM-04)
+    rules = {
+        "粉尘": [("HX", "动力送风过滤式呼吸器"), ("YM", "职业眼面部防护具")],
+        "噪声": [("TL", "耳塞")],
+        "高温": [("FZ", "隔热服"), ("YM", "职业眼面部防护具")],
+        "振动": [("SF", "机械危害防护手套")],
+        "化学": [("FZ", "化学防护服"), ("HX", "长管呼吸器"), ("YM", "职业眼面部防护具")],
+        "生物": [("HX", "动力送风过滤式呼吸器"), ("FZ", "化学防护服")],
+        "物理": [("YM", "激光防护镜"), ("FZ", "防静电服")],
+    }
+    out = []
+    for h in hazards:
+        cat = (h.get("catalog") or {}).get("category", "")
+        keys = []
+        if "粉尘" in cat:
+            keys.append("粉尘")
+        if "化学" in cat or h.get("hazchem"):
+            keys.append("化学")
+        if "物理" in cat and not any(k in h["factor"] for k in ("噪声", "高温", "振动")):
+            keys.append("物理")
+        if "噪声" in h["factor"]:
+            keys.append("噪声")
+        if "高温" in h["factor"]:
+            keys.append("高温")
+        if "手传振动" in h["factor"]:
+            keys.append("振动")
+        if "生物" in cat:
+            keys.append("生物")
+        if not keys:
+            keys = ["化学"]  # 默认保守
+        items = []
+        seen = set()
+        for k in keys:
+            for code, iname in rules.get(k, ()):
+                item = conn.execute(
+                    "SELECT item_name, std_code FROM ppe_item "
+                    "WHERE cat_code=? AND item_name=? LIMIT 1", (code, iname)).fetchone()
+                if not item:
+                    item = conn.execute(
+                        "SELECT item_name, std_code FROM ppe_item "
+                        "WHERE cat_code=? LIMIT 1", (code,)).fetchone()
+                if item and item[0] not in seen:
+                    seen.add(item[0])
+                    items.append({"class": code, "item": item[0], "std": item[1]})
+        out.append({"factor": h["factor"], "ppe": items})
+    return out
+
+
 def assess_project(conn, project: dict) -> dict:
-    """项目评估: 识别 + 判定 一体化"""
-    # 1) 行业风险分类
+    """项目评估: 识别 + 判定 + 分级 + 监护 + PPE 全链"""
+    # 1) 行业风险分类 + 行业链
     risk = None
     ind = project.get("industry")
     if ind:
+        # risk_category 用 4 位码 (C261) → 兼容 261/C261
         r = conn.execute(
             "SELECT industry_code, industry_name, risk_level FROM risk_category "
-            "WHERE industry_code=?", (ind,)).fetchone()
+            "WHERE industry_code=? OR industry_code=?",
+            (ind, ind[1:] if ind.startswith("C") else ind)).fetchone()
         if r:
             risk = {"code": r[0], "name": r[1], "level": r[2]}
+    chain = industry_chain(conn, ind) if ind else None
     # 2) 危害识别
     hazards = identify_hazards(conn, project.get("equipment", []),
                                project.get("processes"))
@@ -127,15 +269,40 @@ def assess_project(conn, project: dict) -> dict:
         f = d["factor"]
         if d.get("bio_value") is not None:
             r = judge_bio(conn, f, d.get("indicator"), d["bio_value"], d.get("bio_unit", ""))
-        elif any(k in ("噪声", "高温", "手传振动", "工频电场", "微波辐射",
-                       "超高频辐射", "高频电磁场", "紫外辐射") for k in [f]):
+        elif any(k in f for k in PHYSICAL_FACTORS):
             r = judge_physical(conn, f, d.get("value"), oel_type=d.get("oel_type"),
                                rate=d.get("rate", "100%"), labor=d.get("labor", "Ⅰ"))
         else:
             r = judge_chemical(conn, f, d.get("ctwa"), d.get("cste"), d.get("cme"),
                                d.get("peak"))
         judgements.append({"factor": f, **r})
-    # 4) 接触水平汇总
+    # 4) 作业分级 (GBZ/T 229)
+    grades = []
+    for d in project.get("detections", []):
+        f = d["factor"]
+        labor = d.get("labor", "Ⅱ")
+        if "高温" in f:
+            g = grade_heat(labor, d.get("rate_pct", 100), d.get("wbgt", 30))
+        elif d.get("sio2"):
+            g = grade_dust(d["sio2"], d.get("btw", 0.5), labor)
+        elif d.get("wd") or d.get("b"):
+            g = grade_chemical(d.get("wd", "中度危害"), d.get("b", 0.5), labor)
+        else:
+            # 化学物默认: 用检出浓度/限值 比例 + 中度危害
+            b = None
+            if d.get("ctwa") is not None:
+                oel = get_oel(conn, f)
+                if oel:
+                    b = d["ctwa"] / float(oel[0]["value"]) if float(oel[0]["value"]) > 0 else None
+            if b is not None:
+                g = grade_chemical(d.get("wd", "中度危害"), b, labor)
+            else:
+                g = None
+        if g:
+            grades.append({"factor": f, **g})
+    # 5) PPE 建议
+    ppe = ppe_for_hazards(conn, hazards)
+    # 6) 接触水平汇总
     levels = {}
     for j in judgements:
         if j.get("level") and isinstance(j["level"], dict):
@@ -144,18 +311,21 @@ def assess_project(conn, project: dict) -> dict:
     return {
         "project": project.get("name", ""),
         "industry_risk": risk,
+        "industry_chain": chain,
         "hazards": hazards,
         "judgements": judgements,
+        "grades": grades,
+        "ppe": ppe,
         "level_summary": levels,
     }
 
 
 def main():
     conn = connect()
-    # 演示项目: 长兴特殊材料(苏州) 光固化涂料材料项目 (C261, 真实设备+检测表25/26)
+    # 演示项目: 长兴特殊材料(苏州) 光固化涂料材料项目 (261, 真实设备+检测表25/26)
     project = {
         "name": "长兴特殊材料年产27080吨高性能光固化涂料材料项目",
-        "industry": "C261",
+        "industry": "261",
         "equipment": ["酯化釜", "纯化槽", "洗涤塔", "溶剂回收槽", "中和真空槽",
                       "酯化第一冷凝器", "真空除沫器", "洗釜泵", "油相溶剂泵"],
         "detections": [
@@ -166,9 +336,12 @@ def main():
     result = assess_project(conn, project)
     print("=" * 60)
     print(f"📋 {result['project']}")
+    if result["industry_chain"]:
+        c = result["industry_chain"]
+        print(f"  行业链: {c['full'] or '未定位'} (中类 {c['mid']['code']} {c['mid']['name']})")
     if result["industry_risk"]:
         r = result["industry_risk"]
-        print(f"  行业: {r['code']} {r['name']} → 风险分类: **{r['level']}**")
+        print(f"  风险分类: **{r['level']}** ({r['name']})")
     print("=" * 60)
     print(f"\n🔍 危害识别 ({len(result['hazards'])} 项):")
     for h in result["hazards"]:
@@ -178,8 +351,10 @@ def main():
         hz = ""
         if h.get("hazchem"):
             hz = f" ⚠️危化品[{h['hazchem']['name']}]" + ("·剧毒" if h["hazchem"]["is_toxic"] else "")
-        print(f"  🔴 {h['factor']}{cat}{hz} [{'需检测' if h['needs_test'] else '定性'}]"
-              f" ← {'; '.join(h['sources'][:3])} (经物料: {'、'.join(h['via_materials'][:3])}){method}{bio}")
+        surv = " | 监护:有" if h.get("surveillance") else ""
+        dis = f" | 职业病:{'、'.join(h['diseases'][:2])}" if h["diseases"] else ""
+        print(f"  🔴 {h['factor']}{cat}{hz}{surv}{dis} [{'需检测' if h['needs_test'] else '定性'}]"
+              f" ← {'; '.join(h['sources'][:3])}{method}{bio}")
     print(f"\n📊 判定 ({len(result['judgements'])} 条):")
     for j in result["judgements"]:
         status = "✅合格" if j.get("pass") else ("❌不合格" if j.get("pass") is False else "⚠️待测")
@@ -188,10 +363,16 @@ def main():
         for c in j.get("checks", []):
             mark = "✅" if c["pass"] else "❌"
             print(f"    {mark} {c['rule']}: {c['value']} vs {c['limit']}")
-    if result["level_summary"]:
-        print(f"\n📈 接触水平分布 (GBZ 2.1 6.5.1):")
-        for lv, fs in sorted(result["level_summary"].items()):
-            print(f"  {lv}级: {', '.join(fs)}")
+    if result["grades"]:
+        print(f"\n📈 作业分级 (GBZ/T 229):")
+        for g in result["grades"]:
+            print(f"  {g['factor']}: {g['name']} (G={g.get('g', '-')})")
+    if result["ppe"]:
+        print(f"\n🧤 PPE 建议 (GB 39800):")
+        for p in result["ppe"]:
+            items = ", ".join(f"{x['item']}({x['std']})" for x in p["ppe"])
+            if items:
+                print(f"  {p['factor']}: {items}")
     conn.close()
 
 
