@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ project['name'] }} — 报告工作台</title>
+<style>
+:root {
+  --primary: #2563EB; --primary-soft: #DBEAFE; --primary-strong: #1D4ED8;
+  --tertiary: #F59E0B; --success: #16A34A; --danger: #DC2626;
+  --neutral: #F8FAFC; --surface: #FFFFFF; --surface-muted: #F1F5F9;
+  --border: #E2E8F0; --border-strong: #CBD5E1;
+  --text: #0F172A; --text-secondary: #475569; --text-muted: #94A3B8;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+  --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 32px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: PingFang SC, Noto Sans SC, system-ui, -apple-system, sans-serif;
+  font-size: 14px; line-height: 1.6; color: var(--text); background: var(--neutral); }
+.mono { font-family: JetBrains Mono, SF Mono, Menlo, Consolas, monospace; font-size: 13px; }
+a { color: var(--primary); text-decoration: none; }
+
+.layout { display: grid; grid-template-columns: 260px 1fr 320px; gap: 16px;
+  max-width: 1720px; margin: 0 auto; padding: 16px 24px; min-height: 100vh; }
+
+/* 左栏 章节树 */
+.nav-tree { background: var(--surface); border-radius: var(--radius-md);
+  padding: 16px; height: calc(100vh - 32px); overflow-y: auto; position: sticky; top: 16px; }
+.nav-tree h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  border-radius: var(--radius-sm); cursor: pointer; color: var(--text-secondary);
+  font-size: 13px; }
+.nav-item:hover { background: var(--surface-muted); }
+.nav-item.active { background: var(--primary-soft); color: var(--primary-strong); font-weight: 500; }
+.nav-item .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot.green { background: var(--success); }
+.dot.amber { background: var(--tertiary); }
+.dot.blue { background: var(--primary); }
+
+/* 中栏 内容 */
+.content { background: var(--surface); border-radius: var(--radius-md);
+  padding: 24px 32px; min-height: calc(100vh - 32px); }
+.content h1 { font-size: 20px; font-weight: 600; margin-bottom: 20px; }
+.content h2 { font-size: 16px; font-weight: 600; margin: 20px 0 8px; }
+.para { margin-bottom: 12px; color: var(--text); }
+table { width: 100%; border-collapse: collapse; margin: 12px 0 24px;
+  font-size: 13px; table-layout: fixed; }
+th { background: var(--surface-muted); color: var(--text-secondary); text-align: left;
+  padding: 8px 12px; border-bottom: 1px solid var(--border); font-weight: 500;
+  white-space: nowrap; }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); word-break: break-all; }
+tr:nth-child(even) { background: var(--surface-muted); }
+tr:hover { background: var(--primary-soft); }
+td.mono, th.mono { font-family: JetBrains Mono, Menlo, monospace; }
+table td:first-child { width: 40px; text-align: center; }
+table td:nth-child(2) { min-width: 90px; }
+
+/* 右栏 依据 */
+.evidence { background: var(--surface-muted); border-radius: var(--radius-md);
+  padding: 16px; height: calc(100vh - 32px); overflow-y: auto; position: sticky; top: 16px; }
+.evidence h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+.ev-item { background: var(--surface); border-radius: var(--radius-sm);
+  padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); }
+.ev-judgement { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+.ev-basis { font-size: 12px; color: var(--text-secondary); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius-sm);
+  font-size: 12px; font-weight: 500; }
+.badge-standard { background: var(--primary-soft); color: var(--primary-strong); }
+.badge-design { background: var(--surface-muted); color: #475569; }
+.badge-success { background: #DCFCE7; color: #15803D; }
+.badge-danger { background: #FEE2E2; color: #B91C1C; }
+.ev-loading { color: var(--text-muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <!-- 左栏: 章节树 -->
+  <div class="nav-tree">
+    <h2>报告章节</h2>
+    <div id="nav">
+      {% for s in sections %}
+      <div class="nav-item{% if s['id'] == '10.2.5' %} active{% endif %}"
+           onclick="loadSection('{{ s['id'] }}')" data-sec="{{ s['id'] }}">
+        <span class="dot green"></span>
+        <span>{{ s['title'] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 中栏: 内容 -->
+  <div class="content" id="content">
+    <h1>加载中…</h1>
+  </div>
+
+  <!-- 右栏: 依据 -->
+  <div class="evidence" id="evidence">
+    <h2>依据侧栏</h2>
+    <div class="ev-loading">选择章节后显示依据…</div>
+  </div>
+</div>
+
+<script>
+const pid = "{{ pid }}";
+const SEC = "{{ sections[0]['id'] if sections else '10.2.5' }}";
+let currentSec = SEC;
+
+async function loadSection(sec) {
+  currentSec = sec;
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.sec === sec);
+  });
+  document.getElementById('content').innerHTML = '<h1>生成中…</h1>';
+  document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">生成中…</div>';
+  const r = await fetch(`/api/projects/${pid}/sections/${sec}`);
+  const d = await r.json();
+  // 内容
+  let html = `<h1>${d.title}</h1>`;
+  d.paragraphs.forEach((p, i) => {
+    html += `<p class="para">${p}</p>`;
+  });
+  d.tables.forEach(t => {
+    html += `<h2>${t.name}</h2><table><thead><tr>`;
+    t.cols.forEach(c => html += `<th>${c}</th>`);
+    html += `</tr></thead><tbody>`;
+    t.rows.forEach(row => {
+      html += '<tr>' + row.map(c => `<td class="mono">${c}</td>`).join('') + '</tr>';
+    });
+    html += `</tbody></table>`;
+  });
+  if (!d.tables.length) html += '<p style="color:var(--text-muted)">本节暂无表格(数据槽待填充)</p>';
+  document.getElementById('content').innerHTML = html;
+  // 依据
+  let ev = '<h2>依据侧栏</h2>';
+  if (d.evidence && d.evidence.length) {
+    d.evidence.forEach(e => {
+      const badge = e.basis_type === 'standard' ? 'badge-standard' : 'badge-design';
+      const label = e.basis_type === 'standard' ? '标准依据' : '设计建议';
+      ev += `<div class="ev-item">
+        <div class="ev-judgement">${e.judgement}</div>
+        <div class="ev-basis"><span class="badge ${badge}">${label}</span>
+          <span class="mono">${e.basis}</span></div>
+        <div class="ev-basis" style="margin-top:4px;color:var(--text-muted)">${e.text || ''}</div>
+      </div>`;
+    });
+  } else {
+    ev += '<div class="ev-loading">本节暂无依据</div>';
+  }
+  document.getElementById('evidence').innerHTML = ev;
+}
+
+loadSection(SEC);
+</script>
+</body>
+</html>
