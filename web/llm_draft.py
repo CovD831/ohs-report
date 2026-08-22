@@ -255,7 +255,7 @@ def build_1026_prompt(info: str) -> str:
 
 
 def draft_section(pid: str, sec: str) -> str:
-    """生成某章 LLM 草稿 (通用prompt体系)"""
+    """生成某章 LLM 草稿 (报告1-9编号 → 引擎章节)"""
     p = get_project(pid)
     conn = connect()
     project = {"name": p["name"], "industry": p["data"].get("industry", ""),
@@ -265,16 +265,27 @@ def draft_section(pid: str, sec: str) -> str:
     assess = assess_project(conn, project)
     conn.close()
     info = _build_info(project, assess)
-    if sec == "10.2.3":
+    # 报告1-9 → 引擎prompt章节
+    map_sec = {"1": "10.2.3", "2": "10.2.5", "3": "10.2.6", "4": "10.2.3.7",
+               "5": "10.2.11", "6": "10.2.12", "7": "10.2.1", "8": "10.2.3",
+               "9": "10.2.4"}
+    base_sec = map_sec.get(sec, sec)
+    if base_sec == "10.2.3" and sec == "1":
         prompt = build_1023_prompt(project, assess, info)
-    elif sec == "10.2.5":
+    elif base_sec == "10.2.5":
         prompt = build_1025_prompt(assess, info)
-    elif sec == "10.2.6":
+    elif base_sec == "10.2.6":
         prompt = build_1026_prompt(info)
     else:
-        prompt = build_section_prompt(sec, info)
+        prompt = build_section_prompt(base_sec, info)
     if not prompt:
         return "暂不支持该章节(可扩展)"
+    # 把 prompt 里的章节号替换为报告编号 (第1章/第2章...)
+    prompt = prompt.replace("10.2.3", f"第{sec}章" if sec == "1" else "本项目工程分析") \
+                   .replace("10.2.5", f"第{sec}章" if sec == "2" else "危害分析") \
+                   .replace("10.2.6", f"第{sec}章" if sec == "3" else "防护措施") \
+                   .replace("10.2.11", f"第{sec}章" if sec == "5" else "补充建议") \
+                   .replace("10.2.12", f"第{sec}章" if sec == "6" else "结论")
     return _llm(prompt)
 
 

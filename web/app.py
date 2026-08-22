@@ -253,7 +253,7 @@ def api_generate_section(pid: str, sec: str):
 
 @app.get("/api/projects/{pid}/sections/{sec}", response_class=JSONResponse)
 def section_content(pid: str, sec: str):
-    """章节内容 + 依据 (数据槽填充: 引擎/规则表 → 表格)"""
+    """章节内容 + 依据 (报告1-9编号; 数据槽填充)"""
     result = _get_assess(pid)
     sk = SECTION_SKELETON.get(sec)
     if not sk:
@@ -261,21 +261,14 @@ def section_content(pid: str, sec: str):
     from web.section_filler import fill_section
     from web.paragraph_gen import fill_section_paragraphs
     from web.advice_gen import fill_10211
-    from knowledge.report_template import build_1025_section
-    if sec == "10.2.5":
-        built = build_1025_section(result)
-        paragraphs = built["paragraphs"]
-        tables = built["tables"]
-        ev_secs = ["10.2.5.3", "10.2.5.4"]
-    elif sec == "10.2.11":
-        built = fill_10211(connect(), result)
-        paragraphs = built["paragraphs"]
-        tables = built["tables"]
-        ev_secs = ["10.2.11"]
-    else:
-        paragraphs = fill_section_paragraphs(connect(), sec, result, sk["paragraphs"])
-        tables = fill_section(connect(), sec, result)
-        ev_secs = [sec]
+    # 证据映射: 2→10.2.5.3+.4, 5→10.2.11, 其余按sec
+    ev_map = {"2": ["10.2.5.3", "10.2.5.4"], "5": ["10.2.11"],
+              "6": ["10.2.12"], "7": ["10.2.1"], "8": ["10.2.3"],
+              "9": ["10.2.4"], "1": ["10.2.3"], "3": ["10.2.6", "10.2.7"],
+              "4": ["10.2.9"]}
+    ev_secs = ev_map.get(sec, [sec])
+    paragraphs = fill_section_paragraphs(connect(), sec, result, sk["paragraphs"])
+    tables = fill_section(connect(), sec, result)
     evidence = []
     for es in ev_secs:
         evidence += evidence_for_section(connect(), es, result)

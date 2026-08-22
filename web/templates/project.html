@@ -167,7 +167,7 @@ table td.col-method { min-width: 100px; }
     <h2>报告章节</h2>
     <div id="nav">
       {% for s in sections %}
-      <div class="nav-item{% if s['id'] == '10.2.5' %} active{% endif %}"
+      <div class="nav-item{% if s['id'] == '2' %} active{% endif %}"
            onclick="loadSection('{{ s['id'] }}')" data-sec="{{ s['id'] }}">
         <span class="dot green"></span>
         <span class="sec-no">{{ s['id'] }}</span>
@@ -303,7 +303,7 @@ async function draftLLM() {
 }
 
 const pid = "{{ pid }}";
-const SEC = "10.2.5";
+const SEC = "2";
 let currentSec = SEC;
 let overview = null;
 

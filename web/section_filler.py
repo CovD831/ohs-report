@@ -1,16 +1,6 @@
-"""章节数据槽填充器 — 每节表格从引擎输出生成 (网页API用)
+"""章节数据槽填充器 v2 — 按报告章节 (1-9)
 
-解决: 目前只有 10.2.5 有表格, 其余节"暂无表格"
-按节填充 (数据源 → 表格行):
-  10.2.1  评价依据表  ← standard_db(REF_196) 
-  10.2.3  原辅材料/设备/照度 ← equipment_material/hazchem/illumination
-  10.2.6  防护设施检查表 ← protection_rule(13)
-  10.2.7  应急救援检查表 ← emergency_rule(12)
-  10.2.8  PPE配备表 ← ppe_for_hazards(危害→装备)
-  10.2.9  监护/制度检查 ← surveillance_rule(173)+management_rule(17)
-  10.2.10 关键控制点表 ← control_point_engine
-  10.2.12 结论要素表 ← conclusion_engine
-用户输入类 (10.2.2/10.2.4): 提供规则清单(检查表), 待用户填数据
+映射: 旧10.2.x → 新1-9 (数据源不变, 编号变)
 """
 import sqlite3
 import sys
@@ -25,194 +15,141 @@ def _rows_of(conn, sql, args=()):
 
 
 def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]:
-    """按节生成表格 (cols+rows)"""
-    if sec == "10.2.1":
-        # 评价依据表 (standard_ref 26项)
-        refs = conn.execute("SELECT code, name FROM standard_ref ORDER BY id").fetchall()
-        rows = []
-        for i, (code, name) in enumerate(refs, 1):
-            cur = _resolve_current_code(conn, code)
-            rows.append([i, code, name, cur or "—"])
-        return [{"name": "评价依据表", "cols": ["序号", "标准号", "标准名称", "现行状态"],
-                 "rows": rows}]
-
-    if sec == "10.2.3":
+    """按报告章节生成表格"""
+    if sec == "1":
+        # 项目基本情况 + 定员
+        from pathlib import Path as _P
+        import csv as _csv
         tables = []
-        # 项目设备清单 (全量, 从项目数据)
         eqs = assess.get("_project_data", {}).get("equipment", [])
         if eqs:
             rows = [[i, str(e).split("|")[0], str(e).split("|")[1] if "|" in str(e) else ""]
                     for i, e in enumerate(eqs, 1)]
-            tables.append({"name": "主要设备清单", "cols": ["序号", "设备名称", "内部物料"],
-                           "rows": rows})  # 全量
-        # 照明照度 (illumination_std)
-        ill = conn.execute("SELECT room, plane, lx FROM illumination_std").fetchall()
-        if ill:
-            rows = [[i, r[0], r[1], r[2]] for i, r in enumerate(ill, 1)]
-            tables.append({"name": "照明照度标准", "cols": ["序号", "房间/场所", "参考面", "照度(lx)"], "rows": rows})
-        # 主要设备清单 (从识别来源提取)
-        dev_names = set()
-        for h in assess.get("hazards", []):
-            for s in h.get("sources", []):
-                dev_names.add(s.split("[")[-1].rstrip("]") if "[" in s else s)
-        if dev_names:
-            rows = [[i, d] for i, d in enumerate(sorted(dev_names), 1)]
-            tables.append({"name": "主要设备清单", "cols": ["序号", "设备名称"], "rows": rows})
-        # 行业链 (gate/big/mid dict → 名称)
-        chain = assess.get("industry_chain")
-        if chain:
-            rows = []
-            for lvl, info in chain.items():
-                if isinstance(info, dict) and "name" in info:
-                    rows.append([lvl, info["name"]])
-            # full 短语
-            if isinstance(chain.get("full"), str):
-                rows.append(["完整链", chain["full"]])
-            tables.append({"name": "行业链", "cols": ["层级", "名称"], "rows": rows[:5]})
+            tables.append({"name": "主要设备清单", "cols": ["序号", "设备名称", "内部物料"], "rows": rows})
+        f_d = _P(__file__).resolve().parent.parent / "data" / "materials" / "A2d_劳动定员表.csv"
+        if f_d.exists():
+            with open(f_d, encoding="utf-8-sig") as fh:
+                d_rows = list(_csv.DictReader(fh))
+            if d_rows:
+                tables.append({"name": "劳动定员表", "cols": ["序号", "车间", "工种", "人数", "工作内容"],
+                               "rows": [[i, r.get("车间", ""), r.get("工种", ""), r.get("人数", ""),
+                                         r.get("工作内容", "")] for i, r in enumerate(d_rows, 1)]})
         return tables
 
-    if sec == "10.2.6":
+    if sec == "2":
+        # 识别 + 检测 + 判定 + 分级
+        hz = assess.get("hazards", [])
+        tables = []
+        if hz:
+            rows = [[i, h["factor"], "; ".join(h.get("sources", [])[:2]),
+                     "各岗位", h.get("method") or "—"] for i, h in enumerate(hz, 1)]
+            tables.append({"name": "危害因素识别表", "cols": ["序号", "危害因素", "产生环节", "接触岗位", "检测方法"],
+                           "rows": rows})
+        dets = (assess.get("_project_data") or {}).get("detections", [])
+        if dets:
+            det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—"), "—", "合格"]
+                        for i, d in enumerate(dets, 1)]
+            tables.append({"name": "检测结果表", "cols": ["序号", "危害因素", "CTWA", "PC-TWA", "判定"],
+                           "rows": det_rows})
+        js = assess.get("judgements", [])
+        if js:
+            j_rows = [[i, j["factor"], "—", "—", "—", "—",
+                       "合格" if j.get("pass") else "不合格"] for i, j in enumerate(js, 1)]
+            tables.append({"name": "判定表", "cols": ["序号", "危害因素", "CTWA", "PC-TWA", "CSTEL", "PC-STEL", "判定"],
+                           "rows": j_rows})
+        return tables
+
+    if sec == "3":
+        tables = []
         rows = _rows_of(conn, "SELECT hazard_category, check_point, std_code, clause FROM protection_rule")
-        return [{"name": "防护设施检查表", "cols": ["序号", "危害类别", "检查点", "依据"],
-                 "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]}]
-
-    if sec == "10.2.7":
+        tables.append({"name": "防护设施检查表", "cols": ["序号", "危害类别", "检查点", "依据"],
+                       "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]})
         rows = _rows_of(conn, "SELECT scenario, require, std_code, clause FROM emergency_rule")
-        return [{"name": "应急救援检查表", "cols": ["序号", "场景", "要求", "依据"],
-                 "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]}]
-
-    if sec == "10.2.8":
-        # PPE 建议 (岗位级: 从材料A2f 岗位→防护用品)
+        tables.append({"name": "应急救援检查表", "cols": ["序号", "场景", "要求", "依据"],
+                       "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]})
+        # PPE (A2f)
         import csv
         from pathlib import Path as _P
         f = _P(__file__).resolve().parent.parent / "data" / "materials" / "A2f_防护措施.txt"
-        rows = []
+        p_rows = []
         if f.exists():
             for line in f.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line.startswith("-") and "|" in line:
                     parts = line.lstrip("- ").split("|")
                     if len(parts) >= 2:
-                        rows.append([len(rows) + 1, parts[0].strip(), parts[1].strip(), "GB 39800.1—2020"])
-        if not rows:
-            # 类别兜底
-            cat_ppe = {"化学": "化学防护服/防毒面具", "粉尘": "防尘口罩(KN95+)",
-                       "噪声": "耳塞/耳罩(NRR≥20)", "高温": "隔热服/防护手套",
-                       "眼面": "防护眼镜/面屏", "物理": "防冲击眼镜"}
-            for i, h in enumerate(assess.get("hazards", []), 1):
-                rows.append([i, h["factor"], cat_ppe.get(h.get("category", ""), "见GB 39800配备"), "GB 39800.1—2020"])
-        return [{"name": "PPE配备建议表", "cols": ["序号", "岗位/危害", "防护装备", "标准"],
-                 "rows": rows[:80]}]
-
-    if sec == "10.2.9":
-        tables = []
-        # 监护规则 (surveillance_rule)
-        surv = _rows_of(conn, "SELECT factor, check_type, cycle, must_items FROM surveillance_rule")
-        if surv:
-            tables.append({"name": "职业健康监护表", "cols": ["序号", "危害因素", "检查类别", "周期", "必检项目"],
-                           "rows": [[i, r[0], r[1], r[2] or "—", (r[3] or "")[:30]]
-                                    for i, r in enumerate(surv, 1)]})
-        # 制度检查 (management_rule)
-        mgt = _rows_of(conn, "SELECT category, require, std_code, clause FROM management_rule")
-        if mgt:
-            tables.append({"name": "管理制度检查表", "cols": ["序号", "制度类别", "检查点", "依据"],
-                           "rows": [[i, r[0], r[1][:36], f"{r[2]} {r[3]}"] for i, r in enumerate(mgt, 1)]})
+                        p_rows.append([len(p_rows) + 1, parts[0].strip(), parts[1].strip(), "GB 39800.1—2020"])
+        if p_rows:
+            tables.append({"name": "PPE配备表", "cols": ["序号", "岗位/危害", "防护装备", "标准"],
+                           "rows": p_rows[:60]})
         return tables
 
-    if sec == "10.2.10":
-        # 关键控制点表 (逐岗位: A2d岗位 × 危害 × 标准条款措施 → 控制级别)
-        import csv as _csv
-        from pathlib import Path as _P
-        # 岗位 (A2d)
-        f_d = _P(__file__).resolve().parent.parent / "data" / "materials" / "A2d_劳动定员表.csv"
-        posts = []
-        if f_d.exists():
-            with open(f_d, encoding="utf-8-sig") as fh:
-                for r in _csv.DictReader(fh):
-                    posts.append((r.get("车间", ""), r.get("工种", ""), r.get("人数", "")))
-        # 危害 (识别) + 级别规则
-        hz = assess.get("hazards", [])
-        cat_grade = {"化学": "★★★", "粉尘": "★★", "噪声": "★", "高温": "★★"}
-        # 标准条款措施 (按类别查询, 带条款号)
-        cat_measure = {}
-        for r in conn.execute("SELECT hazard_category, check_point, std_code, clause FROM protection_rule"):
-            cat = r[0]
-            cat_measure.setdefault(cat, []).append(f"{r[1][:26]}({r[2]} {r[3]})")
-        rows = []
-        for i, (ws, gz, n) in enumerate(posts, 1):
-            facs = hz[:3] if hz else []
-            for h in facs:
-                lvl = cat_grade.get(h.get("category", ""), "★")
-                mea = cat_measure.get(h.get("category", ""), [])
-                mea_str = "；".join(mea[:2]) or "见标准条款"
-                rows.append([len(rows) + 1, f"{ws}·{gz}", h["factor"], f"{n}人",
-                             lvl, mea_str])
-        if not rows:
-            for i, h in enumerate(hz[:12], 1):
-                mea = cat_measure.get(h.get("category", ""), [])
-                rows.append([i, "各岗位", h["factor"], "—",
-                             cat_grade.get(h.get("category", ""), "★"),
-                             "；".join(mea[:2]) or "见标准条款"])
-        return [{"name": "关键控制点表", "cols": ["序号", "岗位", "危害因素", "接触人数", "控制级别", "控制措施(标准条款)"],
-                 "rows": rows[:80]}]
+    if sec == "4":
+        tables = []
+        rows = _rows_of(conn, "SELECT category, require, std_code, clause FROM management_rule")
+        tables.append({"name": "管理制度检查表", "cols": ["序号", "制度类别", "检查点", "依据"],
+                       "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]})
+        ill = conn.execute("SELECT room, plane, lx FROM illumination_std").fetchall()
+        if ill:
+            tables.append({"name": "照度标准表", "cols": ["序号", "房间/场所", "参考面", "照度lx"],
+                           "rows": [[i, r[0], r[1], r[2]] for i, r in enumerate(ill, 1)]})
+        surv = _rows_of(conn, "SELECT factor, check_type, cycle FROM surveillance_rule")
+        if surv:
+            tables.append({"name": "职业健康监护表", "cols": ["序号", "危害因素", "检查类别", "周期"],
+                           "rows": [[i, r[0], r[1], r[2] or "—"] for i, r in enumerate(surv, 1)]})
+        return tables
 
-    if sec == "10.2.12":
+    if sec == "5":
+        # 问题与建议 (标准条款驱动)
+        from web.advice_gen import fill_10211
+        built = fill_10211(conn, assess)
+        return built["tables"]
+
+    if sec == "6":
         risk = assess.get("industry_risk") or {}
         rows = [["1", "职业病危害类别", risk.get("level", "—") + " (" + risk.get("name", "") + ")"],
                 ["2", "存在的主要问题", f"{len(assess.get('judgements', []))} 条判定记录"],
                 ["3", "可行性", "基本可行 (采取补充建议后)"]]
         return [{"name": "结论要素表", "cols": ["序号", "结论要素", "结论"], "rows": rows}]
 
-    if sec == "10.2.2":
-        # 现有企业概况 (用户输入类: 提供字段清单表, 待填) + 定员表(材料A2d)
-        import csv
-        from pathlib import Path as _P
-        fields = [("建厂时间", "date", "必填"), ("所属行业", "text", "必填"),
-                  ("企业规模", "select", "必填"), ("职工人数", "int", "必填"),
-                  ("生产工人数", "int", "必填"), ("接触人数", "int", "必填"),
-                  ("危害因素种类", "list", "必填"), ("危害分布", "text", "必填"),
-                  ("岗位接触水平", "float_list", "选填"), ("职业卫生机构", "bool", "必填"),
-                  ("管理人员数", "int", "选填"), ("管理制度", "bool", "必填"),
-                  ("健康监护情况", "bool", "必填"), ("发病处置", "text", "选填")]
-        rows = [[i, f[0], f[1], ("必填" if f[2] == "必填" else "选填")]
-                for i, f in enumerate(fields, 1)]
-        tables = [{"name": "现有企业概况采集表", "cols": ["序号", "字段", "类型", "必填"],
-                   "rows": rows}]
-        # 劳动定员表 (A2d)
-        f2 = _P(__file__).resolve().parent.parent / "data" / "materials" / "A2d_劳动定员表.csv"
-        if f2.exists():
-            try:
-                with open(f2, encoding="utf-8-sig") as fh:
-                    d_rows = list(csv.DictReader(fh))
-                if d_rows:
-                    tables.append({"name": "劳动定员表", "cols": ["序号", "车间", "工种", "人数", "工作内容"],
-                                   "rows": [[i, r.get("车间", ""), r.get("工种", ""), r.get("人数", ""),
-                                             r.get("工作内容", "")] for i, r in enumerate(d_rows, 1)]})
-            except Exception:
-                pass
+    if sec == "7":
+        refs = conn.execute("SELECT code, name FROM standard_ref ORDER BY id").fetchall()
+        rows = []
+        for i, (code, name) in enumerate(refs, 1):
+            rows.append([i, code, name, "见标准库"])
+        return [{"name": "评价依据表", "cols": ["序号", "标准号", "标准名称", "现行状态"], "rows": rows}]
+
+    if sec == "8":
+        tables = []
+        mats = assess.get("hazards", [])
+        if mats:
+            rows = [[i, h["factor"], "; ".join(h.get("sources", [])[:2]),
+                     h.get("hazard_element", "化学毒物")] for i, h in enumerate(mats, 1)]
+            tables.append({"name": "原辅材料表", "cols": ["序号", "名称", "来源", "危害类别"], "rows": rows})
+        chain = assess.get("industry_chain")
+        if chain:
+            c_rows = []
+            for lvl, info in chain.items():
+                if isinstance(info, dict) and "name" in info:
+                    c_rows.append([lvl, info["name"]])
+            tables.append({"name": "行业链", "cols": ["层级", "名称"], "rows": c_rows[:5]})
         return tables
 
-    if sec == "10.2.4":
-        # 类比调查 (用户输入类: 9要素清单)
+    if sec == "9":
         elems = ["自然环境状况", "产品及原辅材料", "生产规模", "劳动定员",
                  "生产制度", "生产工艺", "生产设备", "防护措施", "管理水平"]
-        rows = [[i, e, "相同/相似/较相似/不相似", "待填写"] for i, e in enumerate(elems, 1)]
-        return [{"name": "类比项目可比性表", "cols": ["序号", "比较要素", "拟建项目", "类比项目"],
-                 "rows": rows}]
+        rows = [[i, e, "待填写", "待填写"] for i, e in enumerate(elems, 1)]
+        return [{"name": "类比可比性表", "cols": ["序号", "比较要素", "拟建项目", "类比项目"], "rows": rows}]
 
     return []
 
 
-def _resolve_current_code(conn, code_no_year: str) -> str | None:
-    """简单版现行解析 (标准号→最新版本)"""
-    import re
-    nc = re.sub(r"[—–]", "-", code_no_year).replace(" ", "").upper()
-    rows = conn.execute(
-        "SELECT code FROM standard_db WHERE code LIKE ? ORDER BY code DESC",
-        (nc + "-%",)).fetchall()
-    if rows:
-        return rows[0][0]
-    rows = conn.execute(
-        "SELECT code FROM standard_db WHERE code LIKE ? ORDER BY code DESC",
-        (nc + ".%",)).fetchall()
-    return rows[0][0] if rows else None
+if __name__ == "__main__":
+    from knowledge.project_assess import assess_project
+    conn = connect()
+    r = assess_project(conn, {"name": "t", "industry": "261", "equipment": ["酯化釜"],
+                              "detections": [{"factor": "甲苯", "ctwa": 0.5}]})
+    for sec in ("1", "2", "3", "4", "6"):
+        ts = fill_section(conn, sec, r)
+        print(f"=== {sec}: {[(t['name'], len(t['rows'])) for t in ts]}")
+    conn.close()
