@@ -318,12 +318,24 @@ def sub_section_content(pid: str, sec: str, sub: str):
         return JSONResponse({"error": "unknown sub-section"}, status_code=404)
     from web.subsection_gen import build_subsection
     built = build_subsection(connect(), sec, sub, result)
-    # 三级单元 (数据驱动)
+    # 三级单元 (数据驱动) + 物质深文
     from web.unit_gen import build_units
+    from web.uploads import project_dir
     units = build_units(sec, sub, {"name": result.get("project", ""),
                                    "equipment": result.get("_project_data", {}).get("equipment", []),
                                    "process_text": result.get("_project_data", {}).get("process_text", "")},
                         result)
+    # 深文加载 (A2i_物质毒理学.json, 批量LLM生成)
+    deep = {}
+    pf = project_dir(pid) / "A2i_物质毒理学.json"
+    if pf.exists():
+        try:
+            deep = json.loads(pf.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    for u in units:
+        if u["type"] == "物质" and u["title"] in deep:
+            u["deep"] = deep[u["title"]]
     title = next(t for s, t in subs if s == sub)
     return {"section": sec, "sub": sub, "title": f"{sub} {title}",
             "paragraphs": built["paragraphs"], "tables": built["tables"],

@@ -102,6 +102,54 @@ def build_units(sec: str, sub: str, project: dict, assess: dict) -> list[dict]:
     return [u for u in units if u["type"] in want]
 
 
+def llm_material_text(factor: str, project: dict, assess: dict) -> str:
+    """物质单元 LLM 深度描述 (完整毒理学段, 数据来自知识库+材料)"""
+    from knowledge.oel import connect
+    conn = connect()
+    # 知识库数据: 毒理/英文/CAS/限值
+    eff = conn.execute("SELECT factor, english, cas, effect, note, source FROM health_effect WHERE factor=? LIMIT 1",
+                       (factor,)).fetchone()
+    lims = conn.execute("SELECT oel_type, value, unit FROM oel_limit WHERE factor_name=? LIMIT 4",
+                        (factor,)).fetchall()
+    conn.close()
+    # prompt
+    info = f"""【物质】{factor}
+【英文/CAS】{eff[1] if eff else '—'} / {eff[2] if eff else '—'}
+【毒理学特征】{eff[3] if eff else '—'}
+【标注】(皮)/(敏)/致癌 等: {eff[4] if eff else '—'}
+【职业接触限值】{'; '.join(f'{l[0]}={l[1]}{l[2]}' for l in lims) or '查GBZ 2.1'}
+【来源】{eff[5] if eff else 'GBZ 2.1—2019 表1'}"""
+    prompt = f"""你是职业卫生评价专家。撰写职业病危害因素健康影响段（预评价报告 10.1.1.x 级内容）。
+
+{info}
+
+要求:
+1. 理化性质简述（颜色气味状态）
+2. 接触途径（吸入/皮肤/经口）
+3. 健康效应（急性/慢性/致癌/致敏, 从毒理学特征展开）
+4. 职业病（对应GBZ职业病目录, 如职业性中毒/皮炎）
+5. 防护要点（密闭化+局部排风+个体防护）
+6. 正式报告语言, 150-300字, 只写标准可信内容"""
+    from web.llm_draft import _llm
+    return _llm(prompt)
+
+
+# 物质单元深度生成状态 (内存缓存: factor → text)
+_MAT_LLM_CACHE: dict[str, str] = {}
+
+
+def material_deep(factor: str, project: dict, assess: dict) -> str:
+    """物质单元深度文本 (LLM, 缓存)"""
+    if factor in _MAT_LLM_CACHE:
+        return _MAT_LLM_CACHE[factor]
+    try:
+        t = llm_material_text(factor, project, assess)
+    except Exception as e:
+        t = f"（LLM生成失败: {str(e)[:30]}）"
+    _MAT_LLM_CACHE[factor] = t
+    return t
+
+
 if __name__ == "__main__":
     from knowledge.project_assess import assess_project
     from knowledge.oel import connect
