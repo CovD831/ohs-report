@@ -120,7 +120,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         return tables
 
     if sec == "10.2.10":
-        # 关键控制点表 (逐岗位: A2d岗位 × 危害 × 措施 → 控制级别)
+        # 关键控制点表 (逐岗位: A2d岗位 × 危害 × 标准条款措施 → 控制级别)
         import csv as _csv
         from pathlib import Path as _P
         # 岗位 (A2d)
@@ -132,21 +132,28 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                     posts.append((r.get("车间", ""), r.get("工种", ""), r.get("人数", "")))
         # 危害 (识别) + 级别规则
         hz = assess.get("hazards", [])
-        cat_grade = {"化学": "★★", "粉尘": "★★", "噪声": "★", "高温": "★★"}
+        cat_grade = {"化学": "★★★", "粉尘": "★★", "噪声": "★", "高温": "★★"}
+        # 标准条款措施 (按类别查询, 带条款号)
+        cat_measure = {}
+        for r in conn.execute("SELECT hazard_category, check_point, std_code, clause FROM protection_rule"):
+            cat = r[0]
+            cat_measure.setdefault(cat, []).append(f"{r[1][:26]}({r[2]} {r[3]})")
         rows = []
         for i, (ws, gz, n) in enumerate(posts, 1):
-            # 该岗位的危害 (识别来源含车间/工艺的匹配, 简化: 取前3项)
             facs = hz[:3] if hz else []
             for h in facs:
                 lvl = cat_grade.get(h.get("category", ""), "★")
+                mea = cat_measure.get(h.get("category", ""), [])
+                mea_str = "；".join(mea[:2]) or "见标准条款"
                 rows.append([len(rows) + 1, f"{ws}·{gz}", h["factor"], f"{n}人",
-                             lvl, "密闭化+局部排风+个体防护"])
+                             lvl, mea_str])
         if not rows:
-            # 兜底: 由识别结果
             for i, h in enumerate(hz[:12], 1):
+                mea = cat_measure.get(h.get("category", ""), [])
                 rows.append([i, "各岗位", h["factor"], "—",
-                             cat_grade.get(h.get("category", ""), "★"), "密闭化+排风"])
-        return [{"name": "关键控制点表", "cols": ["序号", "岗位", "危害因素", "接触人数", "控制级别", "控制措施"],
+                             cat_grade.get(h.get("category", ""), "★"),
+                             "；".join(mea[:2]) or "见标准条款"])
+        return [{"name": "关键控制点表", "cols": ["序号", "岗位", "危害因素", "接触人数", "控制级别", "控制措施(标准条款)"],
                  "rows": rows[:80]}]
 
     if sec == "10.2.12":
