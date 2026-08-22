@@ -37,7 +37,7 @@ def main(pid: str):
     # 保存到项目 materials dir
     import json as _json
     from web.uploads import project_dir
-    pd = project_dir(pid)
+    pd = project_dir(pid, create=True)
     (pd / "A2i_物质毒理学.json").write_text(
         _json.dumps(outs, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"MAT_DONE {pid} factors={len(factors)}", flush=True)

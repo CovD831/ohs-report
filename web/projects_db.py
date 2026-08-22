@@ -15,8 +15,10 @@ DB = Path(__file__).resolve().parent.parent / "data" / "ohs.db"
 
 
 def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB))
+    conn = sqlite3.connect(str(DB), timeout=5)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS project (
           id        TEXT PRIMARY KEY,
@@ -52,21 +54,19 @@ def get_project(pid: str) -> dict | None:
 
 
 def create_project(name: str, industry: str = "") -> dict | None:
-    """创建项目 (用长兴模板初始化设备/检测)"""
+    """创建空白项目；设备、检测和工艺数据由用户材料导入。"""
     pid = uuid.uuid4().hex[:10]
-    demo_data = {
-        "industry": industry or "261",
-        "equipment": ["酯化釜", "纯化槽", "洗涤塔", "溶剂回收槽", "中和真空槽",
-                      "酯化第一冷凝器", "真空除沫器", "洗釜泵", "油相溶剂泵"],
-        "detections": [{"factor": "甲苯", "ctwa": 30, "cste": 95},
-                       {"factor": "环己烷", "ctwa": 0.3, "peak": 4.0}],
+    project_data = {
+        "industry": industry,
+        "equipment": [],
+        "detections": [],
         "processes": [], "process_text": "",
     }
     conn = _conn()
     now = time.time()
     conn.execute("INSERT OR REPLACE INTO project (id, name, data, status, created, updated) "
                  "VALUES (?, ?, ?, 'draft', ?, ?)",
-                 (pid, name, json.dumps(demo_data, ensure_ascii=False), now, now))
+                 (pid, name, json.dumps(project_data, ensure_ascii=False), now, now))
     conn.commit()
     conn.close()
     return get_project(pid)
@@ -99,7 +99,7 @@ def update_section_state(pid: str, sec: str, state: str, generated_text: str = "
 
 
 def seed_demo() -> dict:
-    """首次启动: 植入演示项目 (长兴)"""
+    """开发环境显式调用时植入演示项目；生产启动不会自动调用。"""
     conn = _conn()
     r = conn.execute("SELECT id FROM project WHERE id='demo-cx'").fetchone()
     conn.close()

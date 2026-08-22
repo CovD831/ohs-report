@@ -11,9 +11,11 @@
 上传后: 自动导入 (设备/检测/工艺文本) 已有解析器
 """
 import shutil
+import uuid
 from pathlib import Path
 
 MATERIAL_ROOT = Path(__file__).resolve().parent.parent / "data" / "materials"
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 # 类别定义 (窗口顺序)
 CATEGORIES = [
@@ -30,9 +32,10 @@ CATEGORIES = [
 ]
 
 
-def project_dir(pid: str) -> Path:
+def project_dir(pid: str, create: bool = False) -> Path:
     d = MATERIAL_ROOT / pid
-    d.mkdir(parents=True, exist_ok=True)
+    if create:
+        d.mkdir(parents=True, exist_ok=True)
     return d
 
 
@@ -41,10 +44,21 @@ def save_upload(pid: str, cat_key: str, filename: str, content: bytes) -> dict:
     cat = next((c for c in CATEGORIES if c["key"] == cat_key), None)
     if not cat:
         raise ValueError(f"未知类别: {cat_key}")
-    cat_dir = project_dir(pid) / f"{cat_key}_{cat['name']}"
+    safe = Path(filename).name
+    suffix = Path(safe).suffix.lower()
+    if suffix not in cat["ext"]:
+        raise ValueError(f"不支持的文件类型: {suffix or '无扩展名'}")
+    safe = "".join(ch for ch in safe if ch not in "/\\:*?\"<>|").strip()
+    if not safe or safe in {".", ".."}:
+        safe = f"upload_{uuid.uuid4().hex[:8]}{suffix}"
+
+    cat_dir = project_dir(pid, create=True) / f"{cat_key}_{cat['name']}"
     cat_dir.mkdir(exist_ok=True)
-    safe = "".join(ch for ch in filename if ch not in "/\\:*?\"<>|")
     dst = cat_dir / safe
+    if dst.exists():
+        path = Path(safe)
+        safe = f"{path.stem}_{uuid.uuid4().hex[:8]}{path.suffix}"
+        dst = cat_dir / safe
     dst.write_bytes(content)
     return {"path": str(dst), "size": len(content), "category": cat_key, "name": safe}
 
@@ -74,7 +88,7 @@ def copy_seed_materials(pid: str) -> int:
         cat_map = {"A1": "A1", "A2a": "A2a", "A2b": "A2b", "A2c": "A2c",
                    "A2d": "A2d", "A2e": "A2e", "A2f": "A2f", "A2g": "A2g", "A2h": "A2h"}
         if cat in cat_map:
-            cat_dir = project_dir(pid) / f"{cat}_{next(c['name'] for c in CATEGORIES if c['key'] == cat)}"
+            cat_dir = project_dir(pid, create=True) / f"{cat}_{next(c['name'] for c in CATEGORIES if c['key'] == cat)}"
             cat_dir.mkdir(exist_ok=True)
             shutil.copy2(f, cat_dir / f.name)
             n += 1

@@ -1,0 +1,32 @@
+services:
+  ohs-report:
+    build: .
+    image: ohs-report:latest
+    container_name: ohs-report
+    ports:
+      - "127.0.0.1:18000:8000"
+    env_file:
+      - .env
+    environment:
+      - SEED_DEMO=${SEED_DEMO:-}
+      - LLM_BASE_URL=https://openrouter.ai/api/v1/chat/completions
+      - LLM_MODEL=stealth/ox-alpha
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: ohs-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

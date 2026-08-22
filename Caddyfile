@@ -1,0 +1,3 @@
+paiyipai.xyz {
+    reverse_proxy ohs-report:8000
+}
