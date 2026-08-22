@@ -50,6 +50,9 @@ a { color: var(--primary); text-decoration: none; }
 .nav-item:hover { background: var(--surface-muted); }
 .nav-item.active { background: var(--primary-soft); color: var(--primary-strong); font-weight: 500; }
 .nav-item .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.nav-sub { padding-left: 26px; font-size: 12px; }
+.nav-sub.active { background: var(--surface-muted); color: var(--text); font-weight: 400; }
+.nav-sub .sec-no { width: 28px; }
 .dot.green { background: var(--success); }
 .dot.amber { background: var(--tertiary); }
 .dot.round { background: var(--border-strong); }
@@ -173,6 +176,14 @@ table td.col-method { min-width: 100px; }
         <span class="sec-no">{{ s['id'] }}</span>
         <span>{{ s['title'] }}</span>
       </div>
+      {% for sub in s['subs'] %}
+      <div class="nav-item nav-sub{% if s['id'] == '2' and sub['id'] == '2.1' %} active{% endif %}"
+           onclick="loadSubSection('{{ s['id'] }}', '{{ sub['id'] }}')" data-sec="{{ s['id'] }}" data-sub="{{ sub['id'] }}">
+        <span class="dot round"></span>
+        <span class="sec-no">{{ sub['id'] }}</span>
+        <span>{{ sub['title'] }}</span>
+      </div>
+      {% endfor %}
       {% endfor %}
     </div>
     <div class="nav-card">
@@ -412,6 +423,33 @@ async function loadSection(sec) {
     <span class="badge badge-standard">标准依据</span> 有标准条款支撑<br>
     <span class="badge badge-design">设计建议</span> 权重/阈值为设计值, 需人工核对</div>`;
   document.getElementById('evidence').innerHTML = ev;
+}
+
+async function loadSubSection(sec, sub) {
+  currentSec = sub;
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.sub === sub || (el.dataset.sec === sec && !el.dataset.sub));
+  });
+  const content = document.getElementById('content');
+  content.innerHTML = '<div class="content-header"><h1>生成中…</h1></div>';
+  const r = await fetch(`/api/projects/${pid}/sections/${sec}/${sub}`);
+  const d = await r.json();
+  let html = `<div class="content-header"><h1>${d.title}</h1></div>`;
+  d.paragraphs.forEach((p, i) => { html += `<p class="para">${p}</p>`; });
+  d.tables.forEach(t => {
+    html += `<h2>${t.name}</h2><div class="table-wrap"><table><thead><tr>`;
+    t.cols.forEach(c => html += `<th>${c}</th>`);
+    html += `</tr></thead><tbody>`;
+    t.rows.forEach(row => {
+      html += '<tr>' + row.map((c, ci) => {
+        const cls = ci === 1 ? 'col-factor' : (ci === 2 ? 'col-source' : (ci >= 4 ? 'col-method' : ''));
+        return `<td class="mono ${cls}">${c}</td>`;
+      }).join('') + '</tr>';
+    });
+    html += `</tbody></table></div>`;
+  });
+  content.innerHTML = html;
+  document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">小节内容加载自一级章节, 依据见上级</div>';
 }
 
 let ALL_STATES = {};

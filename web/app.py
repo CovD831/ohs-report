@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 
 from knowledge.evidence_engine import evidence_for_section  # noqa: E402
-from knowledge.report_skeleton import SECTION_SKELETON  # noqa: E402
+from knowledge.report_skeleton import SECTION_SKELETON, sub_sections  # noqa: E402
 from knowledge.project_assess import assess_project  # noqa: E402
 from knowledge.oel import connect  # noqa: E402
 from web.projects_db import list_projects, get_project, create_project, update_project, seed_demo
@@ -79,7 +79,8 @@ def project_page(request: Request, pid: str):
     sections = []
     for sec, sk in SECTION_SKELETON.items():
         sections.append({"id": sec, "title": sk["title"],
-                         "tables": len(sk["tables"]), "paragraphs": len(sk["paragraphs"])})
+                         "tables": len(sk["tables"]), "paragraphs": len(sk["paragraphs"]),
+                         "subs": [{"id": s, "title": t} for s, t in sub_sections(sec)]})
     return env.get_template("project.html").render(
         project=p, sections=sections, pid=pid)
 
@@ -249,6 +250,22 @@ def api_generate_section(pid: str, sec: str):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     update_section_state(pid, sec, "generated", text)
     return {"ok": True, "text": text}
+
+
+@app.get("/api/projects/{pid}/sections/{sec}/{sub}", response_class=JSONResponse)
+def sub_section_content(pid: str, sec: str, sub: str):
+    """二级小节内容 (1.1/2.1/3.1...)"""
+    from knowledge.report_skeleton import sub_sections
+    result = _get_assess(pid)
+    subs = sub_sections(sec)
+    if not any(s == sub for s, _ in subs):
+        return JSONResponse({"error": "unknown sub-section"}, status_code=404)
+    from web.subsection_gen import build_subsection
+    built = build_subsection(connect(), sec, sub, result)
+    title = next(t for s, t in subs if s == sub)
+    return {"section": sec, "sub": sub, "title": f"{sub} {title}",
+            "paragraphs": built["paragraphs"], "tables": built["tables"],
+            "evidence": []}
 
 
 @app.get("/api/projects/{pid}/sections/{sec}", response_class=JSONResponse)
