@@ -39,7 +39,19 @@ PHYSICAL_FACTORS = ("噪声", "高温", "手传振动", "工频电场", "微波�
                     "超高频辐射", "高频电磁场", "紫外辐射")
 
 
-def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = None) -> list[dict]:
+def merge_process_materials(conn, hazards: dict, process_text: str) -> dict:
+    """工艺描述层: 段落文本 → 物质名 → 合并入 hazards (source=工艺描述)
+    无OEL的物质 (三羟甲基丙烷/聚乙二醇...) 保持 needs_test=False 仅提示"""
+    from knowledge.process_material_extractor import extract_from_text
+    names = extract_from_text(conn, process_text)
+    for n in names:
+        h = hazards.setdefault(n, {"sources": set(), "via": set()})
+        h["sources"].add("工艺描述")
+    return hazards
+
+
+def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = None,
+                     process_text: str = "") -> list[dict]:
     """识别引擎: 设备→物料→OEL物质 + 工序→规则危害 (来源链保留)"""
     hazards = {}   # factor_name -> {sources:set, via:set}
     # 1) 设备→物料→OEL
@@ -71,6 +83,9 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
                     if f:
                         h = hazards.setdefault(f, {"sources": set(), "via": set()})
                         h["sources"].add(f"工序[{u}/{p}]")
+    # 2.5) 工艺描述层: 段落文本 → 物质 (碳酸钠/三羟甲基丙烷/1,6-己二醇...)
+    if process_text:
+        merge_process_materials(conn, hazards, process_text)
     # 3) 附加 OEL 限值/方法/生物限值/目录分类/危化品CAS标注/监护/职业病
     out = []
     for f, info in sorted(hazards.items()):
@@ -262,7 +277,8 @@ def assess_project(conn, project: dict) -> dict:
     chain = industry_chain(conn, ind) if ind else None
     # 2) 危害识别
     hazards = identify_hazards(conn, project.get("equipment", []),
-                               project.get("processes"))
+                               project.get("processes"),
+                               project.get("process_text", ""))
     # 3) 判定 (检测数据)
     judgements = []
     for d in project.get("detections", []):
