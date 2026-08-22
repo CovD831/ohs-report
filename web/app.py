@@ -14,7 +14,8 @@ import sqlite3
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 
 from knowledge.evidence_engine import evidence_for_section  # noqa: E402
@@ -29,6 +30,8 @@ TEMPLATES = Path(__file__).resolve().parent.parent / "web" / "templates"
 
 app = FastAPI(title="职业病危害预评价报告工作台")
 env = Environment(loader=FileSystemLoader(str(TEMPLATES)), autoescape=True)
+# 静态文件 (导出的 docx)
+app.mount("/data", StaticFiles(directory=str(ROOT / "data")), name="data")
 
 # 首次启动植入演示项目
 seed_demo()
@@ -138,6 +141,28 @@ def api_import_materials(pid: str):
     _cache.pop(f"assess:{pid}", None)
     return {"ok": True, "equipment": len(merged["equipment"]),
             "detections": len(dets), "materials": data["material_count"]}
+
+
+@app.get("/api/projects/{pid}/export", response_class=JSONResponse)
+def api_export(pid: str):
+    """导出 Word 报告 (附录D格式)"""
+    from web.word_export import export_docx
+    from web.projects_db import get_project as gp
+    from web.materials_import import import_materials
+    p = gp(pid)
+    if not p:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    data = p["data"]
+    conn = connect()
+    project = {"name": p["name"], "industry": data.get("industry", ""),
+               "equipment": data.get("equipment", []),
+               "detections": data.get("detections", []),
+               "process_text": data.get("process_text", "")}
+    assess = assess_project(conn, project)
+    conn.close()
+    out = ROOT / "data" / f"report_{pid}.docx"
+    export_docx(project, assess, out)
+    return {"ok": True, "path": f"/data/report_{pid}.docx", "size": out.stat().st_size}
 
 
 @app.get("/api/projects/{pid}/data", response_class=JSONResponse)

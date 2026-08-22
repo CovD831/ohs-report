@@ -187,7 +187,8 @@ table td.col-method { min-width: 100px; }
   <div class="content" id="content">
     <div class="content-header">
       <h1>加载中…</h1>
-      <button class="btn btn-secondary" onclick="openDataEditor()" style="margin-left:auto;">⚙ 数据源编辑</button>
+      <button class="btn btn-primary" onclick="exportWord()" style="margin-left:auto;">📄 导出Word</button>
+      <button class="btn btn-secondary" onclick="openDataEditor()">⚙ 数据源编辑</button>
     </div>
   </div>
 
@@ -270,6 +271,17 @@ async function saveData() {
   closeDataEditor();
   await loadOverview();
   loadSection(currentSec);
+}
+
+async function exportWord() {
+  const r = await fetch(`/api/projects/${pid}/export`);
+  const d = await r.json();
+  if (d.ok) {
+    // 下载
+    const a = document.createElement('a');
+    a.href = d.path; a.download = `报告_${pid}.docx`;
+    document.body.appendChild(a); a.click(); a.remove();
+  } else alert('导出失败');
 }
 
 const pid = "{{ pid }}";
