@@ -48,7 +48,17 @@ def _para(doc, text: str, font=FANGSONG, size=14, bold=False, align=None, indent
     return p
 
 
-def export_docx(project: dict, assess: dict, out_path: Path):
+def add_toc(doc: Document):
+    """目录页 (手动生成: 章节编号+标题, 无页码)"""
+    _para(doc, "目  录", HEI, 16, True, WD_ALIGN_PARAGRAPH.CENTER)
+    for sec, sk in SECTION_SKELETON.items():
+        if sec == "10.2.13":
+            continue
+        _para(doc, f"{sec}  {sk['title']}", FANGSONG, 13)
+    doc.add_page_break()
+
+
+def export_docx(project: dict, assess: dict, out_path: Path, section_states: dict | None = None):
     conn = connect()
     doc = Document()
     # 页面 A4 + 边距
@@ -65,20 +75,31 @@ def export_docx(project: dict, assess: dict, out_path: Path):
     # 封面标题
     _para(doc, "职业病危害预评价报告书", HEI, 22, True, WD_ALIGN_PARAGRAPH.CENTER)
     _para(doc, "（附录D格式 演示版）", FANGSONG, 14, False, WD_ALIGN_PARAGRAPH.CENTER)
-    doc.add_paragraph()
+    doc.add_page_break()
+
+    # 目录
+    add_toc(doc)
 
     # 各章节
     for sec, sk in SECTION_SKELETON.items():
         if sec in ("10.2.13",):
             continue
         _para(doc, f"{sec}  {sk['title']}", HEI, 16, True)
-        # 段落
-        paras = gen_paragraphs(conn, sec, assess) if sec != "10.2.11" else None
-        if sec == "10.2.11":
-            built = fill_10211(conn, assess)
-            paras = built["paragraphs"]
-        for p in paras:
-            _para(doc, p, FANGSONG, 14, indent=0.74)
+        # 段落: 优先 LLM 生成正文, 否则机械模板句
+        generated = (section_states or {}).get(sec, {}).get("text", "")
+        if generated:
+            # LLM 正文 → 分段写入
+            for line in generated.split("\n"):
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    _para(doc, line, FANGSONG, 14, indent=0.74)
+        else:
+            paras = gen_paragraphs(conn, sec, assess) if sec != "10.2.11" else None
+            if sec == "10.2.11":
+                built = fill_10211(conn, assess)
+                paras = built["paragraphs"]
+            for p in paras:
+                _para(doc, p, FANGSONG, 14, indent=0.74)
         # 表格
         tables = fill_section(conn, sec, assess) if sec != "10.2.11" else None
         if sec == "10.2.11":

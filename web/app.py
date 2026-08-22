@@ -13,7 +13,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
@@ -84,15 +84,43 @@ def project_page(request: Request, pid: str):
         project=p, sections=sections, pid=pid)
 
 
+@app.post("/api/projects/{pid}/upload/{cat}", response_class=JSONResponse)
+async def api_upload(pid: str, cat: str, file: UploadFile):
+    """上传材料文件 → 项目材料目录 (按附录A类别)"""
+    from web.uploads import save_upload
+    p = get_project(pid)
+    if not p:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    content = await file.read()
+    r = save_upload(pid, cat, file.filename or "unnamed", content)
+    return {"ok": True, "name": r["name"], "size": r["size"], "category": r["category"]}
+
+
+@app.get("/api/projects/{pid}/materials", response_class=JSONResponse)
+def api_project_materials(pid: str):
+    """项目已上传材料 (按类别)"""
+    from web.uploads import list_materials, CATEGORIES
+    files = list_materials(pid)
+    # 按类别组织
+    by_cat = {c["key"]: [] for c in CATEGORIES}
+    for f in files:
+        by_cat.setdefault(f["category"], []).append(f)
+    return {"categories": [
+        {"key": c["key"], "name": c["name"], "desc": c["desc"],
+         "files": by_cat.get(c["key"], [])} for c in CATEGORIES]}
+
+
 @app.post("/api/projects", response_class=JSONResponse)
 def api_create_project(payload: dict):
-    """新建项目"""
+    """新建项目 (含 seed 材料复制)"""
+    from web.uploads import copy_seed_materials
     name = payload.get("name", "未命名项目")
     industry = payload.get("industry", "")
     p = create_project(name, industry)
     if not p:
         return JSONResponse({"error": "create failed"}, status_code=500)
-    return {"id": p["id"], "name": p["name"]}
+    n = copy_seed_materials(p["id"])  # 复制模拟材料(演示)
+    return {"id": p["id"], "name": p["name"], "seed_materials": n}
 
 
 @app.put("/api/projects/{pid}", response_class=JSONResponse)
@@ -161,7 +189,7 @@ def api_export(pid: str):
     assess = assess_project(conn, project)
     conn.close()
     out = ROOT / "data" / f"report_{pid}.docx"
-    export_docx(project, assess, out)
+    export_docx(project, assess, out, section_states=data.get("section_states"))
     return {"ok": True, "path": f"/data/report_{pid}.docx", "size": out.stat().st_size}
 
 
@@ -204,6 +232,23 @@ def project_overview(pid: str):
         "grade_count": len(result.get("grades", [])),
         "diseases": sum(1 for h in hazards if h.get("diseases")),
     }
+
+
+@app.post("/api/projects/{pid}/sections/{sec}/generate", response_class=JSONResponse)
+def api_generate_section(pid: str, sec: str):
+    """生成本页: 机械结果确认后 → LLM 成文 → 保存章节状态(generated)"""
+    from web.llm_draft import draft_section
+    from web.projects_db import update_section_state
+    p = get_project(pid)
+    if not p:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        text = draft_section(pid, sec)
+    except Exception as e:
+        text = ""  # LLM失败: 保持机械状态
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    update_section_state(pid, sec, "generated", text)
+    return {"ok": True, "text": text}
 
 
 @app.get("/api/projects/{pid}/sections/{sec}", response_class=JSONResponse)

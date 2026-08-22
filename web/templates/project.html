@@ -350,8 +350,20 @@ async function loadSection(sec) {
   const d = await r.json();
   // 内容
   let html = `<div class="content-header"><h1>${d.title}</h1>
-    <button class="btn btn-secondary" onclick="loadSection('${sec}')">↻ 重新生成</button></div>`;
+    <span class="badge badge-gray" id="secStateBadge">机械结果(待确认)</span>
+    <button class="btn btn-primary" style="margin-left:auto;" id="genBtn"
+      onclick="generateSection('${sec}')">⚡ 生成本页</button>
+    <button class="btn btn-secondary" onclick="exportWord()">📄 导出Word</button></div>`;
   html += statCards(d);
+  // 10.2.13 格式节: 显示导出面板
+  if (sec === '10.2.13') {
+    html += `<div style="border:2px dashed var(--border);border-radius:var(--radius-md);padding:32px;text-align:center;margin:24px 0;">
+      <div style="font-size:16px;font-weight:600;margin-bottom:8px;">📄 报告导出（最终步骤）</div>
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
+        全部章节生成后，点击导出完整的 Word 报告（含目录）</div>
+      <button class="btn btn-primary" style="font-size:15px;padding:10px 24px;" onclick="exportWord()">📄 导 出 Word 报 告</button>
+    </div>`;
+  }
   d.paragraphs.forEach((p, i) => { html += `<p class="para">${p}</p>`; });
   d.tables.forEach(t => {
     html += `<h2>${t.name}</h2><div class="table-wrap"><table><thead><tr>`;
@@ -391,8 +403,35 @@ async function loadSection(sec) {
   document.getElementById('evidence').innerHTML = ev;
 }
 
-loadOverview();
-loadSection(SEC);
+let ALL_STATES = {};
+
+async function loadStates() {
+  const r = await fetch(`/api/projects/${pid}/data`);
+  const d = await r.json();
+  ALL_STATES = d.section_states || {};
+  // 重渲染当前章节状态徽标
+  const badge = document.getElementById('secStateBadge');
+  if (badge) {
+    const st = (ALL_STATES[currentSec] || {}).state;
+    if (st === 'generated') {
+      badge.textContent = '✓ 已生成';
+      badge.className = 'badge badge-success';
+    }
+  }
+}
+
+async function generateSection(sec) {
+  const btn = document.getElementById('genBtn');
+  btn.textContent = '⏳ 生成中…';
+  const r = await fetch(`/api/projects/${pid}/sections/${sec}/generate`, { method: 'POST' });
+  const d = await r.json();
+  if (d.ok) {
+    ALL_STATES[sec] = { state: 'generated', text: d.text };
+    loadSection(sec);
+  } else alert(d.error || '生成失败');
+}
+
+loadOverview().then(loadStates).then(() => loadSection(SEC));
 </script>
 </body>
 </html>

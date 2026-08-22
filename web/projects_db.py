@@ -82,6 +82,22 @@ def update_project(pid: str, name: str, data: dict) -> dict | None:
     return get_project(pid)
 
 
+def update_section_state(pid: str, sec: str, state: str, generated_text: str = "") -> dict:
+    """章节状态: mechanical(机械待确认) → generated(已生成) → confirmed(定稿)"""
+    p = get_project(pid)
+    if not p:
+        return {"error": "not found"}
+    data = dict(p["data"])
+    sec_states = data.setdefault("section_states", {})
+    sec_states[sec] = {"state": state, "text": generated_text}
+    conn = _conn()
+    conn.execute("UPDATE project SET data=?, updated=? WHERE id=?",
+                 (json.dumps(data, ensure_ascii=False), time.time(), pid))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
 def seed_demo() -> dict:
     """首次启动: 植入演示项目 (长兴)"""
     conn = _conn()

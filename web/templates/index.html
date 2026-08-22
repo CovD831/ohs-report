@@ -94,24 +94,69 @@ a { color: var(--primary); text-decoration: none; }
   </div>
 </div>
 
-<!-- 新建项目模态 -->
+<!-- 新建项目模态 (向导: 基本信息+材料上传) -->
 <div class="modal-mask" id="createModal">
-  <div class="modal">
+  <div class="modal" style="width:640px;max-height:90vh;overflow-y:auto;">
     <h3>新建项目</h3>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+      第 1 步：填写基本信息；第 2 步：上传材料（GBZ/T 196 附录A，每类一个窗口）
+    </div>
     <label>项目名称</label>
     <input id="newName" placeholder="如：XX新材料年产X吨XX项目">
     <label>行业码 (GB/T 4754 中类, 如 261)</label>
     <input id="newIndustry" placeholder="261" class="mono">
-    <div class="actions">
+    <div style="font-size:13px;font-weight:600;margin:16px 0 8px;">第 2 步：上传材料文件</div>
+    <div id="uploadCats" style="display:grid;gap:10px;">
+      <!-- 动态加载类别 -->
+    </div>
+    <div class="actions" style="margin-top:20px;">
       <button class="btn btn-secondary" onclick="closeCreate()">取消</button>
-      <button class="btn btn-primary" onclick="createProject()">创建</button>
+      <button class="btn btn-primary" onclick="createProject()">创建项目</button>
     </div>
   </div>
 </div>
 
 <script>
-function showCreate() { document.getElementById('createModal').classList.add('show'); }
+function showCreate() {
+  document.getElementById('createModal').classList.add('show');
+  loadUploadCats();
+}
 function closeCreate() { document.getElementById('createModal').classList.remove('show'); }
+
+// 类别定义 (与后端 CATEGORIES 一致)
+const CATS = [
+  {key:'A1', name:'立项文件', desc:'项目建议书/可研报告/备案证明'},
+  {key:'A2a', name:'原辅材料清单', desc:'原料/辅料/产品/副产/中间品'},
+  {key:'A2b', name:'生产工艺说明', desc:'工艺流程描述/流程图'},
+  {key:'A2c', name:'设备清单', desc:'设备名称/规格/数量/内部物料'},
+  {key:'A2d', name:'劳动定员表', desc:'车间/工种/人数/工作内容'},
+  {key:'A2e', name:'类比项目检测数据', desc:'类比项目检测报告'},
+  {key:'A2f', name:'防护措施', desc:'拟采取的防护设施/用品'},
+  {key:'A2g', name:'职业健康检查资料', desc:'改扩建: 现有检查资料'},
+  {key:'A2h', name:'设计图纸', desc:'区域位置/总平面/竖向图'},
+  {key:'A3', name:'法规标准(可选)', desc:'地方法规/行业标准'},
+];
+let pendingFiles = {};  // cat → File
+
+function loadUploadCats() {
+  document.getElementById('uploadCats').innerHTML = CATS.map(c => `
+    <div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div><strong style="font-size:13px;">${c.name}</strong>
+          <span style="color:var(--text-muted);font-size:12px;margin-left:8px;">${c.desc}</span></div>
+        <input type="file" id="file_${c.key}" style="display:none" onchange="pickFile('${c.key}', this)">
+        <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;"
+                onclick="document.getElementById('file_${c.key}').click()">
+          📁 ${document.getElementById('file_${c.key}')?.files?.length ? '已选' : '上传'}</button>
+      </div>
+      <div id="picked_${c.key}" style="font-size:12px;color:var(--text-secondary);margin-top:6px;"></div>
+    </div>`).join('');
+}
+function pickFile(key, input) {
+  pendingFiles[key] = input.files[0];
+  document.getElementById(`picked_${key}`).textContent = `✓ ${input.files[0].name}`;
+}
+
 async function createProject() {
   const name = document.getElementById('newName').value.trim() || '未命名项目';
   const industry = document.getElementById('newIndustry').value.trim();
@@ -120,8 +165,17 @@ async function createProject() {
     body: JSON.stringify({ name, industry })
   });
   const d = await r.json();
-  if (d.id) location.href = '/projects/' + d.id;
-  else alert('创建失败');
+  if (!d.id) { alert('创建失败'); return; }
+  // 上传已选文件
+  let uploaded = 0;
+  for (const [cat, file] of Object.entries(pendingFiles)) {
+    if (!file) continue;
+    const fd = new FormData(); fd.append('file', file);
+    const up = await fetch(`/api/projects/${d.id}/upload/${cat}`, { method: 'POST', body: fd });
+    if ((await up.json()).ok) uploaded++;
+  }
+  alert(`项目已创建${uploaded ? `，上传 ${uploaded} 个材料` : ''}。`);
+  location.href = '/projects/' + d.id;
 }
 </script>
 </body>
