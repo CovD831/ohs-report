@@ -197,6 +197,12 @@ table td.col-method { min-width: 100px; }
       <div class="drawer-head"><h3>⚙ 项目数据源</h3>
         <button class="btn btn-secondary" onclick="closeDataEditor()">关闭</button></div>
       <div class="drawer-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <label style="margin:0;">📁 已上传材料 (附录A)</label>
+          <button class="btn btn-primary" onclick="importMaterials()" style="font-size:12px;">⬆ 从材料导入</button>
+        </div>
+        <div id="matList" style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">加载中…</div>
+        <hr style="border:none;border-top:1px solid var(--border);margin-bottom:16px;">
         <label>行业码 <span class="mono" style="color:var(--text-muted)">(GB/T 4754, 如 261)</span></label>
         <input id="edIndustry" class="mono" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:12px;">
         <label>设备清单 <span style="color:var(--text-muted)">(每行一台)</span></label>
@@ -230,7 +236,25 @@ function openDataEditor() {
     document.getElementById('edEquipment').value = (d.equipment || []).join('\n');
     document.getElementById('edDetections').value = JSON.stringify(d.detections || [], null, 2);
   });
+  loadMaterials();
   document.getElementById('dataDrawer').classList.add('show');
+}
+function loadMaterials() {
+  fetch('/api/materials').then(r => r.json()).then(d => {
+    document.getElementById('matList').innerHTML = d.files.map(f =>
+      `<div>📄 ${f.name} <span style="color:var(--text-muted)">${f.lines}行/${f.size}字节</span></div>`
+    ).join('') || '无材料文件';
+  });
+}
+async function importMaterials() {
+  const r = await fetch(`/api/projects/${pid}/import-materials`, { method: 'POST' });
+  const d = await r.json();
+  if (d.ok) {
+    alert(`已导入: 设备 ${d.equipment} 台, 检测 ${d.detections} 条, 材料 ${d.materials} 个`);
+    closeDataEditor();
+    await loadOverview();
+    loadSection(SEC);
+  } else alert('导入失败');
 }
 function closeDataEditor() { document.getElementById('dataDrawer').classList.remove('show'); }
 async function saveData() {

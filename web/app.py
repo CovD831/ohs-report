@@ -107,6 +107,39 @@ def api_update_project(pid: str, payload: dict):
     return {"ok": True}
 
 
+@app.get("/api/materials", response_class=JSONResponse)
+def api_materials():
+    """已上传的材料文件清单 (附录A分类)"""
+    from web.materials_extract import OUT_DIR
+    files = []
+    for f in sorted(OUT_DIR.glob("*.json")) + sorted(OUT_DIR.glob("*.csv")) + sorted(OUT_DIR.glob("*.txt")):
+        size = f.stat().st_size
+        lines = sum(1 for _ in open(f, encoding="utf-8", errors="ignore")) if size else 0
+        files.append({"name": f.name, "size": size, "lines": lines,
+                      "kind": f.suffix.lstrip(".").upper()})
+    return {"files": files, "count": len(files)}
+
+
+@app.post("/api/projects/{pid}/import-materials", response_class=JSONResponse)
+def api_import_materials(pid: str):
+    """从材料文件导入项目数据 (设备/检测/工艺) → 保存+缓存失效"""
+    from web.materials_import import import_materials
+    p = get_project(pid)
+    if not p:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    data = import_materials()
+    # 只保留有CTWA的化学检测
+    dets = [d for d in data["detections"] if d.get("ctwa") is not None]
+    merged = dict(p["data"])
+    merged["equipment"] = data["equipment"][:200]
+    merged["detections"] = dets
+    merged["process_text"] = data["process_text"]
+    update_project(pid, p["name"], merged)
+    _cache.pop(f"assess:{pid}", None)
+    return {"ok": True, "equipment": len(merged["equipment"]),
+            "detections": len(dets), "materials": data["material_count"]}
+
+
 @app.get("/api/projects/{pid}/data", response_class=JSONResponse)
 def api_project_data(pid: str):
     """项目输入数据 (编辑表单用)"""

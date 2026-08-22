@@ -21,6 +21,7 @@ from pathlib import Path
 
 REPORT = Path("/Users/abaaba/Desktop/law/职业病危害预评价报告/长兴--预评（备案稿7-31）_extracted.json")
 OUT = Path(__file__).resolve().parent.parent / "data" / "materials"
+OUT_DIR = OUT
 
 
 def _rows(d, i):
