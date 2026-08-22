@@ -49,7 +49,11 @@ a { color: var(--primary); text-decoration: none; }
   font-size: 13px; margin-bottom: 2px; }
 .nav-item:hover { background: var(--surface-muted); }
 .nav-item.active { background: var(--primary-soft); color: var(--primary-strong); font-weight: 500; }
-.nav-item .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.units-wrap { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 4px 12px; }
+.unit-item { padding: 10px 0; border-bottom: 1px dashed var(--border-strong); font-size: 13px; line-height: 1.7; }
+.unit-item:last-child { border-bottom: none; }
+.unit-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 10px;
+  background: var(--primary-soft); color: var(--primary-strong); margin-right: 8px; vertical-align: 1px; }
 .nav-sub { padding-left: 26px; font-size: 12px; }
 .nav-sub.active { background: var(--surface-muted); color: var(--text); font-weight: 400; }
 .nav-sub .sec-no { width: 28px; }
@@ -457,6 +461,14 @@ async function loadSubSection(sec, sub) {
     });
     html += `</tbody></table></div>`;
   });
+  // 三级单元 (数据驱动)
+  if (d.units && d.units.length) {
+    html += `<h2>单元分析</h2><div class="units-wrap">`;
+    d.units.forEach(u => {
+      html += `<div class="unit-item"><span class="unit-badge">${u.type}</span>${u.text}</div>`;
+    });
+    html += `</div>`;
+  }
   content.innerHTML = html;
   document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">小节内容加载自一级章节, 依据见上级</div>';
 }

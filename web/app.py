@@ -318,9 +318,16 @@ def sub_section_content(pid: str, sec: str, sub: str):
         return JSONResponse({"error": "unknown sub-section"}, status_code=404)
     from web.subsection_gen import build_subsection
     built = build_subsection(connect(), sec, sub, result)
+    # 三级单元 (数据驱动)
+    from web.unit_gen import build_units
+    units = build_units(sec, sub, {"name": result.get("project", ""),
+                                   "equipment": result.get("_project_data", {}).get("equipment", []),
+                                   "process_text": result.get("_project_data", {}).get("process_text", "")},
+                        result)
     title = next(t for s, t in subs if s == sub)
     return {"section": sec, "sub": sub, "title": f"{sub} {title}",
             "paragraphs": built["paragraphs"], "tables": built["tables"],
+            "units": units,
             "evidence": []}
 
 
