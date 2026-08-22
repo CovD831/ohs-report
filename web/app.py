@@ -165,6 +165,17 @@ def api_export(pid: str):
     return {"ok": True, "path": f"/data/report_{pid}.docx", "size": out.stat().st_size}
 
 
+@app.get("/api/projects/{pid}/draft/{sec}", response_class=JSONResponse)
+def api_draft(pid: str, sec: str):
+    """LLM 成文草稿 (10.2.3/10.2.5) — 数据来自机械结果, LLM组织语言"""
+    from web.llm_draft import draft_section
+    try:
+        text = draft_section(pid, sec)
+        return {"ok": True, "text": text}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 @app.get("/api/projects/{pid}/data", response_class=JSONResponse)
 def api_project_data(pid: str):
     """项目输入数据 (编辑表单用)"""

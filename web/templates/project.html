@@ -189,6 +189,7 @@ table td.col-method { min-width: 100px; }
       <h1>加载中…</h1>
       <button class="btn btn-primary" onclick="exportWord()" style="margin-left:auto;">📄 导出Word</button>
       <button class="btn btn-secondary" onclick="openDataEditor()">⚙ 数据源编辑</button>
+      <button class="btn btn-secondary" onclick="draftLLM()" id="llmBtn">✨ LLM草稿</button>
     </div>
   </div>
 
@@ -282,6 +283,23 @@ async function exportWord() {
     a.href = d.path; a.download = `报告_${pid}.docx`;
     document.body.appendChild(a); a.click(); a.remove();
   } else alert('导出失败');
+}
+
+async function draftLLM() {
+  const btn = document.getElementById('llmBtn');
+  btn.textContent = '⏳ 生成中…';
+  try {
+    const r = await fetch(`/api/projects/${pid}/draft/${currentSec}`);
+    const d = await r.json();
+    if (d.ok) {
+      // 在内容区顶部插入 LLM 草稿框
+      const box = document.createElement('div');
+      box.style.cssText = 'background:var(--surface-muted);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;margin-bottom:16px;';
+      box.innerHTML = `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">✨ LLM草稿（数据来自机械结果，仅供参考，需人工审核）</div>
+        <div style="white-space:pre-wrap;font-size:13px;line-height:1.7;">${d.text.replace(/</g, '&lt;')}</div>`;
+      document.getElementById('content').prepend(box);
+    } else alert(d.error || '生成失败');
+  } finally { btn.textContent = '✨ LLM草稿'; }
 }
 
 const pid = "{{ pid }}";
