@@ -32,8 +32,8 @@ a { color: var(--primary); text-decoration: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar .badge { flex-shrink: 0; }
 
-.layout { display: grid; grid-template-columns: 260px 1fr 340px; gap: 16px;
-  max-width: 1720px; margin: 0 auto; padding: 16px 24px; }
+.layout { display: grid; grid-template-columns: 240px 1fr 300px; gap: 14px;
+  max-width: 1780px; margin: 0 auto; padding: 14px 20px; }
 
 /* 左栏 */
 .nav-tree { background: var(--surface); border-radius: var(--radius-md);
@@ -84,18 +84,18 @@ a { color: var(--primary); text-decoration: none; }
 
 /* 表格 */
 table { width: 100%; border-collapse: collapse; margin: 12px 0 24px;
-  font-size: 13px; table-layout: fixed; }
-th { background: var(--surface-muted); color: var(--text-secondary); text-align: left;
-  padding: 8px 12px; border-bottom: 1px solid var(--border); font-weight: 500; white-space: nowrap; }
-td { padding: 8px 12px; border-bottom: 1px solid var(--border); word-break: break-all;
   font-size: 12px; }
+th { background: var(--surface-muted); color: var(--text-secondary); text-align: left;
+  padding: 8px 10px; border-bottom: 1px solid var(--border); font-weight: 500; white-space: nowrap; }
+td { padding: 8px 10px; border-bottom: 1px solid var(--border); word-break: break-all; }
 tr:nth-child(even) { background: var(--surface-muted); }
 tr:hover { background: var(--primary-soft); }
 td.mono, th.mono { font-family: JetBrains Mono, Menlo, monospace; }
 table td:first-child { width: 36px; text-align: center; }
-table td.col-factor { min-width: 110px; max-width: 160px; }
-table td.col-source { min-width: 140px; max-width: 220px; }
-table td.col-method { min-width: 80px; }
+/* 列宽启发式: 短列固定, 长列自适应 */
+table td.col-factor { max-width: 200px; }
+table td.col-source { max-width: 300px; min-width: 120px; }
+table td.col-method { min-width: 100px; }
 .table-wrap { overflow-x: auto; }
 
 /* 依据侧栏 */
