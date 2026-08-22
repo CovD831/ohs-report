@@ -70,6 +70,27 @@ def project_page(request: Request, pid: str):
         project=DEMO_PROJECT, sections=sections, pid=pid)
 
 
+@app.get("/api/projects/{pid}/overview", response_class=JSONResponse)
+def project_overview(pid: str):
+    """项目总览 (统计卡片数据)"""
+    result = _get_assess()
+    hazards = result.get("hazards", [])
+    judgements = result.get("judgements", [])
+    passed = sum(1 for j in judgements if j.get("pass") is True)
+    failed = sum(1 for j in judgements if j.get("pass") is False)
+    risk = (result.get("industry_risk") or {})
+    return {
+        "hazard_count": len(hazards),
+        "judgement_count": len(judgements),
+        "passed": passed, "failed": failed,
+        "pass_rate": round(passed / len(judgements) * 100) if judgements else 0,
+        "risk_level": risk.get("level", "—"),
+        "risk_name": risk.get("name", ""),
+        "grade_count": len(result.get("grades", [])),
+        "diseases": sum(1 for h in hazards if h.get("diseases")),
+    }
+
+
 @app.get("/api/projects/{pid}/sections/{sec}", response_class=JSONResponse)
 def section_content(pid: str, sec: str):
     """章节内容 + 依据 (数据槽填充演示)"""

@@ -20,59 +20,134 @@ body { font-family: PingFang SC, Noto Sans SC, system-ui, -apple-system, sans-se
 .mono { font-family: JetBrains Mono, SF Mono, Menlo, Consolas, monospace; font-size: 13px; }
 a { color: var(--primary); text-decoration: none; }
 
-.layout { display: grid; grid-template-columns: 260px 1fr 320px; gap: 16px;
-  max-width: 1720px; margin: 0 auto; padding: 16px 24px; min-height: 100vh; }
+/* 顶部导航 */
+.topbar { background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 24px; height: 56px; display: flex; align-items: center; gap: 20px;
+  position: sticky; top: 0; z-index: 100; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+.brand-logo { width: 28px; height: 28px; border-radius: var(--radius-sm);
+  background: var(--primary); color: white; display: flex; align-items: center;
+  justify-content: center; font-size: 13px; font-weight: 700; }
+.topbar .project-name { font-size: 14px; color: var(--text-secondary); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar .badge { flex-shrink: 0; }
 
-/* 左栏 章节树 */
+.layout { display: grid; grid-template-columns: 260px 1fr 340px; gap: 16px;
+  max-width: 1720px; margin: 0 auto; padding: 16px 24px; }
+
+/* 左栏 */
 .nav-tree { background: var(--surface); border-radius: var(--radius-md);
-  padding: 16px; height: calc(100vh - 32px); overflow-y: auto; position: sticky; top: 16px; }
-.nav-tree h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
-.nav-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  padding: 16px; height: calc(100vh - 88px); overflow-y: auto; position: sticky; top: 72px;
+  display: flex; flex-direction: column; }
+.nav-tree #nav { flex: 1; overflow-y: auto; }
+.nav-card { margin-top: 12px; background: var(--surface-muted); border-radius: var(--radius-md);
+  padding: 12px; font-size: 12px; flex-shrink: 0; }
+.nav-tree h2 { font-size: 13px; color: var(--text-muted); font-weight: 500;
+  margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px;
   border-radius: var(--radius-sm); cursor: pointer; color: var(--text-secondary);
-  font-size: 13px; }
+  font-size: 13px; margin-bottom: 2px; }
 .nav-item:hover { background: var(--surface-muted); }
 .nav-item.active { background: var(--primary-soft); color: var(--primary-strong); font-weight: 500; }
-.nav-item .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.nav-item .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .dot.green { background: var(--success); }
 .dot.amber { background: var(--tertiary); }
-.dot.blue { background: var(--primary); }
+.dot.round { background: var(--border-strong); }
+.nav-item .sec-no { font-size: 11px; color: var(--text-muted); width: 40px; flex-shrink: 0; }
+.nav-card { margin-top: 16px; background: var(--surface-muted); border-radius: var(--radius-md);
+  padding: 12px; font-size: 12px; }
+.nav-card .row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.nav-card .row:last-child { margin-bottom: 0; }
+.nav-card .label { color: var(--text-muted); }
+.nav-card .value { font-weight: 500; }
 
-/* 中栏 内容 */
+/* 中栏 */
 .content { background: var(--surface); border-radius: var(--radius-md);
-  padding: 24px 32px; min-height: calc(100vh - 32px); }
-.content h1 { font-size: 20px; font-weight: 600; margin-bottom: 20px; }
-.content h2 { font-size: 16px; font-weight: 600; margin: 20px 0 8px; }
-.para { margin-bottom: 12px; color: var(--text); }
+  padding: 24px 32px; min-height: calc(100vh - 88px); }
+.content-header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+.content-header h1 { font-size: 20px; font-weight: 600; margin: 0; }
+.content .para { margin-bottom: 12px; color: var(--text); }
+.content h2 { font-size: 16px; font-weight: 600; margin: 24px 0 10px; display: flex; align-items: center; gap: 8px; }
+.content h2::before { content: ''; width: 3px; height: 14px; background: var(--primary); border-radius: 2px; display: inline-block; }
+
+/* 统计卡片 */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px; margin-bottom: 24px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 14px 16px; }
+.stat-card .stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.stat-card .stat-value { font-size: 24px; font-weight: 700; }
+.stat-card .stat-value.green { color: var(--success); }
+.stat-card .stat-value.red { color: var(--danger); }
+.stat-card .stat-value.blue { color: var(--primary); }
+.stat-card .stat-sub { font-size: 12px; color: var(--text-secondary); }
+
+/* 表格 */
 table { width: 100%; border-collapse: collapse; margin: 12px 0 24px;
   font-size: 13px; table-layout: fixed; }
 th { background: var(--surface-muted); color: var(--text-secondary); text-align: left;
-  padding: 8px 12px; border-bottom: 1px solid var(--border); font-weight: 500;
-  white-space: nowrap; }
-td { padding: 8px 12px; border-bottom: 1px solid var(--border); word-break: break-all; }
+  padding: 8px 12px; border-bottom: 1px solid var(--border); font-weight: 500; white-space: nowrap; }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); word-break: break-all;
+  font-size: 12px; }
 tr:nth-child(even) { background: var(--surface-muted); }
 tr:hover { background: var(--primary-soft); }
 td.mono, th.mono { font-family: JetBrains Mono, Menlo, monospace; }
-table td:first-child { width: 40px; text-align: center; }
-table td:nth-child(2) { min-width: 90px; }
+table td:first-child { width: 36px; text-align: center; }
+table td.col-factor { min-width: 110px; max-width: 160px; }
+table td.col-source { min-width: 140px; max-width: 220px; }
+table td.col-method { min-width: 80px; }
+.table-wrap { overflow-x: auto; }
 
-/* 右栏 依据 */
+/* 依据侧栏 */
 .evidence { background: var(--surface-muted); border-radius: var(--radius-md);
-  padding: 16px; height: calc(100vh - 32px); overflow-y: auto; position: sticky; top: 16px; }
-.evidence h2 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+  padding: 16px; height: calc(100vh - 88px); overflow-y: auto; position: sticky; top: 72px; }
+.evidence h2 { font-size: 13px; color: var(--text-muted); font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+.ev-group { font-size: 12px; color: var(--text-secondary); font-weight: 500;
+  margin: 12px 0 8px; display: flex; align-items: center; gap: 6px; }
 .ev-item { background: var(--surface); border-radius: var(--radius-sm);
-  padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); }
+  padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-left: 3px solid var(--primary); }
+.ev-item.design { border-left-color: var(--tertiary); }
 .ev-judgement { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
 .ev-basis { font-size: 12px; color: var(--text-secondary); }
+.ev-clause { margin-top: 6px; font-size: 12px; color: var(--text-muted);
+  background: var(--surface-muted); border-radius: var(--radius-sm); padding: 6px 8px; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius-sm);
-  font-size: 12px; font-weight: 500; }
+  font-size: 11px; font-weight: 600; white-space: nowrap; }
 .badge-standard { background: var(--primary-soft); color: var(--primary-strong); }
-.badge-design { background: var(--surface-muted); color: #475569; }
+.badge-design { background: #FEF3C7; color: #B45309; }
 .badge-success { background: #DCFCE7; color: #15803D; }
 .badge-danger { background: #FEE2E2; color: #B91C1C; }
+.badge-gray { background: var(--surface-muted); color: var(--text-secondary); }
+.ev-legend { font-size: 11px; color: var(--text-muted); margin-top: 16px;
+  padding-top: 12px; border-top: 1px solid var(--border); }
 .ev-loading { color: var(--text-muted); font-size: 13px; }
+
+/* 按钮 */
+.btn { display: inline-flex; align-items: center; gap: 6px; border: none;
+  border-radius: var(--radius-md); padding: 7px 14px; font-size: 13px; cursor: pointer;
+  font-family: inherit; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-strong); }
+.btn-secondary { background: var(--surface-muted); color: var(--text); }
+.btn-secondary:hover { background: var(--border); }
+
+/* 环形(合格率) */
+.donut-wrap { display:flex; align-items:center; gap:6px; }
+.donut { width: 56px; height: 56px; border-radius: 50%; position: relative; flex-shrink:0; }
+.donut-center { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size: 15px; font-weight: 700; }
 </style>
 </head>
 <body>
+<!-- 顶部导航 -->
+<div class="topbar">
+  <div class="brand"><div class="brand-logo">预</div><span>职业病危害预评价报告工作台</span></div>
+  <div class="project-name">{{ project['name'] }}</div>
+  <span class="badge badge-gray mono">{{ project['industry'] }}</span>
+  <span class="badge badge-standard" id="riskBadge">加载中</span>
+</div>
+
 <div class="layout">
   <!-- 左栏: 章节树 -->
   <div class="nav-tree">
@@ -82,73 +157,126 @@ table td:nth-child(2) { min-width: 90px; }
       <div class="nav-item{% if s['id'] == '10.2.5' %} active{% endif %}"
            onclick="loadSection('{{ s['id'] }}')" data-sec="{{ s['id'] }}">
         <span class="dot green"></span>
+        <span class="sec-no">{{ s['id'] }}</span>
         <span>{{ s['title'] }}</span>
       </div>
       {% endfor %}
+    </div>
+    <div class="nav-card">
+      <div class="row"><span class="label">危害因素</span><span class="value mono" id="navHazards">—</span></div>
+      <div class="row"><span class="label">检测判定</span><span class="value mono" id="navJudgements">—</span></div>
+      <div class="row"><span class="label">风险分类</span><span class="value mono" id="navRisk">—</span></div>
+      <div class="row"><span class="label">作业分级</span><span class="value mono" id="navGrades">—</span></div>
     </div>
   </div>
 
   <!-- 中栏: 内容 -->
   <div class="content" id="content">
-    <h1>加载中…</h1>
+    <div class="content-header"><h1>加载中…</h1></div>
   </div>
 
   <!-- 右栏: 依据 -->
   <div class="evidence" id="evidence">
-    <h2>依据侧栏</h2>
+    <h2>依据侧栏 · 为什么这么判</h2>
     <div class="ev-loading">选择章节后显示依据…</div>
+    <div class="ev-legend">
+      <span class="badge badge-standard">标准依据</span> 有标准条款支撑<br>
+      <span class="badge badge-design">设计建议</span> 权重/阈值为设计值, 需人工核对
+    </div>
   </div>
 </div>
 
 <script>
 const pid = "{{ pid }}";
-const SEC = "{{ sections[0]['id'] if sections else '10.2.5' }}";
+const SEC = "10.2.5";
 let currentSec = SEC;
+let overview = null;
+
+async function loadOverview() {
+  const r = await fetch(`/api/projects/${pid}/overview`);
+  overview = await r.json();
+  document.getElementById('navHazards').textContent = overview.hazard_count;
+  document.getElementById('navJudgements').textContent = overview.judgement_count;
+  document.getElementById('navGrades').textContent = overview.grade_count;
+  document.getElementById('navRisk').textContent = overview.risk_level;
+  const rb = document.getElementById('riskBadge');
+  rb.textContent = `风险分类: ${overview.risk_level}`;
+}
+
+function statCards(d) {
+  let s = '';
+  if (overview) {
+    s += `<div class="stats">
+      <div class="stat-card"><div class="stat-label">危害因素</div>
+        <div class="stat-value blue">${overview.hazard_count}</div>
+        <div class="stat-sub">识别引擎从设备/物料/工艺</div></div>
+      <div class="stat-card"><div class="stat-label">检测判定</div>
+        <div class="stat-value ${overview.failed ? 'red' : 'green'}">${overview.failed ? '不合格' : '合格'}</div>
+        <div class="stat-sub">${overview.passed}/${overview.judgement_count} 项达标</div></div>
+      <div class="stat-card"><div class="stat-label">作业分级</div>
+        <div class="stat-value blue">${overview.grade_count}</div>
+        <div class="stat-sub">GBZ/T 229.1-3</div></div>
+      <div class="stat-card"><div class="stat-label">职业病映射</div>
+        <div class="stat-value blue">${overview.diseases}</div>
+        <div class="stat-sub">危害→可能职业病</div></div>
+    </div>`;
+  }
+  return s;
+}
 
 async function loadSection(sec) {
   currentSec = sec;
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.sec === sec);
   });
-  document.getElementById('content').innerHTML = '<h1>生成中…</h1>';
+  document.getElementById('content').innerHTML = '<div class="content-header"><h1>生成中…</h1></div>';
   document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">生成中…</div>';
   const r = await fetch(`/api/projects/${pid}/sections/${sec}`);
   const d = await r.json();
   // 内容
-  let html = `<h1>${d.title}</h1>`;
-  d.paragraphs.forEach((p, i) => {
-    html += `<p class="para">${p}</p>`;
-  });
+  let html = `<div class="content-header"><h1>${d.title}</h1>
+    <button class="btn btn-secondary" onclick="loadSection('${sec}')">↻ 重新生成</button></div>`;
+  html += statCards(d);
+  d.paragraphs.forEach((p, i) => { html += `<p class="para">${p}</p>`; });
   d.tables.forEach(t => {
-    html += `<h2>${t.name}</h2><table><thead><tr>`;
+    html += `<h2>${t.name}</h2><div class="table-wrap"><table><thead><tr>`;
     t.cols.forEach(c => html += `<th>${c}</th>`);
     html += `</tr></thead><tbody>`;
     t.rows.forEach(row => {
-      html += '<tr>' + row.map(c => `<td class="mono">${c}</td>`).join('') + '</tr>';
+      html += '<tr>' + row.map((c, ci) => {
+        // 列类: ci=1 危害因素 / ci=2 产生环节(source) / ci=4 方法
+        const cls = ci === 1 ? 'col-factor' : (ci === 2 ? 'col-source' : (ci >= 4 ? 'col-method' : ''));
+        return `<td class="mono ${cls}">${c}</td>`;
+      }).join('') + '</tr>';
     });
-    html += `</tbody></table>`;
+    html += `</tbody></table></div>`;
   });
   if (!d.tables.length) html += '<p style="color:var(--text-muted)">本节暂无表格(数据槽待填充)</p>';
   document.getElementById('content').innerHTML = html;
-  // 依据
-  let ev = '<h2>依据侧栏</h2>';
+  // 依据 (分组: standard / design)
+  let ev = '<h2>依据侧栏 · 为什么这么判</h2>';
+  const std = (d.evidence || []).filter(e => e.basis_type === 'standard');
+  const des = (d.evidence || []).filter(e => e.basis_type === 'design');
   if (d.evidence && d.evidence.length) {
-    d.evidence.forEach(e => {
-      const badge = e.basis_type === 'standard' ? 'badge-standard' : 'badge-design';
-      const label = e.basis_type === 'standard' ? '标准依据' : '设计建议';
-      ev += `<div class="ev-item">
+    const renderGroup = (title, items, design) => items.map(e => `
+      <div class="ev-item ${design ? 'design' : ''}">
         <div class="ev-judgement">${e.judgement}</div>
-        <div class="ev-basis"><span class="badge ${badge}">${label}</span>
+        <div class="ev-basis"><span class="badge ${design ? 'badge-design' : 'badge-standard'}">${design ? '设计建议' : '标准依据'}</span>
           <span class="mono">${e.basis}</span></div>
-        <div class="ev-basis" style="margin-top:4px;color:var(--text-muted)">${e.text || ''}</div>
-      </div>`;
-    });
+        ${e.text ? `<div class="ev-clause">${e.text}</div>` : ''}
+      </div>`).join('');
+    if (std.length) ev += `<div class="ev-group">▍标准依据 (${std.length})</div>` + renderGroup('', std);
+    if (des.length) ev += `<div class="ev-group">▍设计建议 (${des.length})</div>` + renderGroup('', des, true);
   } else {
     ev += '<div class="ev-loading">本节暂无依据</div>';
   }
+  ev += `<div class="ev-legend">
+    <span class="badge badge-standard">标准依据</span> 有标准条款支撑<br>
+    <span class="badge badge-design">设计建议</span> 权重/阈值为设计值, 需人工核对</div>`;
   document.getElementById('evidence').innerHTML = ev;
 }
 
+loadOverview();
 loadSection(SEC);
 </script>
 </body>

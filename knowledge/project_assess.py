@@ -267,13 +267,19 @@ def assess_project(conn, project: dict) -> dict:
     risk = None
     ind = project.get("industry")
     if ind:
-        # risk_category 用 4 位码 (C261) → 兼容 261/C261
-        r = conn.execute(
-            "SELECT industry_code, industry_name, risk_level FROM risk_category "
-            "WHERE industry_code=? OR industry_code=?",
-            (ind, ind[1:] if ind.startswith("C") else ind)).fetchone()
-        if r:
-            risk = {"code": r[0], "name": r[1], "level": r[2]}
+        # risk_category 存 C261 格式 → 兼容输入 261 / C261 / 0261
+        candidates = {ind}
+        if ind.isdigit() and len(ind) in (3, 4):
+            candidates.add("C" + ind[-3:])
+        if ind.startswith("C"):
+            candidates.add(ind[1:])  # C261 → 261 (保底)
+        for cand in candidates:
+            r = conn.execute(
+                "SELECT industry_code, industry_name, risk_level FROM risk_category "
+                "WHERE industry_code=?", (cand,)).fetchone()
+            if r:
+                risk = {"code": r[0], "name": r[1], "level": r[2]}
+                break
     chain = industry_chain(conn, ind) if ind else None
     # 2) 危害识别
     hazards = identify_hazards(conn, project.get("equipment", []),
