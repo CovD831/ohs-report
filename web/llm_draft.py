@@ -24,19 +24,17 @@ from knowledge.project_assess import assess_project  # noqa: E402
 from knowledge.oel import connect  # noqa: E402
 from web.projects_db import get_project  # noqa: E402
 
-BASE = "https://api.deepseek.com/v1/chat/completions"
+BASE = os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1/chat/completions")
+MODEL = os.environ.get("LLM_MODEL", "stealth/ox-alpha")
 
 
 def _llm(prompt: str, system: str = "你是职业卫生评价专家, 撰写正式的职业病危害预评价报告文字。") -> str:
-    """调用 DeepSeek"""
-    env = Path("/Users/abaaba/.hermes/.env")
-    key = ""
-    for ln in env.read_text().splitlines():
-        if ln.startswith("DEEPSEEK_API_KEY="):
-            key = ln.split("=", 1)[1].strip()
-            break
+    """调用 LLM (OpenRouter, key 从环境变量)"""
+    key = os.environ.get("OPENROUTER_API_KEY") or _load_env_key("OPENROUTER_API_KEY")
+    if not key:
+        raise RuntimeError("OPENROUTER_API_KEY 未配置")
     req = urllib.request.Request(BASE, data=json.dumps({
-        "model": "deepseek-chat",
+        "model": MODEL,
         "messages": [{"role": "system", "content": system},
                      {"role": "user", "content": prompt}],
         "temperature": 0.3,
@@ -45,6 +43,17 @@ def _llm(prompt: str, system: str = "你是职业卫生评价专家, 撰写正�
     with urllib.request.urlopen(req, timeout=120) as r:
         d = json.loads(r.read())
     return d["choices"][0]["message"]["content"]
+
+
+def _load_env_key(name: str) -> str:
+    """从项目根 .env 读 key (部署机) — 本机开发回退 hermes .env"""
+    for cand in (Path(__file__).resolve().parent.parent / ".env",
+                 Path("/Users/abaaba/.hermes/.env")):
+        if cand.exists():
+            for ln in cand.read_text().splitlines():
+                if ln.startswith(name + "="):
+                    return ln.split("=", 1)[1].strip()
+    return ""
 
 
 def _build_info(project: dict, assess: dict) -> str:

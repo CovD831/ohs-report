@@ -10,12 +10,14 @@
 运行: .venv/bin/uvicorn web.app:app --reload --port 8000
 """
 import json
+import os
+import re
 import sqlite3
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 
 from knowledge.evidence_engine import evidence_for_section  # noqa: E402
@@ -30,11 +32,42 @@ TEMPLATES = Path(__file__).resolve().parent.parent / "web" / "templates"
 
 app = FastAPI(title="职业病危害预评价报告工作台")
 env = Environment(loader=FileSystemLoader(str(TEMPLATES)), autoescape=True)
-# 静态文件 (导出的 docx)
-app.mount("/data", StaticFiles(directory=str(ROOT / "data")), name="data")
+# 演示数据只能通过显式环境变量开启，生产环境默认关闭。
+if os.getenv("SEED_DEMO", "").lower() in {"1", "true", "yes"}:
+    seed_demo()
 
-# 首次启动植入演示项目
-seed_demo()
+# 用户认证 + 审计 (多人使用基础设施)
+from web import auth as _auth  # noqa: E402
+
+_auth.init_users()
+_sessions: dict[str, dict] = {}  # token -> user info
+
+
+def _current_user(request: Request) -> dict | None:
+    tok = request.cookies.get("ohs_session")
+    if not tok:
+        return None
+    if tok in _sessions:
+        return _sessions[tok]
+    u = _auth.parse_token(tok)
+    if u:
+        _sessions[tok] = u
+    return u
+
+
+@app.middleware("http")
+async def audit_middleware(request: Request, call_next):
+    """审计: 记录所有 API 请求 (谁/何时/什么/结果/耗时); 页面与登录放行"""
+    start = time.time()
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/") or path.startswith("/projects/") or path == "/":
+        user = _current_user(request)
+        _auth.audit(user["username"] if user else "-",
+                    request.method, path, response.status_code,
+                    request.client.host if request.client else "-",
+                    int((time.time() - start) * 1000))
+    return response
 
 _cache = {}
 
@@ -55,7 +88,7 @@ def _get_project_data(pid: str) -> dict:
     }
 
 
-def _get_assess(pid: str = "demo-cx") -> dict:
+def _get_assess(pid: str) -> dict:
     """评估结果缓存 (项目数据变化时失效)"""
     key = f"assess:{pid}"
     if key not in _cache:
@@ -65,14 +98,136 @@ def _get_assess(pid: str = "demo-cx") -> dict:
     return _cache[key]
 
 
+@app.get("/login", response_class=HTMLResponse)
+def login_page():
+    return env.get_template("login.html").render()
+
+
+@app.post("/login")
+async def login(request: Request):
+    form = await request.form()
+    u = _auth.verify_user(str(form.get("username", "")), str(form.get("password", "")))
+    if not u:
+        return env.get_template("login.html").render(error="用户名或密码错误")
+    tok = _auth.make_token(u["username"])
+    _sessions[tok] = u
+    resp = HTMLResponse('<script>location.href="/"</script>')
+    resp.set_cookie("ohs_session", tok, max_age=7 * 86400, httponly=True, samesite="lax")
+    return resp
+
+
+@app.get("/logout")
+def logout():
+    return HTMLResponse('<script>location.href="/login"</script>').set_cookie(
+        "ohs_session", "", max_age=0)
+
+
+def _require_login(request: Request) -> dict | None:
+    """页面保护: 未登录返回 None (路由里跳转登录)"""
+    return _current_user(request)
+
+
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request):
+def index_page(request: Request):
+    user = _require_login(request)
+    if not user:
+        return HTMLResponse('<script>location.href="/login"</script>')
     projects = list_projects()
-    return env.get_template("index.html").render(projects=projects)
+    return env.get_template("index.html").render(projects=projects, user=user)
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request):
+    """管理后台: 审计日志 + 用户管理 (仅admin)"""
+    user = _require_login(request)
+    if not user or not user.get("is_admin"):
+        return HTMLResponse("需要管理员权限", status_code=403)
+    rows = _auth.query_audit(300)
+    users = _auth.list_users()
+    trs = "".join(
+        f"<tr><td>{r['ts']}</td><td>{r['user']}</td><td>{r['method']}</td>"
+        f"<td class='mono'>{r['path'][:60]}</td><td>{r['status']}</td>"
+        f"<td>{r['ip']}</td><td>{r['duration_ms']}ms</td></tr>"
+        for r in rows)
+    urows = "".join(
+        f"<tr><td>{u['username']}</td><td>{'管理员' if u['is_admin'] else '用户'}</td>"
+        f"<td>{u['created']}</td>"
+        f"<td><button onclick=\"delUser('{u['username']}')\">删除</button></td></tr>"
+        for u in users)
+    return HTMLResponse(f"""<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
+<title>管理后台</title><style>
+body {{ font-family: -apple-system,'PingFang SC',sans-serif; margin: 24px; background:#F9FAFB; }}
+h1 {{ font-size:20px; }} h2 {{ font-size:15px; margin:28px 0 10px; }}
+table {{ border-collapse: collapse; width:100%; background:#fff; font-size:12.5px; }}
+th,td {{ border:1px solid #E5E7EB; padding:6px 10px; text-align:left; }}
+th {{ background:#F3F4F6; }}
+.mono {{ font-family: ui-monospace,monospace; }}
+button {{ border:1px solid #d1d5db; background:#fff; border-radius:6px; padding:2px 10px; cursor:pointer; }}
+.add {{ margin:10px 0; }} .add input {{ padding:6px 10px; border:1px solid #d1d5db; border-radius:6px; }}
+.add button {{ padding:7px 16px; background:#2563EB; color:#fff; border:none; }}
+.out {{ float:right; }}
+</style></head><body>
+<h1>管理后台 <a class="out" href="/">← 返回工作台</a></h1>
+<h2>用户</h2>
+<div class="add">
+  <input id="nu" placeholder="用户名"><input id="np" placeholder="密码" type="password">
+  <label><input type="checkbox" id="na"> 管理员</label>
+  <button onclick="addUser()">添加用户</button>
+</div>
+<table><tr><th>用户名</th><th>角色</th><th>创建时间</th><th></th></tr>{urows}</table>
+<h2>使用记录 (最近300条)</h2>
+<table><tr><th>时间</th><th>用户</th><th>方法</th><th>路径</th><th>状态</th><th>IP</th><th>耗时</th></tr>
+{trs}</table>
+<script>
+async function addUser() {{
+  const r = await fetch('/api/admin/users', {{method:'POST',
+    headers:{{'Content-Type':'application/json'}},
+    body: JSON.stringify({{username: nu.value, password: np.value, is_admin: na.checked}})}});
+  if ((await r.json()).ok) location.reload(); else alert('添加失败(可能重名)');
+}}
+async function delUser(u) {{
+  if (!confirm('删除 ' + u + '?')) return;
+  await fetch('/api/admin/users/' + u, {{method:'DELETE'}});
+  location.reload();
+}}
+</script></body></html>""")
+
+
+@app.post("/api/admin/users", response_class=JSONResponse)
+async def api_add_user(request: Request):
+    user = _current_user(request)
+    if not user or not user.get("is_admin"):
+        return JSONResponse({"ok": False}, status_code=403)
+    try:
+        body = json.loads(await request.body())
+        ok = _auth.create_user(str(body.get("username", "")), str(body.get("password", "")),
+                               bool(body.get("is_admin", False)))
+        return {"ok": ok}
+    except Exception:
+        return JSONResponse({"ok": False}, status_code=400)
+
+
+@app.delete("/api/admin/users/{username}", response_class=JSONResponse)
+def api_del_user(username: str, request: Request):
+    user = _current_user(request)
+    if not user or not user.get("is_admin"):
+        return JSONResponse({"ok": False}, status_code=403)
+    return {"ok": _auth.delete_user(username)}
+
+
+@app.get("/api/admin/audit", response_class=JSONResponse)
+def api_audit(request: Request, limit: int = 200, user: str | None = None):
+    me = _current_user(request)
+    if not me or not me.get("is_admin"):
+        return JSONResponse([], status_code=403)
+    return _auth.query_audit(limit, user)
 
 
 @app.get("/projects/{pid}", response_class=HTMLResponse)
 def project_page(request: Request, pid: str):
+    user = _require_login(request)
+    if not user:
+        return HTMLResponse('<script>location.href="/login"</script>')
     p = get_project(pid)
     if not p:
         return HTMLResponse("项目不存在", status_code=404)
@@ -92,8 +247,14 @@ async def api_upload(pid: str, cat: str, file: UploadFile):
     p = get_project(pid)
     if not p:
         return JSONResponse({"error": "not found"}, status_code=404)
-    content = await file.read()
-    r = save_upload(pid, cat, file.filename or "unnamed", content)
+    from web.uploads import MAX_UPLOAD_BYTES
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        return JSONResponse({"error": "文件不能超过 20 MB"}, status_code=413)
+    try:
+        r = save_upload(pid, cat, file.filename or "unnamed", content)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
     return {"ok": True, "name": r["name"], "size": r["size"], "category": r["category"]}
 
 
@@ -101,6 +262,8 @@ async def api_upload(pid: str, cat: str, file: UploadFile):
 def api_project_materials(pid: str):
     """项目已上传材料 (按类别)"""
     from web.uploads import list_materials, CATEGORIES
+    if not get_project(pid):
+        return JSONResponse({"error": "not found"}, status_code=404)
     files = list_materials(pid)
     # 按类别组织
     by_cat = {c["key"]: [] for c in CATEGORIES}
@@ -113,15 +276,13 @@ def api_project_materials(pid: str):
 
 @app.post("/api/projects", response_class=JSONResponse)
 def api_create_project(payload: dict):
-    """新建项目 (含 seed 材料复制)"""
-    from web.uploads import copy_seed_materials
+    """新建空白项目；材料由用户上传。"""
     name = payload.get("name", "未命名项目")
     industry = payload.get("industry", "")
     p = create_project(name, industry)
     if not p:
         return JSONResponse({"error": "create failed"}, status_code=500)
-    n = copy_seed_materials(p["id"])  # 复制模拟材料(演示)
-    return {"id": p["id"], "name": p["name"], "seed_materials": n}
+    return {"id": p["id"], "name": p["name"], "seed_materials": 0}
 
 
 @app.put("/api/projects/{pid}", response_class=JSONResponse)
@@ -156,18 +317,16 @@ def api_materials():
 def api_import_materials(pid: str):
     """从材料文件导入项目数据 (设备/检测/工艺) → 保存+缓存失效
     材料目录: 优先 data/materials/<pid>/, 否则 seed(data/materials归长兴)"""
-    from web.materials_import import import_materials
     from web.uploads import project_dir, list_materials
     p = get_project(pid)
     if not p:
         return JSONResponse({"error": "not found"}, status_code=404)
     # 项目专属材料目录存在 → 用项目材料
     pm_files = list_materials(pid)
-    if pm_files:
-        # 从项目材料目录解析 (简化: 用现有文件名匹配)
-        data = import_materials_from_dir(pid)
-    else:
-        data = import_materials()
+    if not pm_files:
+        return JSONResponse({"ok": False, "error": "请先上传项目材料"}, status_code=400)
+    # 只从当前项目材料解析，避免误读全局演示数据。
+    data = import_materials_from_dir(pid)
     dets = [d for d in data["detections"] if d.get("ctwa") is not None]
     merged = dict(p["data"])
     merged["equipment"] = data["equipment"]
@@ -234,10 +393,27 @@ def api_export(pid: str):
     return {"ok": True, "path": f"/data/report_{pid}.docx", "size": out.stat().st_size}
 
 
+@app.get("/data/{filename:path}")
+def report_file(filename: str):
+    """只允许下载生成的 Word 报告，禁止暴露数据库和上传材料。"""
+    if not re.fullmatch(r"report_[A-Za-z0-9_-]+\.docx", filename):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    target = ROOT / "data" / filename
+    if not target.is_file():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return FileResponse(
+        target,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=target.name,
+    )
+
+
 @app.get("/api/projects/{pid}/draft/{sec}", response_class=JSONResponse)
 def api_draft(pid: str, sec: str):
     """LLM 成文草稿 (10.2.3/10.2.5) — 数据来自机械结果, LLM组织语言"""
     from web.llm_draft import draft_section
+    if not get_project(pid):
+        return JSONResponse({"error": "not found"}, status_code=404)
     try:
         text = draft_section(pid, sec)
         return {"ok": True, "text": text}
@@ -257,7 +433,9 @@ def api_project_data(pid: str):
 @app.get("/api/projects/{pid}/overview", response_class=JSONResponse)
 def project_overview(pid: str):
     """项目总览 (统计卡片数据)"""
-    result = _get_assess()
+    if not get_project(pid):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    result = _get_assess(pid)
     hazards = result.get("hazards", [])
     judgements = result.get("judgements", [])
     passed = sum(1 for j in judgements if j.get("pass") is True)
@@ -312,6 +490,8 @@ def api_generate_sub(pid: str, sec: str, sub: str):
 def sub_section_content(pid: str, sec: str, sub: str):
     """二级小节内容 (1.1/2.1/3.1...)"""
     from knowledge.report_skeleton import sub_sections
+    if not get_project(pid):
+        return JSONResponse({"error": "not found"}, status_code=404)
     result = _get_assess(pid)
     subs = sub_sections(sec)
     if not any(s == sub for s, _ in subs):
@@ -346,6 +526,8 @@ def sub_section_content(pid: str, sec: str, sub: str):
 @app.get("/api/projects/{pid}/sections/{sec}", response_class=JSONResponse)
 def section_content(pid: str, sec: str):
     """章节内容 + 依据 (报告1-9编号; 数据槽填充)"""
+    if not get_project(pid):
+        return JSONResponse({"error": "not found"}, status_code=404)
     result = _get_assess(pid)
     sk = SECTION_SKELETON.get(sec)
     if not sk:
