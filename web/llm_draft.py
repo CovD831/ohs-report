@@ -347,7 +347,7 @@ def draft_section(pid: str, sec: str) -> str:
                "5": "10.2.11", "6": "10.2.12", "7": "10.2.1", "8": "10.2.3",
                "9": "10.2.4"}
     base_sec = map_sec.get(sec, sec)
-    if base_sec == "10.2.3" and sec == "1":
+    if base_sec == "10.2.3":
         prompt = build_1023_prompt(project, assess, info)
     elif base_sec == "10.2.5":
         prompt = build_1025_prompt(assess, info)
