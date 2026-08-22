@@ -145,6 +145,7 @@ def section_content(pid: str, sec: str):
     if not sk:
         return JSONResponse({"error": "unknown section"}, status_code=404)
     from web.section_filler import fill_section
+    from web.paragraph_gen import fill_section_paragraphs
     from knowledge.report_template import build_1025_section
     if sec == "10.2.5":
         built = build_1025_section(result)
@@ -152,7 +153,7 @@ def section_content(pid: str, sec: str):
         tables = built["tables"]
         ev_secs = ["10.2.5.3", "10.2.5.4"]
     else:
-        paragraphs = [p.format_map(_safe_vars(sec)) for p in sk["paragraphs"]]
+        paragraphs = fill_section_paragraphs(connect(), sec, result, sk["paragraphs"])
         tables = fill_section(connect(), sec, result)
         ev_secs = [sec]
     evidence = []

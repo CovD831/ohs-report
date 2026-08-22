@@ -41,18 +41,25 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         # 原辅材料 (识别结果里带 sources 的)
         mats = [h for h in assess.get("hazards", [])]
         if mats:
-            rows = [[i, h["factor"], "; ".join(h["sources"][:2]), "见识别表"] for i, h in enumerate(mats, 1)]
-            tables.append({"name": "主要原辅材料及危害", "cols": ["序号", "名称", "来源", "危害"], "rows": rows})
+            rows = [[i, h["factor"], "; ".join(h["sources"][:2]),
+                     h.get("hazard_element", "化学毒物")] for i, h in enumerate(mats, 1)]
+            tables.append({"name": "主要原辅材料及危害", "cols": ["序号", "名称", "来源", "危害类别"], "rows": rows})
         # 照明照度 (illumination_std)
         ill = conn.execute("SELECT room, plane, lx FROM illumination_std LIMIT 8").fetchall()
         if ill:
             rows = [[i, r[0], r[1], r[2]] for i, r in enumerate(ill, 1)]
             tables.append({"name": "照明照度标准", "cols": ["序号", "房间/场所", "参考面", "照度(lx)"], "rows": rows})
-        # 行业链
+        # 行业链 (gate/big/mid dict → 名称)
         chain = assess.get("industry_chain")
         if chain:
-            tables.append({"name": "行业链", "cols": ["层级", "名称"],
-                           "rows": [[k, v] for k, v in chain.items()][:6]})
+            rows = []
+            for lvl, info in chain.items():
+                if isinstance(info, dict) and "name" in info:
+                    rows.append([lvl, info["name"]])
+            # full 短语
+            if isinstance(chain.get("full"), str):
+                rows.append(["完整链", chain["full"]])
+            tables.append({"name": "行业链", "cols": ["层级", "名称"], "rows": rows[:5]})
         return tables
 
     if sec == "10.2.6":
