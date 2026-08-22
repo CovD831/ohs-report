@@ -348,13 +348,24 @@ async function loadSection(sec) {
   document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">生成中…</div>';
   const r = await fetch(`/api/projects/${pid}/sections/${sec}`);
   const d = await r.json();
+  // 章节状态
+  const st = ALL_STATES[sec] || {};
+  const isGen = st.state === 'generated';
   // 内容
   let html = `<div class="content-header"><h1>${d.title}</h1>
-    <span class="badge badge-gray" id="secStateBadge">机械结果(待确认)</span>
+    <span class="badge ${isGen ? 'badge-success' : 'badge-gray'}" id="secStateBadge">
+      ${isGen ? '✓ 已生成' : '机械结果(待确认)'}</span>
     <button class="btn btn-primary" style="margin-left:auto;" id="genBtn"
-      onclick="generateSection('${sec}')">⚡ 生成本页</button>
+      onclick="generateSection('${sec}')">${isGen ? '↻ 重新生成本页' : '⚡ 生成本页'}</button>
     <button class="btn btn-secondary" onclick="exportWord()">📄 导出Word</button></div>`;
   html += statCards(d);
+  // 已生成的 LLM 正文 (优先展示)
+  if (isGen && st.text) {
+    html += `<div style="background:#F9FAFB;border:1px solid var(--border);border-left:3px solid var(--success);border-radius:var(--radius-md);padding:16px;margin:0 0 16px;">
+      <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:8px;">📝 本书内容（已生成 · 数据来自机械结果, 可人工编辑）</div>
+      <div style="white-space:pre-wrap;font-size:13px;line-height:1.8;">${st.text.replace(/</g, '&lt;')}</div>
+    </div>`;
+  }
   // 10.2.13 格式节: 显示导出面板
   if (sec === '10.2.13') {
     html += `<div style="border:2px dashed var(--border);border-radius:var(--radius-md);padding:32px;text-align:center;margin:24px 0;">
