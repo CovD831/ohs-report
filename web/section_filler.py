@@ -82,20 +82,27 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                  "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]}]
 
     if sec == "10.2.8":
-        # PPE 建议 (危害→装备映射规则; hazards无ppe字段时用类别提示)
-        import sqlite3 as _sq
-        hz = assess.get("hazards", [])
-        # 类别→典型装备
-        cat_ppe = {"化学": "化学防护服/防毒面具", "粉尘": "防尘口罩(KN95+)",
-                   "噪声": "耳塞/耳罩(NRR≥20)", "高温": "隔热服/防护手套",
-                   "眼面": "防护眼镜/面屏", "物理": "防冲击眼镜"}
+        # PPE 建议 (岗位级: 从材料A2f 岗位→防护用品)
+        import csv
+        from pathlib import Path as _P
+        f = _P(__file__).resolve().parent.parent / "data" / "materials" / "A2f_防护措施.txt"
         rows = []
-        for i, h in enumerate(hz, 1):
-            cat = h.get("category", "")
-            ppe = cat_ppe.get(cat, "见GB 39800配备")
-            rows.append([i, h["factor"], ppe, "GB 39800.1—2020"])
-        return [{"name": "PPE配备建议表", "cols": ["序号", "危害因素", "防护装备", "标准"],
-                 "rows": rows}]
+        if f.exists():
+            for line in f.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("-") and "|" in line:
+                    parts = line.lstrip("- ").split("|")
+                    if len(parts) >= 2:
+                        rows.append([len(rows) + 1, parts[0].strip(), parts[1].strip(), "GB 39800.1—2020"])
+        if not rows:
+            # 类别兜底
+            cat_ppe = {"化学": "化学防护服/防毒面具", "粉尘": "防尘口罩(KN95+)",
+                       "噪声": "耳塞/耳罩(NRR≥20)", "高温": "隔热服/防护手套",
+                       "眼面": "防护眼镜/面屏", "物理": "防冲击眼镜"}
+            for i, h in enumerate(assess.get("hazards", []), 1):
+                rows.append([i, h["factor"], cat_ppe.get(h.get("category", ""), "见GB 39800配备"), "GB 39800.1—2020"])
+        return [{"name": "PPE配备建议表", "cols": ["序号", "岗位/危害", "防护装备", "标准"],
+                 "rows": rows[:80]}]
 
     if sec == "10.2.9":
         tables = []
@@ -129,7 +136,9 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         return [{"name": "结论要素表", "cols": ["序号", "结论要素", "结论"], "rows": rows}]
 
     if sec == "10.2.2":
-        # 现有企业概况 (用户输入类: 提供字段清单表, 待填)
+        # 现有企业概况 (用户输入类: 提供字段清单表, 待填) + 定员表(材料A2d)
+        import csv
+        from pathlib import Path as _P
         fields = [("建厂时间", "date", "必填"), ("所属行业", "text", "必填"),
                   ("企业规模", "select", "必填"), ("职工人数", "int", "必填"),
                   ("生产工人数", "int", "必填"), ("接触人数", "int", "必填"),
@@ -139,8 +148,21 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                   ("健康监护情况", "bool", "必填"), ("发病处置", "text", "选填")]
         rows = [[i, f[0], f[1], ("必填" if f[2] == "必填" else "选填")]
                 for i, f in enumerate(fields, 1)]
-        return [{"name": "现有企业概况采集表", "cols": ["序号", "字段", "类型", "必填"],
-                 "rows": rows}]
+        tables = [{"name": "现有企业概况采集表", "cols": ["序号", "字段", "类型", "必填"],
+                   "rows": rows}]
+        # 劳动定员表 (A2d)
+        f2 = _P(__file__).resolve().parent.parent / "data" / "materials" / "A2d_劳动定员表.csv"
+        if f2.exists():
+            try:
+                with open(f2, encoding="utf-8-sig") as fh:
+                    d_rows = list(csv.DictReader(fh))
+                if d_rows:
+                    tables.append({"name": "劳动定员表", "cols": ["序号", "车间", "工种", "人数", "工作内容"],
+                                   "rows": [[i, r.get("车间", ""), r.get("工种", ""), r.get("人数", ""),
+                                             r.get("工作内容", "")] for i, r in enumerate(d_rows, 1)]})
+            except Exception:
+                pass
+        return tables
 
     if sec == "10.2.4":
         # 类比调查 (用户输入类: 9要素清单)
