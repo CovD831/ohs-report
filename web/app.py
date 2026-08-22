@@ -154,22 +154,62 @@ def api_materials():
 
 @app.post("/api/projects/{pid}/import-materials", response_class=JSONResponse)
 def api_import_materials(pid: str):
-    """从材料文件导入项目数据 (设备/检测/工艺) → 保存+缓存失效"""
+    """从材料文件导入项目数据 (设备/检测/工艺) → 保存+缓存失效
+    材料目录: 优先 data/materials/<pid>/, 否则 seed(data/materials归长兴)"""
     from web.materials_import import import_materials
+    from web.uploads import project_dir, list_materials
     p = get_project(pid)
     if not p:
         return JSONResponse({"error": "not found"}, status_code=404)
-    data = import_materials()
-    # 全量: 设备315台 + 化学检测全部
+    # 项目专属材料目录存在 → 用项目材料
+    pm_files = list_materials(pid)
+    if pm_files:
+        # 从项目材料目录解析 (简化: 用现有文件名匹配)
+        data = import_materials_from_dir(pid)
+    else:
+        data = import_materials()
     dets = [d for d in data["detections"] if d.get("ctwa") is not None]
     merged = dict(p["data"])
-    merged["equipment"] = data["equipment"]  # 全量
+    merged["equipment"] = data["equipment"]
     merged["detections"] = dets
     merged["process_text"] = data["process_text"]
     update_project(pid, p["name"], merged)
     _cache.pop(f"assess:{pid}", None)
     return {"ok": True, "equipment": len(merged["equipment"]),
-            "detections": len(dets), "materials": data["material_count"]}
+            "detections": len(dets), "materials": data.get("material_count", 0)}
+
+
+def import_materials_from_dir(pid: str) -> dict:
+    """从项目材料目录导入 (浦发验证: materials_pf/)"""
+    import csv
+    from web.uploads import project_dir
+    pd = project_dir(pid)
+    # 搜索材料文件 (递归)
+    eq, dets = [], []
+    proc = ""
+    for f in pd.rglob("*"):
+        if not f.is_file():
+            continue
+        name = f.name
+        if "设备" in name:
+            with open(f, encoding="utf-8-sig", errors="ignore") as fh:
+                for row in csv.DictReader(fh):
+                    n = (row.get("设备名称") or "").strip()
+                    if n:
+                        eq.append(n)
+        if "检测" in name and f.suffix == ".csv":
+            with open(f, encoding="utf-8-sig", errors="ignore") as fh:
+                for row in csv.DictReader(fh):
+                    fac = (row.get("危害因素") or "").strip()
+                    ctwa = (row.get("CTWA") or "").strip()
+                    if fac and ctwa:
+                        try:
+                            dets.append({"factor": fac, "ctwa": float(ctwa)})
+                        except ValueError:
+                            dets.append({"factor": fac, "ctwa": None})
+        if "工艺" in name:
+            proc = f.read_text(encoding="utf-8", errors="ignore")
+    return {"equipment": eq, "detections": dets, "process_text": proc, "material_count": len(eq)}
 
 
 @app.get("/api/projects/{pid}/export", response_class=JSONResponse)
