@@ -434,7 +434,16 @@ async function loadSubSection(sec, sub) {
   content.innerHTML = '<div class="content-header"><h1>生成中…</h1></div>';
   const r = await fetch(`/api/projects/${pid}/sections/${sec}/${sub}`);
   const d = await r.json();
-  let html = `<div class="content-header"><h1>${d.title}</h1></div>`;
+  const st = ALL_STATES[sub] || {};
+  const isGen = st.state === 'generated';
+  let html = `<div class="content-header"><h1>${d.title}</h1>
+    <span class="badge ${isGen ? 'badge-success' : 'badge-gray'}">${isGen ? '✓ 已生成' : '机械结果(待确认)'}</span>
+    <button class="btn btn-primary" style="margin-left:auto;" onclick="generateSub('${sec}','${sub}')">⚡ 生成本页</button></div>`;
+  if (isGen && st.text) {
+    html += `<div style="background:#F9FAFB;border:1px solid var(--border);border-left:3px solid var(--success);border-radius:var(--radius-md);padding:16px;margin:0 0 16px;">
+      <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:8px;">📝 本书内容（已生成 · 数据来自机械结果）</div>
+      <div style="white-space:pre-wrap;font-size:13px;line-height:1.8;">${st.text.replace(/</g, '&lt;')}</div></div>`;
+  }
   d.paragraphs.forEach((p, i) => { html += `<p class="para">${p}</p>`; });
   d.tables.forEach(t => {
     html += `<h2>${t.name}</h2><div class="table-wrap"><table><thead><tr>`;
@@ -450,6 +459,15 @@ async function loadSubSection(sec, sub) {
   });
   content.innerHTML = html;
   document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">小节内容加载自一级章节, 依据见上级</div>';
+}
+
+async function generateSub(sec, sub) {
+  const r = await fetch(`/api/projects/${pid}/sections/${sec}/${sub}/generate`, { method: 'POST' });
+  const d = await r.json();
+  if (d.ok) {
+    ALL_STATES[sub] = { state: 'generated', text: d.text };
+    loadSubSection(sec, sub);
+  } else alert(d.error || '生成失败');
 }
 
 let ALL_STATES = {};

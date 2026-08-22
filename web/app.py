@@ -252,6 +252,22 @@ def api_generate_section(pid: str, sec: str):
     return {"ok": True, "text": text}
 
 
+@app.post("/api/projects/{pid}/sections/{sec}/{sub}/generate", response_class=JSONResponse)
+def api_generate_sub(pid: str, sec: str, sub: str):
+    """生成本小节: LLM成文 → 保存状态"""
+    from web.llm_draft import draft_sub
+    from web.projects_db import update_section_state
+    p = get_project(pid)
+    if not p:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        text = draft_sub(pid, sec, sub)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    update_section_state(pid, sub, "generated", text)
+    return {"ok": True, "text": text}
+
+
 @app.get("/api/projects/{pid}/sections/{sec}/{sub}", response_class=JSONResponse)
 def sub_section_content(pid: str, sec: str, sub: str):
     """二级小节内容 (1.1/2.1/3.1...)"""
