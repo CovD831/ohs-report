@@ -6,6 +6,7 @@
 内容: 生成的章节 (paragraph_gen+fill_section+advice_gen) → docx
 用法: python3 -m web.word_export <project_id> [output.docx]
 """
+import json
 import sys
 from pathlib import Path
 
@@ -49,13 +50,35 @@ def _para(doc, text: str, font=FANGSONG, size=14, bold=False, align=None, indent
 
 
 def add_toc(doc: Document):
-    """目录页 (手动生成: 章节编号+标题, 无页码)"""
+    """目录页 (两级: 章 + 小节; 三级单元为小节内容)"""
+    from knowledge.report_skeleton import sub_sections
     _para(doc, "目  录", HEI, 16, True, WD_ALIGN_PARAGRAPH.CENTER)
     for sec, sk in SECTION_SKELETON.items():
-        if sec == "10.2.13":
-            continue
-        _para(doc, f"{sec}  {sk['title']}", FANGSONG, 13)
+        _para(doc, f"{sec}  {sk['title']}", FANGSONG, 13, True)
+        for sub, st in sub_sections(sec):
+            _para(doc, f"{sub}  {st}", FANGSONG, 12, False, indent=0.74)
     doc.add_page_break()
+
+
+def _heading(doc, text: str, level: int = 1):
+    """带大纲级别的标题 (Word 导航窗格/自动目录可用)"""
+    h = doc.add_heading(text, level=level)
+    for r in h.runs:
+        _set_font(r, HEI, {1: 16, 2: 14, 3: 13}.get(level, 13), True)
+    return h
+
+
+def add_units_section(doc, units: list[dict]):
+    """三级单元 (物质深文等) — 小节内标题+内容"""
+    for u in units:
+        if u.get("deep"):
+            _heading(doc, u["title"], 3)
+            for line in u["deep"].split("\n"):
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    _para(doc, line, FANGSONG, 14, indent=0.74)
+        else:
+            _para(doc, u["text"], FANGSONG, 14, indent=0.74)
 
 
 def export_docx(project: dict, assess: dict, out_path: Path, section_states: dict | None = None):
@@ -80,60 +103,86 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
     # 目录
     add_toc(doc)
 
-    # 各章节
+    # 各章节 (按小节组织)
+    from knowledge.report_skeleton import sub_sections
+    from web.subsection_gen import build_subsection
+    from web.unit_gen import build_units
     for sec, sk in SECTION_SKELETON.items():
-        if sec in ("10.2.13",):
+        _heading(doc, f"{sec}  {sk['title']}", 1)
+        subs = sub_sections(sec)
+        if not subs:
+            # 无小节: 章级内容
+            generated = (section_states or {}).get(sec, {}).get("text", "")
+            if generated:
+                for line in generated.split("\n"):
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        _para(doc, line, FANGSONG, 14, indent=0.74)
+            tables = fill_section(conn, sec, assess)
+            _write_tables(doc, tables)
             continue
-        _para(doc, f"{sec}  {sk['title']}", HEI, 16, True)
-        # 段落: 优先 LLM 生成正文, 否则机械模板句
-        generated = (section_states or {}).get(sec, {}).get("text", "")
-        tables = None
-        if generated:
-            # LLM 正文 → 分段写入
-            for line in generated.split("\n"):
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    _para(doc, line, FANGSONG, 14, indent=0.74)
-        else:
-            if sec == "10.2.11":
-                built = fill_10211(conn, assess)
-                paras = built["paragraphs"]
-                tables = built["tables"]
-            else:
-                paras = gen_paragraphs(conn, sec, assess)
-            for p in paras:
+        for sub, st in subs:
+            _heading(doc, f"{sub}  {st}", 2)
+            # 小节内容 (段落+表格+单元深文)
+            built = build_subsection(conn, sec, sub, assess)
+            for p in built["paragraphs"]:
                 _para(doc, p, FANGSONG, 14, indent=0.74)
-        # 表格
-        if tables is None:
-            if sec == "10.2.11":
-                built = fill_10211(conn, assess)
-                tables = built["tables"]
-            else:
-                tables = fill_section(conn, sec, assess)
-        for t in tables:
-            if not t["rows"]:
-                continue
-            dt = doc.add_table(rows=1, cols=len(t["cols"]))
-            dt.style = "Table Grid"
-            dt.alignment = WD_TABLE_ALIGNMENT.CENTER
-            for i, c in enumerate(t["cols"]):
-                cell = dt.rows[0].cells[i]
-                cell.text = ""
-                r = cell.paragraphs[0].add_run(c)
-                _set_font(r, SONG, 10.5, True)
-            for row in t["rows"]:
-                cells = dt.add_row().cells
-                for i, v in enumerate(row):
-                    if i >= len(cells):
-                        break
-                    cells[i].text = ""
-                    r = cells[i].paragraphs[0].add_run(str(v))
-                    _set_font(r, SONG, 10.5)
-            doc.add_paragraph()
+            # 小节 LLM 正文 (section_states[sub])
+            generated = (section_states or {}).get(sub, {}).get("text", "")
+            if generated:
+                for line in generated.split("\n"):
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        _para(doc, line, FANGSONG, 14, indent=0.74)
+            _write_tables(doc, built["tables"])
+            # 三级单元 (物质深文)
+            units = build_units(sec, sub, {"name": project.get("name", ""),
+                                           "equipment": project.get("equipment", []),
+                                           "process_text": project.get("process_text", "")},
+                                assess)
+            # 深文加载 (A2i_物质毒理学.json)
+            from web.uploads import project_dir
+            deep = {}
+            deep_pf = project_dir(project.get("id", "")) / "A2i_物质毒理学.json"
+            if deep_pf.exists():
+                try:
+                    deep = json.loads(deep_pf.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            for u in units:
+                if u["type"] == "物质" and u["title"] in deep:
+                    u["deep"] = deep[u["title"]]
+            # 每个物质只出现一次 (仅2.1识别小节)
+            if sub != "2.1":
+                units = [u for u in units if u["type"] != "物质"]
+            add_units_section(doc, units[:10])
 
     conn.close()
     doc.save(str(out_path))
-    return out_path
+
+
+def _write_tables(doc, tables):
+    """写表格"""
+    for t in tables:
+        if not t["rows"]:
+            continue
+        dt = doc.add_table(rows=1, cols=len(t["cols"]))
+        dt.style = "Table Grid"
+        dt.alignment = WD_TABLE_ALIGNMENT.CENTER
+        for i, c in enumerate(t["cols"]):
+            cell = dt.rows[0].cells[i]
+            cell.text = ""
+            r = cell.paragraphs[0].add_run(c)
+            _set_font(r, SONG, 10.5, True)
+        for row in t["rows"]:
+            cells = dt.add_row().cells
+            for i, v in enumerate(row):
+                if i >= len(cells):
+                    break
+                cells[i].text = ""
+                r = cells[i].paragraphs[0].add_run(str(v))
+                _set_font(r, SONG, 10.5)
+        doc.add_paragraph()
 
 
 def main():

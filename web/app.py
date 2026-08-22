@@ -223,7 +223,7 @@ def api_export(pid: str):
         return JSONResponse({"error": "not found"}, status_code=404)
     data = p["data"]
     conn = connect()
-    project = {"name": p["name"], "industry": data.get("industry", ""),
+    project = {"id": pid, "name": p["name"], "industry": data.get("industry", ""),
                "equipment": data.get("equipment", []),
                "detections": data.get("detections", []),
                "process_text": data.get("process_text", "")}
