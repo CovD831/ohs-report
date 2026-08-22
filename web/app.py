@@ -139,22 +139,21 @@ def project_overview(pid: str):
 
 @app.get("/api/projects/{pid}/sections/{sec}", response_class=JSONResponse)
 def section_content(pid: str, sec: str):
-    """章节内容 + 依据 (数据槽填充演示)"""
-    result = _get_assess()
+    """章节内容 + 依据 (数据槽填充: 引擎/规则表 → 表格)"""
+    result = _get_assess(pid)
     sk = SECTION_SKELETON.get(sec)
     if not sk:
         return JSONResponse({"error": "unknown section"}, status_code=404)
-    # 段落填充 (演示: 仅10.2.5 填充, 其余用占位)
+    from web.section_filler import fill_section
     from knowledge.report_template import build_1025_section
     if sec == "10.2.5":
         built = build_1025_section(result)
         paragraphs = built["paragraphs"]
         tables = built["tables"]
-        # 10.2.5 由 .3(判定)+.4(分级) 提供依据
         ev_secs = ["10.2.5.3", "10.2.5.4"]
     else:
         paragraphs = [p.format_map(_safe_vars(sec)) for p in sk["paragraphs"]]
-        tables = []
+        tables = fill_section(connect(), sec, result)
         ev_secs = [sec]
     evidence = []
     for es in ev_secs:
