@@ -151,6 +151,8 @@ def judge_physical(conn, factor_name: str, value: float, **cond) -> dict:
     if len(oels) == 1 or oels:
         match = oels[0]
         limit = to_float(match["value"])
+        if value is None:
+            return {"factor": factor_name, "pass": None, "checks": [], "error": "无检测值"}
         ok = value <= limit
         return {"factor": factor_name, "pass": ok,
                 "checks": [{"rule": f"{match['source']} {match['oel_type']}",
