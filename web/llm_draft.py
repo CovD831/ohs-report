@@ -67,21 +67,29 @@ def build_1023_prompt(project: dict, assess: dict) -> str:
 
 
 def build_1025_prompt(project: dict, assess: dict) -> str:
-    """10.2.5 危害分析叙述 prompt (三角度识别, 对齐原报告2.1.1-2.1.4)"""
+    """10.2.5 危害分析叙述 prompt (逐工序详述+三角度, 对齐原报告10.1.1)"""
     hz = []
-    for h in assess.get("hazards", [])[:10]:
+    for h in assess.get("hazards", [])[:12]:
         hz.append(f"{h['factor']} (来源: {';'.join(h.get('sources', [])[:2])})")
+    # 工序清单 (从工艺文本提取)
+    proc_lines = []
+    for ln in (project.get("process_text") or "").splitlines():
+        if ln.startswith("- 车间"):
+            proc_lines.append(ln.strip().lstrip("- ")[:70])
+    proc_str = "\n".join(proc_lines[:15]) or "(无工艺文本)"
     return f"""你是职业卫生评价专家。根据以下识别结果撰写 10.2.5 职业病危害因素识别及危害程度分析的叙述。
 
 【识别结果】{"; ".join(hz)}
 
-要求（三角度识别, 对齐原报告2.1.1-2.1.4结构）:
-1. 生产工艺过程识别: 酯化/纯化/洗涤/溶剂回收等工序→化学因素
-2. 生产环境识别: 工作环境照明、微气候、通风不良等
-3. 劳动过程识别: 体力劳动强度(Ⅰ-Ⅳ)、人机工效(姿势/搬运)
+【生产工序】{proc_str}
+
+要求（逐工序详述+三角度, 对齐原报告10.1.1.1-10.1.1.4 结构）:
+1. 按生产工序逐一详述: 特殊单体→齐聚物→副产品→公用设施, 每个工序产生哪些化学危害
+2. 生产环境识别: 照明/微气候/通风不良
+3. 劳动过程识别: 体力劳动强度(Ⅰ-Ⅳ)/人机工效(姿势/搬运)
 4. 建设施工过程识别: 基坑/高处/焊接/粉尘噪声(如适用)
-5. 健康影响: 各因素可能导致的职业病(GBZ 188 对应)
-6. 正式报告语言，400-600字"""
+5. 健康影响: 各因素可能导致的职业病
+6. 正式报告语言，500-800字"""
 
 
 def build_prompt(pid: str, sec: str, project: dict, assess: dict) -> str:

@@ -120,13 +120,34 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         return tables
 
     if sec == "10.2.10":
-        # 关键控制点 (从 hazards 综合评分简化)
+        # 关键控制点表 (逐岗位: A2d岗位 × 危害 × 措施 → 控制级别)
+        import csv as _csv
+        from pathlib import Path as _P
+        # 岗位 (A2d)
+        f_d = _P(__file__).resolve().parent.parent / "data" / "materials" / "A2d_劳动定员表.csv"
+        posts = []
+        if f_d.exists():
+            with open(f_d, encoding="utf-8-sig") as fh:
+                for r in _csv.DictReader(fh):
+                    posts.append((r.get("车间", ""), r.get("工种", ""), r.get("人数", "")))
+        # 危害 (识别) + 级别规则
+        hz = assess.get("hazards", [])
+        cat_grade = {"化学": "★★", "粉尘": "★★", "噪声": "★", "高温": "★★"}
         rows = []
-        for i, h in enumerate(assess.get("hazards", [])[:12], 1):
-            lv = h.get("grade_level") or h.get("level") or "—"
-            rows.append([i, h["factor"], lv, "见判定/分级"])
-        return [{"name": "关键控制点表", "cols": ["序号", "危害因素", "级别", "控制建议"],
-                 "rows": rows}]
+        for i, (ws, gz, n) in enumerate(posts, 1):
+            # 该岗位的危害 (识别来源含车间/工艺的匹配, 简化: 取前3项)
+            facs = hz[:3] if hz else []
+            for h in facs:
+                lvl = cat_grade.get(h.get("category", ""), "★")
+                rows.append([len(rows) + 1, f"{ws}·{gz}", h["factor"], f"{n}人",
+                             lvl, "密闭化+局部排风+个体防护"])
+        if not rows:
+            # 兜底: 由识别结果
+            for i, h in enumerate(hz[:12], 1):
+                rows.append([i, "各岗位", h["factor"], "—",
+                             cat_grade.get(h.get("category", ""), "★"), "密闭化+排风"])
+        return [{"name": "关键控制点表", "cols": ["序号", "岗位", "危害因素", "接触人数", "控制级别", "控制措施"],
+                 "rows": rows[:80]}]
 
     if sec == "10.2.12":
         risk = assess.get("industry_risk") or {}
