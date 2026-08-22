@@ -60,7 +60,7 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
                     if f:
                         h = hazards.setdefault(f, {"sources": set(), "via": set()})
                         h["sources"].add(f"工序[{u}/{p}]")
-    # 3) 附加 OEL 限值/方法/生物限值/目录分类
+    # 3) 附加 OEL 限值/方法/生物限值/目录分类/危化品CAS标注
     out = []
     for f, info in sorted(hazards.items()):
         oels = get_oel(conn, f)
@@ -80,6 +80,18 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
                 cat_row = conn.execute(
                     "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1",
                     (alias[0],)).fetchone()
+        # 危化品标注: 该因素的CAS → 危化品目录 (剧毒/高毒标记)
+        cas = conn.execute(
+            "SELECT cas FROM oel_limit WHERE factor_name=? AND cas IS NOT NULL LIMIT 1",
+            (f,)).fetchone()
+        hazchem = None
+        if cas and cas[0]:
+            h = conn.execute(
+                "SELECT name, note, is_toxic FROM hazchem_item WHERE cas=? LIMIT 1",
+                (cas[0],)).fetchone()
+            if h:
+                hazchem = {"name": h[0], "note": h[1],
+                           "is_toxic": bool(h[2])}
         out.append({
             "factor": f,
             "sources": sorted(info["sources"]),
@@ -90,6 +102,7 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
             "has_bio": bio > 0,
             "needs_test": bool(oels),  # 有OEL需检测(mg/m3等数值对比)
             "catalog": {"category": cat_row[0], "name": cat_row[1]} if cat_row else None,
+            "hazchem": hazchem,
         })
     return out
 
@@ -162,7 +175,10 @@ def main():
         method = f" | 方法: {h['method']}" if h["method"] else " | 方法: 无GBZ/T300"
         bio = " | BEI:有" if h["has_bio"] else ""
         cat = f" [目录:{h['catalog']['category']}]" if h.get("catalog") else " [目录未收录]"
-        print(f"  🔴 {h['factor']}{cat} [{'需检测' if h['needs_test'] else '定性'}]"
+        hz = ""
+        if h.get("hazchem"):
+            hz = f" ⚠️危化品[{h['hazchem']['name']}]" + ("·剧毒" if h["hazchem"]["is_toxic"] else "")
+        print(f"  🔴 {h['factor']}{cat}{hz} [{'需检测' if h['needs_test'] else '定性'}]"
               f" ← {'; '.join(h['sources'][:3])} (经物料: {'、'.join(h['via_materials'][:3])}){method}{bio}")
     print(f"\n📊 判定 ({len(result['judgements'])} 条):")
     for j in result["judgements"]:
