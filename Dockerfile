@@ -14,4 +14,5 @@ COPY web/ web/
 COPY acquire/ acquire/
 
 # data/ 由 volume 挂载 (ohs.db + materials + 导出报告), 不打进镜像
-CMD ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# network_mode: host 时直接监听 18000 (nginx 已反代该端口; bridge端口映射失效)
+CMD ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "18000", "--workers", "2"]

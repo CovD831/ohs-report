@@ -3,8 +3,7 @@ services:
     build: .
     image: ohs-report:latest
     container_name: ohs-report
-    ports:
-      - "127.0.0.1:18000:8000"
+    network_mode: host
     env_file:
       - .env
     environment:
@@ -13,9 +12,6 @@ services:
       - LLM_MODEL=stealth/ox-alpha
     volumes:
       - ./data:/app/data
-    dns:
-      - 100.100.2.136
-      - 100.100.2.138
     restart: unless-stopped
 
   caddy:
