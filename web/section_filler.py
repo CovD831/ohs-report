@@ -54,6 +54,20 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 ["项目性质", pd_.get("nature", "—")],
             ]
             tables.append({"name": "项目概况表", "cols": ["项目", "内容"], "rows": info_rows})
+        # 设备细表 (名称+规格+数量)
+        eq_d = pd_.get("equipment_detail", [])
+        if eq_d:
+            ed_rows = [[i, d.get("name", ""), d.get("spec", ""), d.get("qty", "")]
+                       for i, d in enumerate(eq_d, 1)]
+            tables.append({"name": "设备明细表", "cols": ["序号", "设备名称", "规格型号", "数量"], "rows": ed_rows})
+        # 班制定员表 (工种×一班..合计)
+        sf = pd_.get("shifts", [])
+        if sf:
+            s_rows = [[i, s.get("system", ""), s.get("b1", ""), s.get("b2", ""),
+                       s.get("b3", ""), s.get("b4", ""), s.get("total", "")]
+                      for i, s in enumerate(sf, 1)]
+            tables.append({"name": "班制定员表", "cols": ["序号", "工种/系统", "一班", "二班", "三班", "四班", "合计"],
+                           "rows": s_rows})
         return tables
 
     if sec == "2":
@@ -190,6 +204,20 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         if ill:
             tables.append({"name": "照度标准表", "cols": ["序号", "房间/场所", "参考面", "照度lx"],
                            "rows": [[i, r[0], r[1], r[2]] for i, r in enumerate(ill, 1)]})
+        # 辅助用室设置表 (名称×位置×要求, 从 gbz1 辅助用室 theme)
+        aux_rows = []
+        for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme LIKE '辅助用室'"):
+            # 条款号含 7.3.x 是设置要求
+            if r[0] and r[0].startswith(("7.3", "7.2", "7.4")):
+                aux_rows.append([len(aux_rows) + 1, r[1][:40], "详见GBZ 1", r[0]])
+        if aux_rows:
+            tables.append({"name": "辅助用室设置表", "cols": ["序号", "辅助用室/要求", "设置位置", "依据"], "rows": aux_rows[:15]})
+        # 噪声分级表 (噪声暴露等级)
+        nz_rows = []
+        for r in _rows_of(conn, "SELECT value, note FROM oel_limit WHERE factor_name LIKE '%噪声%' LIMIT 3"):
+            nz_rows.append(r)
+        if nz_rows:
+            tables.append({"name": "噪声分级表", "cols": ["噪声限值", "说明"], "rows": nz_rows})
         surv = _rows_of(conn, "SELECT factor, check_type, cycle FROM surveillance_rule")
         if surv:
             tables.append({"name": "职业健康监护表", "cols": ["序号", "危害因素", "检查类别", "周期"],

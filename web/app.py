@@ -209,7 +209,8 @@ def api_report_generate(request: Request):
     # 结构化字段: 物料/定员/防护/PPE/应急/建构筑物/设施配置/产品/公辅/概况细节
     for k in ("materials", "staffing", "protection", "ppe", "emergency",
               "buildings", "facilities", "products", "public_works",
-              "investment", "area", "capacity", "nature"):
+              "investment", "area", "capacity", "nature",
+              "equipment_detail", "shifts"):
         if imported.get(k):
             data[k] = imported[k]
     # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
@@ -538,6 +539,7 @@ def import_materials_from_dir(pid: str) -> dict:
     eq, dets = [], []
     proc = ""
     mats, staffs, ppe = [], [], []
+    eq_detail, shifts = [], []
     seen_mat, seen_st, seen_eq, seen_det = set(), set(), set(), set()
     prot, emergency = "", ""
     proj_name, industry = "", ""
@@ -702,7 +704,7 @@ def import_materials_from_dir(pid: str) -> dict:
                 raw = f.read_text(encoding="utf-8", errors="ignore")
                 emg_lines = [ln.lstrip("- ").strip() for ln in raw.splitlines() if ln.strip()][:25]
                 emergency = emergency or "；".join(emg_lines)
-            # 设备
+            # 设备 (存全: 名称+规格+数量)
             if "设备" in name:
                 rows = _dict_rows(_read_rows(f))
                 for r in rows:
@@ -711,6 +713,20 @@ def import_materials_from_dir(pid: str) -> dict:
                         item = str(n).split("|")[0].strip()
                         if item and item not in seen_eq:
                             eq.append(item); seen_eq.add(item)
+                            # 设备细表: 名称+规格+数量 (保留, 供设备明细表)
+                            eq_detail.append({"name": item,
+                                              "spec": _get(r, "规格型号", "规格", "型号"),
+                                              "qty": _get(r, "数量", "台数", "套数")})
+            # 班制 (C10_班制: 工种/系统×一班..合计)
+            if "班制" in name or ("班" in name and "定员" not in name):
+                rows = _dict_rows(_read_rows(f))
+                for r in rows:
+                    sysName = _get(r, "工种", "系统及工种名称", "系统", "岗位")
+                    if sysName:
+                        shifts.append({"system": sysName,
+                                       "b1": _get(r, "一班"), "b2": _get(r, "二班"),
+                                       "b3": _get(r, "三班"), "b4": _get(r, "四班"),
+                                       "total": _get(r, "合计")})
             # 检测
             if "检测" in name:
                 for r in _dict_rows(_read_rows(f)):
@@ -735,7 +751,8 @@ def import_materials_from_dir(pid: str) -> dict:
             "ppe": ppe, "emergency": emergency,
             "buildings": buildings, "facilities": facilities,
             "products": products, "public_works": public_works,
-            "investment": investment, "area": area, "capacity": capacity, "nature": nature}
+            "investment": investment, "area": area, "capacity": capacity, "nature": nature,
+            "equipment_detail": eq_detail, "shifts": shifts}
 
 
 @app.get("/api/projects/{pid}/export", response_class=JSONResponse)
@@ -768,7 +785,9 @@ def api_export(pid: str, request: Request):
                "investment": data.get("investment", ""),
                "area": data.get("area", ""),
                "capacity": data.get("capacity", ""),
-               "nature": data.get("nature", "")}
+               "nature": data.get("nature", ""),
+               "equipment_detail": data.get("equipment_detail", []),
+               "shifts": data.get("shifts", [])}
     assess = assess_project(conn, project)
     # 把完整项目数据塞进 assess._project_data, 供 fill_section 内嵌表格取数
     assess["_project_data"] = dict(project)
