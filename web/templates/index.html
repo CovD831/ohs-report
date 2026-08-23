@@ -117,7 +117,14 @@ async function init() {
     const st = d.report.status;
     // 已有报告则加载状态 + 显示链接
     refreshReports();
-    if (st === 'generating') pollTask();
+    if (st === 'generating') {
+      showProgress();
+      // 找到当前报告的最新任务 jobId 并轮询
+      const tj = await fetch('/api/tasks');
+      const jobs = await tj.json();
+      const mine = jobs.find(j => j.pid === PID && (j.status === 'running' || j.status === 'pending'));
+      if (mine) pollTask(mine.id);
+    }
   }
   // 身份显示
   const who = document.getElementById('whoami');
@@ -194,9 +201,13 @@ function showProgress() {
   document.getElementById('progress').style.display = 'flex';
 }
 async function pollTask(jobId) {
-  const r = await fetch('/api/tasks/' + jobId);
-  const d = await r.json();
-  if (d) {
+  if (!jobId) return;
+  let d;
+  try {
+    const r = await fetch('/api/tasks/' + jobId);
+    d = await r.json();
+  } catch(e) { timer = setTimeout(() => pollTask(jobId), 4000); return; }
+  if (d && d.id) {
     const pct = d.total ? Math.round(d.live_progress / d.total * 100) : 0;
     document.getElementById('progressFill').style.width = pct + '%';
     document.getElementById('progressText').textContent = pct + '% (' + d.live_progress + '/' + d.total + ')';
@@ -204,16 +215,22 @@ async function pollTask(jobId) {
       const btn = document.getElementById('genBtn');
       btn.disabled = false; btn.textContent = '⚡ 重新生成';
       refreshReports();
+      finishProgress();
       return;
     }
     if (d.status === 'failed') {
       alert('生成失败：' + (d.error||''));
       document.getElementById('genBtn').disabled = false;
       document.getElementById('genBtn').textContent = '⚡ 重新生成';
+      finishProgress();
       return;
     }
   }
   timer = setTimeout(() => pollTask(jobId), 2500);
+}
+function finishProgress() {
+  const p = document.getElementById('progress');
+  p.innerHTML = '<div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div><span>完成</span>';
 }
 init();
 </script>

@@ -68,6 +68,7 @@ tr:nth-child(even) td { background: var(--surface-muted); }
 .badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 600; }
 .badge-gray { background: var(--surface-muted); color: var(--text-muted); }
 .badge-green { background: #E6F4EA; color: var(--success); }
+.gen-progress { padding: 10px 24px; border-bottom: 1px solid var(--border); background: var(--surface-muted); }
 </style>
 </head>
 <body>
@@ -82,6 +83,15 @@ tr:nth-child(even) td { background: var(--surface-muted); }
   <div style="margin-left:auto;display:flex;gap:8px;">
     <button class="btn btn-secondary" onclick="window.location.href='/'">重传材料</button>
     <button class="btn btn-primary" onclick="exportWord()">导出 Word</button>
+  </div>
+</div>
+
+<div class="gen-progress" id="genProgress" style="display:none;">
+  <div style="display:flex;align-items:center;gap:8px;font-size:13px;">
+    <div class="spinner"></div>
+    <span>正在生成全文…</span>
+    <div class="progress-bar" style="flex:1;"><div class="progress-fill" id="genFill"></div></div>
+    <span id="genText">0%</span>
   </div>
 </div>
 
@@ -117,6 +127,39 @@ async function init() {
   await loadOverview();
   buildToc();
   loadSection(SEC);
+  // 检测是否有进行中的生成任务 → 显示进度, 完成后自动刷新
+  checkGenTask();
+}
+async function checkGenTask() {
+  try {
+    const tj = await fetch('/api/tasks');
+    const jobs = await tj.json();
+    const mine = jobs.find(j => j.pid === PID && (j.status === 'running' || j.status === 'pending'));
+    if (mine) {
+      document.getElementById('genProgress').style.display = 'block';
+      pollGen(mine.id);
+    }
+  } catch(e) {}
+}
+async function pollGen(jobId) {
+  const r = await fetch('/api/tasks/' + jobId);
+  const d = await r.json();
+  if (d && d.id) {
+    const pct = d.total ? Math.round(d.live_progress / d.total * 100) : 0;
+    document.getElementById('genFill').style.width = pct + '%';
+    document.getElementById('genText').textContent = pct + '% (' + d.live_progress + '/' + d.total + ')';
+    if (d.status === 'done' || d.status === 'failed') {
+      const gp = document.getElementById('genProgress');
+      gp.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">' + (d.status==='done' ? '生成完成 ✓' : '生成已停止') + '</div>';
+      document.getElementById('statusBadge').textContent = d.status==='done' ? '生成完成' : '生成失败';
+      document.getElementById('statusBadge').className = 'badge ' + (d.status==='done' ? 'badge-green' : 'badge-gray');
+      // 完成后刷新章节内容
+      loadSection(SEC);
+      loadOverview();
+      return;
+    }
+  }
+  setTimeout(() => pollGen(jobId), 2500);
 }
 async function loadOverview() {
   const r = await fetch('/api/projects/' + PID + '/overview');
