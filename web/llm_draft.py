@@ -25,8 +25,9 @@ from knowledge.project_assess import assess_project  # noqa: E402
 from knowledge.oel import connect  # noqa: E402
 from web.projects_db import get_project  # noqa: E402
 
-BASE = os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1/chat/completions")
-MODEL = os.environ.get("LLM_MODEL", "stealth/ox-alpha")
+BASE = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/v1/chat/completions")
+MODEL = os.environ.get("LLM_MODEL", "deepseek-v4-flash-vision-exp")
+KEY_ENV = os.environ.get("LLM_KEY_ENV", "DEEPSEEK_API_KEY")
 
 
 # 全局叙述化指令 (system 固定, 所有章节生效)
@@ -41,10 +42,10 @@ _NARR_SYSTEM = (
 
 
 def _llm(prompt: str, system: str = _NARR_SYSTEM) -> str:
-    """调用 LLM (OpenRouter, key 从环境变量) — DNS/连接 3 次重试"""
-    key = os.environ.get("OPENROUTER_API_KEY") or _load_env_key("OPENROUTER_API_KEY")
+    """调用 LLM (DeepSeek 官方, key 从环境变量) — 3 次重试"""
+    key = os.environ.get(KEY_ENV) or _load_env_key(KEY_ENV)
     if not key:
-        raise RuntimeError("OPENROUTER_API_KEY 未配置")
+        raise RuntimeError(f"{KEY_ENV} 未配置")
     req = urllib.request.Request(BASE, data=json.dumps({
         "model": MODEL,
         "messages": [{"role": "system", "content": system},

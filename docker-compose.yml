@@ -8,8 +8,9 @@ services:
       - .env
     environment:
       - SEED_DEMO=${SEED_DEMO:-}
-      - LLM_BASE_URL=https://openrouter.ai/api/v1/chat/completions
-      - LLM_MODEL=stealth/ox-alpha
+      - LLM_BASE_URL=https://api.deepseek.com/v1/chat/completions
+      - LLM_MODEL=deepseek-v4-flash-vision-exp
+      - LLM_KEY_ENV=DEEPSEEK_API_KEY
     volumes:
       - ./data:/app/data
     restart: unless-stopped
