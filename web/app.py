@@ -232,8 +232,16 @@ def api_report_get(request: Request):
         return {"pid": pid, "report": None}
     from web.uploads import list_materials
     mats = list_materials(pid)
-    return {"pid": pid, "report": {"name": p["name"], "status": p["status"],
-            "data": p["data"]}, "materials": mats}
+    d = p["data"]
+    ss = d.get("section_states", {})
+    gen = len([k for k, v in ss.items() if v.get("state") == "generated"])
+    # status 由实际生成内容推导: 有生成→ready, 否则 draft
+    if gen > 0:
+        status = "ready"
+    else:
+        status = p["status"] if p["status"] == "generating" else "draft"
+    return {"pid": pid, "report": {"name": p["name"], "status": status,
+            "data": d}, "materials": mats}
 
 
 @app.get("/login", response_class=HTMLResponse)
