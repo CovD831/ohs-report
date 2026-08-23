@@ -27,10 +27,17 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             tables.append({"name": "主要设备清单", "cols": ["序号", "设备名称", "内部物料"], "rows": rows})
         staffs = pd_.get("staffing", [])
         if staffs:
-            s_rows = [[i, s.get("dept", ""), s.get("post", ""), s.get("count", ""), "—"]
+            s_rows = [[i, s.get("dept", ""), s.get("post", ""), s.get("count", ""), s.get("task", "—")]
                       for i, s in enumerate(staffs, 1)]
             tables.append({"name": "劳动定员表", "cols": ["序号", "车间/部门", "岗位", "人数", "工作内容"],
                            "rows": s_rows})
+        # 建构筑物表
+        blds = pd_.get("buildings", [])
+        if blds:
+            b_rows = [[i, b.get("name", ""), b.get("area", ""), b.get("floor_area", ""),
+                       b.get("floors", ""), b.get("height", "")] for i, b in enumerate(blds, 1)]
+            tables.append({"name": "建构筑物表", "cols": ["序号", "名称", "占地面积(㎡)", "建筑面积(㎡)", "层数", "高度(m)"],
+                           "rows": b_rows})
         return tables
 
     if sec == "2":
@@ -79,6 +86,13 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         if p_rows:
             tables.append({"name": "PPE配备表", "cols": ["序号", "岗位/危害", "防护装备", "标准"],
                            "rows": p_rows[:60]})
+        # 设施配置明细 (岗位×设施×数量×备注)
+        facs = (assess.get("_project_data") or {}).get("facilities", [])
+        if facs:
+            f_rows = [[i, f.get("post", ""), f.get("facility", ""), f.get("count", ""), f.get("remark", "")]
+                      for i, f in enumerate(facs, 1)]
+            tables.append({"name": "设施配置表", "cols": ["序号", "岗位/区域", "配备设施", "数量", "备注"],
+                           "rows": f_rows})
         return tables
 
     if sec == "4":
@@ -137,6 +151,38 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                  "生产制度", "生产工艺", "生产设备", "防护措施", "管理水平"]
         rows = [[i, e, "待填写", "待填写"] for i, e in enumerate(elems, 1)]
         return [{"name": "类比可比性表", "cols": ["序号", "比较要素", "拟建项目", "类比项目"], "rows": rows}]
+
+    if sec == "10":
+        # 健康影响表 + 接触限值表 (危害因素×健康影响×职业病 + 危害因素×PC-TWA×PC-STEL)
+        tables = []
+        hazards = [h["factor"] for h in assess.get("hazards", [])] or []
+        # 健康影响表
+        he_rows = []
+        seen_he = set()
+        for fac in hazards[:30]:
+            if fac in seen_he:
+                continue
+            seen_he.add(fac)
+            r = conn.execute("SELECT effect, route FROM health_effect WHERE factor LIKE ? LIMIT 1", (fac + "%",)).fetchone()
+            if r:
+                he_rows.append([fac, r[0][:60] if r[0] else "—", r[1] or "—"])
+        if he_rows:
+            tables.append({"name": "健康影响表", "cols": ["危害因素", "健康影响", "侵入途径"], "rows": he_rows})
+        # 接触限值表 (从 detections 的 factor 匹配 oel_limit)
+        det_factors = [d["factor"] for d in (assess.get("_project_data") or {}).get("detections", [])]
+        lim_rows = []
+        seen_l = set()
+        for fac in (det_factors + hazards)[:30]:
+            if fac in seen_l:
+                continue
+            seen_l.add(fac)
+            rows = conn.execute("SELECT oel_type, value, unit FROM oel_limit WHERE factor_name LIKE ?", (fac + "%",)).fetchall()
+            if rows:
+                for oel_type, val, unit in rows[:2]:
+                    lim_rows.append([fac, oel_type, val, unit])
+        if lim_rows:
+            tables.append({"name": "接触限值表", "cols": ["危害因素", "限值类型", "限值", "单位"], "rows": lim_rows})
+        return tables
 
     return []
 

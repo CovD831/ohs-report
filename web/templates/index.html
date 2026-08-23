@@ -88,7 +88,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
     <div class="drop-zone" id="dropZone">
       <div class="big">↑</div>
       <div class="hint">拖拽企业材料文件到这里，或点击选择</div>
-      <div class="sub">支持一次拖多个文件，系统自动归类（设备清单/原辅材料/工艺说明/检测数据/防护措施…）。</div>
+      <div class="sub">支持一次拖多个文件，系统按《建设项目职业病危害预评价资料清单》自动归类</div>
+      <div class="material-check" id="materialCheck" style="margin-top:10px;text-align:left;max-height:230px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;">
+        <div style="font-weight:600;font-size:13px;margin-bottom:8px;">📋 建议按以下 <b>12 项资料清单</b> 上传（<span id="matCoverage" style="color:var(--primary);">已传 0 项</span>）：</div>
+        <div id="matItems" style="font-size:12px;line-height:2;color:var(--text-muted);"></div>
+      </div>
       <input type="file" id="fileInput" multiple style="display:none">
     </div>
     <div class="file-list" id="fileList"></div>
@@ -108,6 +112,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 <script>
 let selFiles = [];
 let PID = null;
+
+// 资料清单 12 项 (对应收集单/清单, 前端提示用户该传什么)
+const MAT_ITEMS = [
+  {n:1, t:'项目批文/可研/营业执照'},
+  {n:2, t:'项目概况(名称/投资/面积/性质/行业/产能)'},
+  {n:3, t:'原有项目情况(改扩建)'},
+  {n:4, t:'公辅工程(水电气/给排水/三废)'},
+  {n:5, t:'生产工艺、生产设备'},
+  {n:6, t:'原料/辅料/中间品/产品+MSDS'},
+  {n:7, t:'劳动组织/工种/岗位/作业内容'},
+  {n:8, t:'防护措施(含技术参数/设施配置)'},
+  {n:9, t:'个人防护用品/应急救援设施'},
+  {n:10, t:'设计图纸(区域位置/总平面/设备布置)'},
+  {n:11, t:'类比检测报告/职业卫生现场检测'},
+  {n:12, t:'类比体检报告/职业健康检查'},
+];
 
 async function init() {
   const r = await fetch('/api/report');
@@ -129,6 +149,8 @@ async function init() {
   // 身份显示
   const who = document.getElementById('whoami');
   who.textContent = PID ? '身份已就绪' : '—';
+  // 初始渲染资料清单(12项, 未传)
+  renderMaterialCheck({});
   // admin 链接
   const adm = fetch('/admin', {method:'HEAD'}).then(r=>r.status);
   fetch('/api/admin/audit').then(r=>{ if(r.ok){ document.getElementById('adminDash').style.display='inline'; document.getElementById('adminLink').style.display='none'; }}).catch(()=>{});
@@ -202,7 +224,34 @@ function renderFiles(detail, coverage) {
     html += `</div></div>`;
   }
   box.innerHTML = html;
+  renderMaterialCheck(detail);
   refreshReports();
+}
+
+// 渲染资料清单覆盖度 (已传/未传 12项)
+function renderMaterialCheck(detail) {
+  const box = document.getElementById('matItems');
+  if (!box) return;
+  // 已上传类别 → 对应清单项
+  const catToItem = {
+    'C1':[1],'C2':[2,5],'C3':[3],'C4':[4],'C5':[10],
+    'C6':[5],'C7':[5],'C8':[6],'C9':[6],'C10':[7],
+    'C11':[4],'C12':[8],'C13':[8],'C14':[9],'C15':[9],
+    'C16':[4],'C17':[11],
+  };
+  const uploaded = (detail && Object.keys(detail).filter(c=>c!=='uncat' && detail[c] && detail[c].length)) || [];
+  const doneItems = new Set();
+  uploaded.forEach(c => (catToItem[c]||[]).forEach(n => doneItems.add(n)));
+  let html = '';
+  let done = 0;
+  MAT_ITEMS.forEach(it => {
+    const ok = doneItems.has(it.n);
+    if (ok) done++;
+    html += `<div style="display:flex;gap:6px;align-items:center;margin:2px 0;"><span style="width:14px;text-align:center;">${ok?'✅':'⬜'}</span><span style="${ok?'color:var(--text);':'color:var(--text-muted);'}">${it.n}. ${it.t}</span></div>`;
+  });
+  box.innerHTML = html;
+  const cov = document.getElementById('matCoverage');
+  if (cov) cov.textContent = `已传 ${done} 项/${MAT_ITEMS.length}`;
 }
 let timer = null;
 async function generate() {

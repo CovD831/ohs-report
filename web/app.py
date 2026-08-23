@@ -206,8 +206,10 @@ def api_report_generate(request: Request):
     data["equipment"] = imported["equipment"]
     data["detections"] = imported["detections"]
     data["process_text"] = imported["process_text"]
-    # 结构化字段: 物料/定员/防护/PPE/应急 (供按章取子集)
-    for k in ("materials", "staffing", "protection", "ppe", "emergency"):
+    # 结构化字段: 物料/定员/防护/PPE/应急/建构筑物/设施配置/产品/公辅/概况细节
+    for k in ("materials", "staffing", "protection", "ppe", "emergency",
+              "buildings", "facilities", "products", "public_works",
+              "investment", "area", "capacity", "nature"):
         if imported.get(k):
             data[k] = imported[k]
     # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
@@ -530,98 +532,199 @@ def import_materials_from_dir(pid: str) -> dict:
     """从项目材料目录导入 (上传的文件 → 设备/检测/工艺文本)
     列名容错: 检测 CTWA(mg/m3)|CTWA 均可; <1 → 0.5
     """
-    import csv, json
+    import csv, json, io
     from web.uploads import project_dir
     pd = project_dir(pid)
     eq, dets = [], []
     proc = ""
     mats, staffs, ppe = [], [], []
-    seen_mat, seen_st = set(), set()
+    seen_mat, seen_st, seen_eq, seen_det = set(), set(), set(), set()
     prot, emergency = "", ""
     proj_name, industry = "", ""
-    seen_eq, seen_det = set(), set()
+    buildings, facilities, products, public_works = [], [], [], []
+    investment, area, capacity, nature = "", "", "", ""
+
+    def _read_rows(f):
+        """读取表格文件: 兼容 csv/txt/xlsx, 多种分隔符(\x07/\t/,/;), 容错编码"""
+        # xlsx
+        if f.suffix.lower() in (".xlsx", ".xls"):
+            try:
+                from openpyxl import load_workbook
+                wb = load_workbook(f, read_only=True, data_only=True)
+                ws = wb.active
+                rows = [[c.value if c.value is not None else "" for c in r] for r in ws.iter_rows()]
+                return rows
+            except Exception:
+                return []
+        # csv/txt: 试多种编码 + 分隔符
+        for enc in ("utf-8-sig", "utf-8", "gbk", "latin-1"):
+            try:
+                raw = f.read_bytes().decode(enc)
+                break
+            except Exception:
+                continue
+        else:
+            return []
+        # 探测分隔符: \x07 > \t > , > ;
+        sep = max(["\x07", "\t", ",", ";", "|"], key=lambda s: raw.count(s))
+        if sep in (",", ";"):
+            reader = csv.reader(io.StringIO(raw))
+            return [r for r in reader if any(str(c).strip() for c in r)]
+        # \x07/\t/|: 手工劈分
+        return [[c.strip() for c in ln.split(sep)] for ln in raw.splitlines() if sep in ln]
+
+    def _dict_rows(rows):
+        """首行做表头 → 每行dict"""
+        if not rows:
+            return []
+        header = [str(h).strip() for h in rows[0]]
+        out = []
+        for r in rows[1:]:
+            d = {}
+            for i, h in enumerate(header):
+                if i < len(r):
+                    d[h] = str(r[i]).strip()
+                else:
+                    d[h] = ""
+            if any(v for v in d.values()):
+                out.append(d)
+        return out
+
+    def _get(row, *keys):
+        """列名容错取值: 任一 key 命中(含前缀匹配 like)非空"""
+        for k in keys:
+            for rk, rv in row.items():
+                if rk.strip() == k and rv:
+                    return rv
+                # 前缀匹配: 列名带单位如'占地面积(㎡)' 命中'占地面积'
+                if k and rv and rk.strip().startswith(k):
+                    return rv
+        return ""
+
     for f in pd.rglob("*"):
         if not f.is_file():
             continue
         name = f.name
         try:
-            # C1/C2 项目概况/批文: 提取项目名/行业
-            if ("概况" in name or "批文" in name or "立项" in name) and f.suffix in (".json", ".txt"):
+            # C1/C2 项目概况/批文: 提取项目名/行业 + 概况细节
+            if ("概况" in name or "批文" in name or "立项" in name or "可研" in name):
+                if f.suffix in (".json", ".txt"):
+                    raw = f.read_text(encoding="utf-8", errors="ignore")
+                    try:
+                        j = json.loads(raw)
+                        if isinstance(j, dict):
+                            proj_name = proj_name or (j.get("name") or j.get("项目名称") or "")
+                            industry = industry or (j.get("industry") or j.get("行业") or "")
+                            investment = investment or (j.get("investment") or j.get("投资") or "")
+                            area = area or (j.get("area") or j.get("建筑面积") or "")
+                            capacity = capacity or (j.get("capacity") or j.get("产能") or "")
+                            nature = nature or (j.get("nature") or j.get("项目性质") or "")
+                    except Exception:
+                        for ln in raw.splitlines():
+                            if "项目名称" in ln and "：" in ln: proj_name = proj_name or ln.split("：",1)[1].strip()[:60]
+                            if "行业" in ln and "：" in ln: industry = industry or ln.split("：",1)[1].strip()[:40]
+                            if "投资" in ln and "：" in ln: investment = investment or ln.split("：",1)[1].strip()[:30]
+                            if "建筑面积" in ln and "：" in ln: area = area or ln.split("：",1)[1].strip()[:20]
+                            if "产能" in ln and "：" in ln: capacity = capacity or ln.split("：",1)[1].strip()[:30]
+                            if "项目性质" in ln and "：" in ln: nature = nature or ln.split("：",1)[1].strip()[:10]
+                elif f.suffix in (".csv", ".xlsx"):
+                    rows = _dict_rows(_read_rows(f))
+                    for r in rows:
+                        proj_name = proj_name or _get(r, "项目名称", "名称")
+                        industry = industry or _get(r, "行业", "行业类别", "行业代码")
+                        investment = investment or _get(r, "投资", "投资总额")
+                        area = area or _get(r, "建筑面积", "占地面积")
+                        capacity = capacity or _get(r, "产能", "建设规模")
+                        nature = nature or _get(r, "项目性质")
+            # C3 原有项目
+            if "原有" in name or "现有" in name:
                 raw = f.read_text(encoding="utf-8", errors="ignore")
-                try:
-                    j = json.loads(raw)
-                    if isinstance(j, dict):
-                        proj_name = proj_name or (j.get("name") or j.get("项目名称") or "")
-                        industry = industry or (j.get("industry") or j.get("行业") or "")
-                except Exception:
-                    # 纯文本: 找项目名/行业关键词行
-                    for ln in raw.splitlines():
-                        if "项目名称" in ln and "：" in ln:
-                            proj_name = proj_name or ln.split("：", 1)[1].strip()[:60]
-                        if "行业" in ln and "：" in ln:
-                            industry = industry or ln.split("：", 1)[1].strip()[:40]
-            if "原辅材料" in name or "物料" in name:
-                with open(f, encoding="utf-8-sig", errors="ignore") as fh:
-                    for row in csv.DictReader(fh):
-                        n = (row.get("名称") or row.get("物料名称") or "").strip()
-                        if n:
-                            mat = {"name": n, "spec": row.get("规格","") or "", "usage": row.get("年用量","") or row.get("使用量","") or ""}
-                            if n not in seen_mat:
-                                mats.append(mat); seen_mat.add(n)
-            if "定员" in name or "岗位" in name:
-                with open(f, encoding="utf-8-sig", errors="ignore") as fh:
-                    for row in csv.DictReader(fh):
-                        p = (row.get("岗位") or row.get("岗位名称") or "").strip()
-                        if p:
-                            st = {"post": p, "dept": row.get("车间","") or row.get("部门","") or "", "count": row.get("人数","") or ""}
-                            if p not in seen_st:
-                                staffs.append(st); seen_st.add(p)
-            if "防护" in name and f.suffix == ".txt":
+                orig = "；".join(ln.lstrip("- ").strip() for ln in raw.splitlines() if ln.strip())[:400]
+                proj_name = proj_name or orig[:60]
+            # C4 公辅工程
+            if "公辅" in name or "给排水" in name or "三废" in name or "水电气" in name:
+                raw = f.read_text(encoding="utf-8", errors="ignore")
+                pub = "；".join(ln.lstrip("- ").strip() for ln in raw.splitlines() if ln.strip())[:300]
+                if pub:
+                    public_works.append(pub)
+            # C5 建构筑物
+            if "建构筑" in name or "建筑" in name or "总平面" in name:
+                rows = _dict_rows(_read_rows(f))
+                for r in rows:
+                    nm = _get(r, "名称", "建筑物名称")
+                    if nm and nm not in ("名称",):
+                        buildings.append({"name": nm, "area": _get(r, "占地面积", "占地"), "floor_area": _get(r, "建筑面积"), "floors": _get(r, "层数"), "height": _get(r, "建筑高度")})
+            # 设施配置明细 (岗位×设施×数量)
+            if "设施" in name or "配置" in name:
+                rows = _dict_rows(_read_rows(f))
+                for r in rows:
+                    nm = _get(r, "配备设施", "设施名称", "岗位名称", "名称")
+                    if nm and nm not in ("配备设施", "名称"):
+                        facilities.append({"post": _get(r, "岗位名称", "区域", "岗位"), "facility": nm, "count": _get(r, "数量"), "remark": _get(r, "备注")})
+            # C9 产品产量
+            if ("产品" in name and ("产量" in name or "方案" in name)):
+                rows = _dict_rows(_read_rows(f))
+                for r in rows:
+                    nm = _get(r, "产品", "产品名称", "名称")
+                    if nm:
+                        products.append({"name": nm, "output": _get(r, "年产量", "产量", "产能")})
+            # 原辅材料
+            if "原辅材料" in name or "物料" in name or "原料" in name:
+                rows = _dict_rows(_read_rows(f))
+                for r in rows:
+                    n = _get(r, "名称", "物料名称", "原辅材料")
+                    if n:
+                        mat = {"name": n, "spec": _get(r, "规格", "规格型号"), "usage": _get(r, "年用量", "使用量", "用量"), "state": _get(r, "状态", "物态"), "msds": _get(r, "MSDS", "是否MSDS")}
+                        if n not in seen_mat:
+                            mats.append(mat); seen_mat.add(n)
+            # 岗位定员
+            if "定员" in name or ("岗位" in name and "duty" not in name.lower()):
+                rows = _dict_rows(_read_rows(f))
+                for r in rows:
+                    p = _get(r, "岗位", "岗位名称")
+                    if p:
+                        st = {"post": p, "dept": _get(r, "车间", "部门"), "count": _get(r, "人数", "人员编制"), "task": _get(r, "作业内容", "工作内容")}
+                        if p not in seen_st:
+                            staffs.append(st); seen_st.add(p)
+            # 防护措施
+            if "防护" in name and "个人" not in name:
                 raw = f.read_text(encoding="utf-8", errors="ignore")
                 prot_lines = [ln.lstrip("- ").strip() for ln in raw.splitlines() if ln.strip()][:40]
-                prot = "；".join(prot_lines)
+                prot = prot or "；".join(prot_lines)
+            # 个人防护用品
             if "个人防护" in name or "ppe" in name.lower():
-                with open(f, encoding="utf-8-sig", errors="ignore") as fh:
-                    for row in csv.DictReader(fh):
-                        pn = (row.get("名称") or row.get("防护用品") or row.get("岗位") or "").strip()
-                        if pn:
-                            ppe.append({"item": pn, "post": row.get("岗位","") or "", "frequency": row.get("发放频次","") or ""})
+                for r in _dict_rows(_read_rows(f)):
+                    pn = _get(r, "名称", "防护用品", "物品")
+                    if pn:
+                        ppe.append({"item": pn, "post": _get(r, "岗位", "岗位名称"), "frequency": _get(r, "发放频次", "更换周期", "周期")})
+            # 应急救援
             if "应急" in name or "救援" in name:
                 raw = f.read_text(encoding="utf-8", errors="ignore")
                 emg_lines = [ln.lstrip("- ").strip() for ln in raw.splitlines() if ln.strip()][:25]
-                emergency = "；".join(emg_lines)
+                emergency = emergency or "；".join(emg_lines)
+            # 设备
             if "设备" in name:
-                with open(f, encoding="utf-8-sig", errors="ignore") as fh:
-                    for row in csv.DictReader(fh):
-                        n = (row.get("设备名称")
-                             or row.get("名称") or "").strip()
-                        if n:
-                            item = str(n).split("|")[0].strip()
-                            if item and item not in seen_eq:
-                                eq.append(item)
-                                seen_eq.add(item)
-            if "检测" in name and f.suffix == ".csv":
-                with open(f, encoding="utf-8-sig", errors="ignore") as fh:
-                    for row in csv.DictReader(fh):
-                        fac = (row.get("危害因素") or row.get("因子") or "").strip()
-                        # CTWA 列名容错
-                        ctwa_raw = ""
-                        for k in ("CTWA(mg/m3)", "CTWA", "PC-TWA", "检测值"):
-                            if k in row:
-                                ctwa_raw = (row.get(k) or "").strip()
-                                break
-                        if fac and fac not in seen_det:
-                            seen_det.add(fac)
-                            if not ctwa_raw:
-                                ctwa_f = None
-                            elif "<" in ctwa_raw or "＜" in ctwa_raw:
-                                ctwa_f = 0.5
-                            else:
-                                try:
-                                    ctwa_f = float(ctwa_raw)
-                                except ValueError:
-                                    ctwa_f = None
-                            dets.append({"factor": fac, "ctwa": ctwa_f})
+                rows = _dict_rows(_read_rows(f))
+                for r in rows:
+                    n = _get(r, "设备名称", "名称", "设备")
+                    if n:
+                        item = str(n).split("|")[0].strip()
+                        if item and item not in seen_eq:
+                            eq.append(item); seen_eq.add(item)
+            # 检测
+            if "检测" in name:
+                for r in _dict_rows(_read_rows(f)):
+                    fac = _get(r, "危害因素", "因子", "检测项目")
+                    ctwa_raw = _get(r, "CTWA(mg/m3)", "CTWA", "PC-TWA", "检测值")
+                    if fac and fac not in seen_det:
+                        seen_det.add(fac)
+                        if not ctwa_raw: ctwa_f = None
+                        elif "<" in ctwa_raw or "＜" in ctwa_raw: ctwa_f = 0.5
+                        else:
+                            try: ctwa_f = float(ctwa_raw)
+                            except ValueError: ctwa_f = None
+                        dets.append({"factor": fac, "ctwa": ctwa_f})
+            # 工艺
             if "工艺" in name:
                 proc = proc + "\n" + f.read_text(encoding="utf-8", errors="ignore")
         except Exception:
@@ -629,7 +732,10 @@ def import_materials_from_dir(pid: str) -> dict:
     return {"equipment": eq, "detections": dets, "process_text": proc.strip(),
             "material_count": len(eq), "name": proj_name, "industry": industry,
             "materials": mats, "staffing": staffs, "protection": prot,
-            "ppe": ppe, "emergency": emergency}
+            "ppe": ppe, "emergency": emergency,
+            "buildings": buildings, "facilities": facilities,
+            "products": products, "public_works": public_works,
+            "investment": investment, "area": area, "capacity": capacity, "nature": nature}
 
 
 @app.get("/api/projects/{pid}/export", response_class=JSONResponse)
