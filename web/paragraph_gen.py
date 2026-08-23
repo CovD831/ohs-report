@@ -24,8 +24,20 @@ def gen_paragraphs(conn: sqlite3.Connection, sec: str, assess: dict) -> list[str
     names = "、".join(h["factor"] for h in hazards[:8]) if hazards else "—"
     chain = assess.get("industry_chain") or {}
     risk = assess.get("industry_risk") or {}
+    # 真·空项目门控: 无危害/无检测/无工艺文本 => 除第1章外, 一律"待材料"
+    proj = assess.get("_project_data") or {}
+    dets = proj.get("detections", [])
+    has_data = bool(hazards) or bool(dets) or bool((proj.get("process_text") or "").strip())
+    if not has_data and sec != "1":
+        return ["【待材料】本节点尚无数据，暂不生成分析。"
+                "请先在「数据源」上传设备清单(A2c)、原辅材料(A2a)与工艺说明(A2b)，"
+                "系统将据此完成本节的分析与生成。"]
 
     if sec == "1":
+        if not has_data:
+            # 空项目: 仅保留委托首句, 不露出行业/规模假分析
+            return [f"受建设单位委托，对{assess.get('project', '')}进行职业病危害预评价。"
+                    "当前项目尚未上传材料，工程概况与评价内容待材料导入后生成。"]
         return [
             f"受建设单位委托，对{assess.get('project', '')}进行职业病危害预评价。",
             f"本项目属于{chain.get('mid', {}).get('name', '—')}行业（{chain.get('full', '—')}），"

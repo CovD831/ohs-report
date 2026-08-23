@@ -350,12 +350,17 @@ let overview = null;
 async function loadOverview() {
   const r = await fetch(`/api/projects/${pid}/overview`);
   overview = await r.json();
-  document.getElementById('navHazards').textContent = overview.hazard_count;
-  document.getElementById('navJudgements').textContent = overview.judgement_count;
-  document.getElementById('navGrades').textContent = overview.grade_count;
-  document.getElementById('navRisk').textContent = overview.risk_level;
+  const haz = overview.has_data ? overview.hazard_count : '—';
+  const jud = overview.has_data ? overview.judgement_count : '—';
+  const grd = overview.has_data ? overview.grade_count : '—';
+  const rsk = overview.has_data ? overview.risk_level : '待材料';
+  document.getElementById('navHazards').textContent = haz;
+  document.getElementById('navJudgements').textContent = jud;
+  document.getElementById('navGrades').textContent = grd;
+  document.getElementById('navRisk').textContent = rsk;
   const rb = document.getElementById('riskBadge');
-  rb.textContent = `风险分类: ${overview.risk_level}`;
+  rb.textContent = overview.has_data ? `风险分类: ${overview.risk_level}` : '风险分类: 待上传材料';
+  rb.className = 'badge ' + (overview.has_data ? 'badge-standard' : 'badge-gray');
 }
 
 function statCards(d) {

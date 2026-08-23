@@ -458,15 +458,19 @@ def project_overview(pid: str):
     passed = sum(1 for j in judgements if j.get("pass") is True)
     failed = sum(1 for j in judgements if j.get("pass") is False)
     risk = (result.get("industry_risk") or {})
+    proj = result.get("_project_data") or {}
+    dets = proj.get("detections", [])
+    has_data = bool(hazards) or bool(dets) or bool((proj.get("process_text") or "").strip())
     return {
         "hazard_count": len(hazards),
         "judgement_count": len(judgements),
         "passed": passed, "failed": failed,
         "pass_rate": round(passed / len(judgements) * 100) if judgements else 0,
-        "risk_level": risk.get("level", "—"),
-        "risk_name": risk.get("name", ""),
+        "risk_level": risk.get("level", "—") if has_data else "—",
+        "risk_name": risk.get("name", "") if has_data else "",
         "grade_count": len(result.get("grades", [])),
         "diseases": sum(1 for h in hazards if h.get("diseases")),
+        "has_data": has_data,
     }
 
 
