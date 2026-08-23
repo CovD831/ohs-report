@@ -708,10 +708,14 @@ def _run_generate_all(pid: str, jid: str):
     from web.projects_db import update_section_state
     from concurrent.futures import ThreadPoolExecutor
 
-    units = [(s, None) for s in SECTION_SKELETON.keys()]
-    for sec, subs in SUB_SECTIONS.items():
-        for sub, _ in subs:
-            units.append((sec, sub))
+    # units 按报告阅读顺序: 章节 → 该章小节 → 下一章 → 下一章小节...
+    # (之前全一级再全二级, 导致先显示所有一级标题再补二级 — 你指出的顺序问题)
+    from web.report_struct import CHAPTERS, SUBS
+    units = []
+    for ch in "123456789":
+        units.append((ch, None))                     # 该章标题
+        for sn, _ in SUBS.get(ch, []):
+            units.append((ch, sn))                   # 该章小节
     total = len(units)
     conn = _conn_tasks()
     conn.execute("UPDATE task_job SET total=? WHERE id=?", (total, jid))
@@ -741,7 +745,10 @@ def _run_generate_all(pid: str, jid: str):
         _tasks.set_progress(jid, done + fail)
 
     from concurrent.futures import wait as cf_wait, FIRST_COMPLETED
-    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="ohsgen") as ex:
+    # 并发度可配: 默认5 (DeepSeek支持并发; 过高可能触发限流, 5是稳妥值)
+    import os as _os
+    conc = int(_os.environ.get("LLM_CONCURRENCY", "5"))
+    with ThreadPoolExecutor(max_workers=conc, thread_name_prefix="ohsgen") as ex:
         futures: dict = {}
         for sec, sub in units:
             if _tasks._should_stop(jid):
@@ -770,7 +777,9 @@ def _run_generate_all(pid: str, jid: str):
         for un in units:
             # key: 挂到报告级 (含类型前缀避免与一级/二级冲突)
             key = f"u::{un['type']}::{un['title']}"
-            update_section_state(pid, key, "generated", un.get("text", ""))
+            # 清洗 text 里的 markdown ** 标记(被当字面量), 名称与描述分离
+            t = (un.get("text") or "").replace("**", "").replace("：", "：").strip()
+            update_section_state(pid, key, "generated", t)
     except Exception:
         pass
     return err

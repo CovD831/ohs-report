@@ -140,18 +140,13 @@ def update_section_state(pid: str, sec: str, state: str, generated_text: str = "
         return {"error": "not found"}
     data = dict(p["data"])
     sec_states = data.setdefault("section_states", {})
-    # 标题来源: 若 text 首行有 '# 标题' 则用之, 否则用结构规范标题
-    title = None
-    if generated_text:
-        for line in generated_text.splitlines():
-            s = line.strip()
-            if s.startswith('#') or s.startswith('##') or s.startswith('**'):
-                title = s.lstrip('#* ').split('\n')[0].strip()
-                break
-    if not title:
-        title = section_title(sec) if '.' not in sec or sub_title(sec) == sec else sub_title(sec)
-    if '.' in sec:
-        title = f"{sec} {sub_title(sec)}" if sub_title(sec) != sec else title
+    # 标题统一用 report_struct 正规标题 (避免LLM输出带序号/标题串, 造成'4 4.1'重复)
+    if "." in sec:
+        # 二级: "4.1" → 标题 = 序号 + 规范标题
+        st = sub_title(sec)
+        title = f"{sec} {st}" if st != sec else sec
+    else:
+        title = section_title(sec)  # 一级: "1" → "建设项目概况"
     sec_states[sec] = {"state": state, "text": generated_text, "title": title}
     conn = _conn()
     conn.execute("UPDATE project SET data=?, updated=? WHERE id=?",

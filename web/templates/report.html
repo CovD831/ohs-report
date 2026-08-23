@@ -69,6 +69,12 @@ tr:nth-child(even) td { background: var(--surface-muted); }
 .badge-gray { background: var(--surface-muted); color: var(--text-muted); }
 .badge-green { background: #E6F4EA; color: var(--success); }
 .gen-progress { padding: 10px 24px; border-bottom: 1px solid var(--border); background: var(--surface-muted); }
+.support-block { margin-top: 28px; border-top: 2px solid var(--border); padding-top: 16px; }
+.support-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; }
+tr.risky td { background: #FFF7E6; }   /* 行级需关注: 浅黄 */
+td.risky-cell { background: #FFF1CC; font-weight: 600; color: #B45309; }  /* 超标单元格: 更强黄 */
+.mat-detail { padding: 8px 12px; border-left: 3px solid var(--border); margin-bottom: 6px; font-size: 13px; line-height: 1.6; }
+.mat-detail.risky { border-left-color: #B45309; background: #FFF7E6; }
 </style>
 </head>
 <body>
@@ -200,29 +206,19 @@ function buildToc() {
   for (const sec of CH) {
     const st = ALL_STATES[sec];
     if (!st || st.state !== 'generated') continue;
-    const t = st.title || TITLES[sec] || sec;
-    html += `<a class="toc-item ${sec===SEC?'active':''} gen" onclick="loadSection('${sec}')">${sec} ${t.replace(/^#+\s*/,'')}</a>`;
+    const t = (st.title || TITLES[sec] || sec).replace(/^#+\s*/,'');
+    // 一级: 标题已含序号, 但确保是 "第N章 标题" 或 "N 标题" 格式 — 直接显示title去序号前缀
+    html += `<a class="toc-item ${sec===SEC?'active':''} gen" onclick="loadSection('${sec}')">${t}</a>`;
     // 二级小节 (从 section_states 找 该章的 x.y)
     for (const key in ALL_STATES) {
       if (/^\d+\.\d+$/.test(key) && key.split('.')[0] === sec) {
-        const s = ALL_STATES[key];
-        if (s.state !== 'generated') continue;
-        const stt = s.title || key;
-        html += `<a class="toc-item ${key===SEC?'active':''} gen" style="padding-left:22px;" onclick="loadSection('${key}')">${key} ${stt.replace(/^#+\s*/,'')}</a>`;
+        if (ALL_STATES[key].state !== 'generated') continue;
+        const stt = (ALL_STATES[key].title || key).replace(/^#+\s*/,'');
+        html += `<a class="toc-item ${key===SEC?'active':''} gen" style="padding-left:22px;" onclick="loadSection('${key}')">${stt}</a>`;
       }
     }
   }
-  // 三级单元 (物质/工序/岗位/设备 详情) — 数据驱动
-  const units = Object.keys(ALL_STATES).filter(k => k.startsWith('u::') && ALL_STATES[k].state === 'generated');
-  if (units.length) {
-    html += `<div class="toc-label" style="margin-top:14px;">危害因素详情</div>`;
-    units.sort().forEach(k => {
-      const parts = k.split('::');
-      const [type, title] = [parts[1], parts.slice(2).join('::')];
-      const full = ALL_STATES[k].title || title;
-      html += `<a class="toc-item ${k===SEC?'active':''} gen" style="padding-left:30px;font-size:12.5px;" onclick="loadSection('${encodeURIComponent(k)}')">${type} · ${full.replace(/^#+\s*/,'')}</a>`;
-    });
-  }
+  // 三级单元不再单独占目录(占用空间且归属不清) — 改为在危害识别章节正文中展示
   document.getElementById('toc').innerHTML = html
     || '<div class="empty-block" style="padding:20px;">正在生成，章节将陆续出现…</div>';
 }
@@ -244,16 +240,47 @@ async function loadSection(sec) {
     document.getElementById('content').innerHTML = `<div class="section-title">${title}</div><div class="para">${(st.text||'').replace(/^#+\s*/,'')}</div>`;
     return;
   }
-  // 已生成章节: 读 section_states 里的 LLM 正文 (打勾=真有内容)
+  // 已生成章节: 读 section_states 里的 LLM 正文 (打勾=真有内容) + 追加机械支撑表格
   const st = ALL_STATES[sec];
   if (st && st.state === 'generated' && st.text) {
     document.getElementById('content').innerHTML = renderLLM(sec, st);
+    // 异步拉取该章机械表格(识别/检测/判定)作支撑数据, 含置信度颜色
+    loadSupportTables(sec);
     return;
   }
   // 未生成: 回退机械段落占位
   const r = await fetch('/api/projects/' + PID + '/sections/' + sec);
   const d = await r.json();
   document.getElementById('content').innerHTML = renderSection(sec, d);
+}
+// 追加机械支撑表格 (识别表/检测表/判定表) + 置信度颜色(超标标黄)
+async function loadSupportTables(sec) {
+  try {
+    const r = await fetch('/api/projects/' + PID + '/sections/' + sec);
+    const d = await r.json();
+    const tables = d.tables || [];
+    if (!tables.length) return;
+    let h = '<div class="support-block"><div class="support-title">数据支撑</div>';
+    tables.forEach(t => {
+      h += `<div class="table-card"><div class="table-title">${t.name}</div><table><thead><tr>`;
+      (t.headers || []).forEach(hd => { h += `<th>${hd}</th>`; });
+      h += '</tr></thead><tbody>';
+      (t.rows || []).forEach(row => {
+        // 置信度颜色: 含'超标'/'不合格'/红色关键字的行标黄
+        const rowStr = row.join(',');
+        const risky = /超标|不合格|不合格|超限|严重|需注意/i.test(rowStr);
+        h += `<tr${risky?' class="risky"':''}>`;
+        row.forEach(c => {
+          const cellRisky = /超标|不合格|超限/i.test(String(c));
+          h += `<td${cellRisky?' class="risky-cell"':''}>${c ?? ''}</td>`;
+        });
+        h += '</tr>';
+      });
+      h += '</tbody></table></div>';
+    });
+    h += '</div>';
+    document.getElementById('content').insertAdjacentHTML('beforeend', h);
+  } catch(e) {}
 }
 // 渲染 LLM 正文 (markdown 简单转 HTML, 标题/段落/表格)
 function renderLLM(sec, st) {
@@ -280,6 +307,21 @@ function renderLLM(sec, st) {
     }
   });
   if (inList) h += '</ul>';
+  // 危害识别章节(2)追加物质详情: 从 `u::物质::*` 三级单元取, 置信度颜色(需注意标黄)
+  if (sec === '2' || sec.startsWith('2.')) {
+    const mats = Object.keys(ALL_STATES).filter(k => k.startsWith('u::物质::') && ALL_STATES[k].state === 'generated');
+    if (mats.length) {
+      h += '<div class="support-block"><div class="support-title">主要危害物质详情</div>';
+      mats.sort().forEach(k => {
+        const name = k.split('::')[2];
+        const t = (ALL_STATES[k].text || '').replace(/\*\*/g,'');
+        // 置信度颜色: 含"致癌|致敏|高毒|剧毒|需注意"标黄
+        const risky = /致癌|致敏|高毒|剧毒|需注意|神经|损害/i.test(t);
+        h += `<div class="mat-detail${risky?' risky':''}"><b>${name}</b> — ${t}</div>`;
+      });
+      h += '</div>';
+    }
+  }
   return h;
 }
 function renderSection(sec, d) {
