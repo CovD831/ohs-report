@@ -165,7 +165,7 @@ async def api_report_upload(request: Request):
         # 兼容单文件
         files = [f for f in form.getlist("file") if hasattr(f, "read") and hasattr(f, "filename")]
     result: dict[str, list[dict]] = {}
-    cats = "C1,C2,C3,C4,C5,C6,C7,C8,C9,C10,C11,C12,C13,C14,C15,C16".split(",")
+    cats = "C1,C2,C3,C4,C5,C6,C7,C8,C9,C10,C11,C12,C13,C14,C15,C16,C17".split(",")
     for c in cats:
         result[c] = []
     result["uncat"] = []

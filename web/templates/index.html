@@ -178,7 +178,7 @@ function renderFiles(detail, coverage) {
   const box = document.getElementById('fileList');
   if (!detail) { box.innerHTML = ''; return; }
   let html = '';
-  const catNames = {C1:'项目批文',C2:'项目概况',C3:'原有项目',C4:'公辅工程',C5:'总平面图',C6:'设备清单',C7:'生产工艺',C8:'原辅材料',C9:'产品产量',C10:'岗位定员',C11:'辅助用室',C12:'采光通风',C13:'防护措施',C14:'个人防护用品',C15:'应急救援',C16:'管理经费',uncat:'待定'};
+  const catNames = {C1:'项目批文',C2:'项目概况',C3:'原有项目',C4:'公辅工程',C5:'总平面图',C6:'设备清单',C7:'生产工艺',C8:'原辅材料',C9:'产品产量',C10:'岗位定员',C11:'辅助用室',C12:'采光通风',C13:'防护措施',C14:'个人防护用品',C15:'应急救援',C16:'管理经费',C17:'类比检测',uncat:'待定'};
   Object.entries(detail).forEach(([cat, files]) => {
     files.forEach(f => {
       html += `<div class="file-item"><span>📎 ${f.name}</span><span class="cat">${catNames[f.cat]||f.cat}</span><span class="status ok">已上传</span></div>`;
