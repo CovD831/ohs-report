@@ -17,7 +17,7 @@ def _rows_of(conn, sql, args=()):
 def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]:
     """按报告章节生成表格"""
     if sec == "1":
-        # 项目基本情况 + 设备清单 + 定员 (从 assess._project_data 取结构化数据, 非硬编码文件)
+        # 项目基本情况 + 设备清单 + 定员 + 建构筑物 + 产品产量 + 投资
         tables = []
         pd_ = assess.get("_project_data", {})
         eqs = pd_.get("equipment", [])
@@ -31,13 +31,29 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                       for i, s in enumerate(staffs, 1)]
             tables.append({"name": "劳动定员表", "cols": ["序号", "车间/部门", "岗位", "人数", "工作内容"],
                            "rows": s_rows})
-        # 建构筑物表
         blds = pd_.get("buildings", [])
         if blds:
             b_rows = [[i, b.get("name", ""), b.get("area", ""), b.get("floor_area", ""),
                        b.get("floors", ""), b.get("height", "")] for i, b in enumerate(blds, 1)]
             tables.append({"name": "建构筑物表", "cols": ["序号", "名称", "占地面积(㎡)", "建筑面积(㎡)", "层数", "高度(m)"],
                            "rows": b_rows})
+        # 产品产量表
+        prods = pd_.get("products", [])
+        if prods:
+            p_rows = [[i, p.get("name", ""), p.get("output", "") or pd_.get("capacity", "—")]
+                      for i, p in enumerate(prods, 1)]
+            tables.append({"name": "产品产量表", "cols": ["序号", "产品名称", "年产量"], "rows": p_rows})
+        # 项目概况/投资 (从固定字段)
+        invest = (pd_.get("investment") or "")
+        cap = (pd_.get("capacity") or "")
+        if invest or cap or pd_.get("area"):
+            info_rows = [
+                ["投资总额", invest or "—"],
+                ["建设规模/产能", cap or "—"],
+                ["占地面积", pd_.get("area", "—")],
+                ["项目性质", pd_.get("nature", "—")],
+            ]
+            tables.append({"name": "项目概况表", "cols": ["项目", "内容"], "rows": info_rows})
         return tables
 
     if sec == "2":
@@ -81,6 +97,36 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                        "合格" if j.get("pass") else "不合格"] for i, j in enumerate(js, 1)]
             tables.append({"name": "判定表", "cols": ["序号", "危害因素", "CTWA", "PC-TWA", "CSTEL", "PC-STEL", "判定"],
                            "rows": j_rows})
+        # 接触限值表 (危害因素×PC-TWA×PC-STEL×PE×单位, 从 oel_limit)
+        det_factors = [d["factor"] for d in dets] + [h["factor"] for h in assess.get("hazards", [])]
+        lim_rows, seen_l = [], set()
+        for fac in det_factors:
+            if not fac or fac in seen_l:
+                continue
+            seen_l.add(fac)
+            for r in conn.execute("SELECT oel_type, value, unit FROM oel_limit WHERE factor_name LIKE ?", (fac + "%",)).fetchall()[:3]:
+                lim_rows.append([fac, r[0], r[1], r[2]])
+        if lim_rows:
+            tables.append({"name": "接触限值表", "cols": ["危害因素", "限值类型", "限值", "单位"], "rows": lim_rows})
+        # 工种×危害表 (岗位→危害, 从网格关联)
+        from web.hazard_grid import build_grid, factors_from_material
+        grid = grid or []
+        if grid:
+            gw_rows = []
+            for g in grid:
+                for p in (g.get("posts") or ["各岗位"])[:2]:
+                    gw_rows.append([g["unit"], p, "、".join(g["factors"][:6])])
+            if gw_rows:
+                tables.append({"name": "工种危害表", "cols": ["评价单元", "岗位/工种", "主要危害因素"], "rows": gw_rows})
+        # 关键控制点表 (岗位×关键因子×措施)
+        jc = assess.get("judgements", [])
+        kc_rows = []
+        for i, j in enumerate(jc[:10]):
+            lv = (j.get("level") or {}).get("level", "—")
+            ctrl = (j.get("level") or {}).get("control", "")
+            kc_rows.append([i + 1, j["factor"], lv, ctrl[:40]])
+        if kc_rows:
+            tables.append({"name": "关键控制点表", "cols": ["序号", "关键控制因子", "控制级别", "控制措施"], "rows": kc_rows})
         return tables
 
     if sec == "3":

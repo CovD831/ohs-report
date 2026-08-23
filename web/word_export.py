@@ -30,10 +30,10 @@ from web.projects_db import get_project  # noqa: E402
 # 二级小节 → 内嵌哪些表 (复用 fill_section 各章表格, 按小节筛)
 # 值 = (该小节所属的fill_section章, 要加的表格名列表; 空=全加该章)
 _SUB_TABLE_MAP = {
-    "1.1": ("1", ["主要设备清单"]),
-    "1.2": ("1", ["主要设备清单", "劳动定员表", "建构筑物表"]),
-    "2.1": ("2", ["危害因素识别表"]),
-    "2.2": ("2", ["检测结果表", "判定表"]),
+    "1.1": ("1", ["主要设备清单", "项目概况表"]),
+    "1.2": ("1", ["主要设备清单", "劳动定员表", "建构筑物表", "产品产量表"]),
+    "2.1": ("2", ["危害因素识别表", "工种危害表"]),
+    "2.2": ("2", ["检测结果表", "判定表", "接触限值表", "关键控制点表"]),
     "3.1": ("3", ["防尘防毒设施检查表", "防噪声振动检查表", "防护设施检查表"]),
     "3.2": ("3", ["PPE配备表"]),
     "3.3": ("3", ["应急救援检查表", "设施配置表"]),
@@ -56,15 +56,10 @@ _SUB_TABLE_MAP = {
 
 
 def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
-    """按二级小节返回内嵌表格 (复用 fill_section 各章表格)"""
+    """按二级小节返回内嵌表格 (复用 fill_section 各章表格, 全局去重)"""
     sub = sn if "." in sn else sec
     m = _SUB_TABLE_MAP.get(sub)
     if not m:
-        # 该小节未指定表, 但所在章有核心表 → 章级表格
-        ch = sub.split(".")[0]
-        if ch in ("1", "2", "3", "4", "6"):
-            # 只在章的"总览小节"放章级表, 避免每小节重复
-            return []
         return []
     fill_ch, wanted = m
     tables = fill_section(conn, fill_ch, assess)
@@ -75,9 +70,15 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     for t in tables:
         for w in wanted:
             if t["name"] == w or t["name"].startswith(w) or w in t["name"]:
-                res.append(t)
+                # 全局去重: 每个表名只出现一次 (避免设备×2/检查表×2/管理制度×3)
+                if t["name"] not in _USED_TABLES:
+                    _USED_TABLES.add(t["name"])
+                    res.append(t)
                 break
     return res
+
+
+_USED_TABLES: set = set()
 FANGSONG = "仿宋_GB2312"
 SONG = "宋体"
 HEI = "黑体"
@@ -151,6 +152,8 @@ def add_units_section(doc, units: list[dict]):
 
 
 def export_docx(project: dict, assess: dict, out_path: Path, section_states: dict | None = None):
+    global _USED_TABLES
+    _USED_TABLES = set()  # 每次导出重置去重
     conn = connect()
     doc = Document()
     # 页面 A4 + 边距
