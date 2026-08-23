@@ -12,6 +12,11 @@ PROJECT_INFO_SCHEMA: dict[str, tuple[str, str]] = {
     "name": ("项目名称", "str"),
     "industry": ("所属行业", "str"),
     "risk_level": ("职业病危害风险类别", "str"),
+    "investment": ("投资总额", "str"),
+    "capacity": ("建设规模/产能", "str"),
+    "area": ("占地面积", "str"),
+    "nature": ("项目性质", "str"),
+    "location": ("建设地点", "str"),
     # 工程
     "equipment": ("主要设备清单", "list"),
     "process_text": ("生产工艺流程", "str"),
@@ -33,19 +38,19 @@ PROJECT_INFO_SCHEMA: dict[str, tuple[str, str]] = {
 # 章级 → 字段; 二级小节 → (章字段 + 该小节侧重的字段)
 CHAPTER_INFO_MAPPING: dict[str, list[str]] = {
     # --- 正文 1-6 章 ---
-    "1": ["name", "industry", "risk_level", "equipment", "process_text", "staffing", "materials"],
+    "1": ["name", "industry", "nature", "investment", "capacity", "area", "location", "risk_level", "equipment", "staffing"],
     "2": ["hazards", "detections", "materials", "process_text", "equipment", "staffing"],
     "3": ["protection", "ppe", "emergency", "hazards"],
-    "4": ["equipment", "materials", "staffing", "protection"],
+    "4": ["equipment", "materials", "staffing", "protection", "area", "location"],
     "5": ["protection", "ppe", "emergency", "hazards"],
-    "6": ["name", "industry", "risk_level", "hazards"],
+    "6": ["name", "industry", "risk_level", "nature", "capacity"],
     # --- 附录 7-12 章 ---
-    "7": ["name", "industry", "risk_level"],
-    "8": ["equipment", "process_text", "materials", "staffing", "industry", "name"],
+    "7": ["name", "industry", "risk_level", "nature"],
+    "8": ["equipment", "process_text", "materials", "staffing", "industry", "name", "nature", "capacity", "area"],
     "9": ["analogous_test", "industry", "ppe", "emergency"],
     "10": ["hazards", "detections", "materials", "process_text", "equipment", "staffing"],
     "11": ["protection", "ppe", "emergency"],
-    "12": ["equipment", "materials", "staffing", "protection"],
+    "12": ["equipment", "materials", "staffing", "protection", "area", "location"],
 }
 
 # 二级小节 → 侧重字段 (在章字段基础上, 该小节再强调这些)

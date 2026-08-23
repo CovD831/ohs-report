@@ -379,7 +379,17 @@ def _assess_cached(pid: str, _cache: dict | None = None):
                "staffing": d.get("staffing", []),
                "protection": d.get("protection", ""),
                "ppe": d.get("ppe", []),
-               "emergency": d.get("emergency", "")}
+               "emergency": d.get("emergency", ""),
+               "investment": d.get("investment", ""),
+               "capacity": d.get("capacity", ""),
+               "area": d.get("area", ""),
+               "nature": d.get("nature", ""),
+               "location": d.get("location", ""),
+               "buildings": d.get("buildings", []),
+               "facilities": d.get("facilities", []),
+               "products": d.get("products", []),
+               "equipment_detail": d.get("equipment_detail", []),
+               "shifts": d.get("shifts", [])}
     assess = assess_project(conn, project)
     conn.close()
     info = _build_info(project, assess)

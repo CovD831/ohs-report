@@ -209,7 +209,7 @@ def api_report_generate(request: Request):
     # 结构化字段: 物料/定员/防护/PPE/应急/建构筑物/设施配置/产品/公辅/概况细节
     for k in ("materials", "staffing", "protection", "ppe", "emergency",
               "buildings", "facilities", "products", "public_works",
-              "investment", "area", "capacity", "nature",
+              "investment", "area", "capacity", "nature", "location",
               "equipment_detail", "shifts"):
         if imported.get(k):
             data[k] = imported[k]
@@ -544,7 +544,7 @@ def import_materials_from_dir(pid: str) -> dict:
     prot, emergency = "", ""
     proj_name, industry = "", ""
     buildings, facilities, products, public_works = [], [], [], []
-    investment, area, capacity, nature = "", "", "", ""
+    investment, area, capacity, nature, location = "", "", "", "", ""
 
     def _read_rows(f):
         """读取表格文件: 兼容 csv/txt/xlsx, 多种分隔符(\x07/\t/,/;), 容错编码"""
@@ -621,6 +621,7 @@ def import_materials_from_dir(pid: str) -> dict:
                             area = area or (j.get("area") or j.get("建筑面积") or "")
                             capacity = capacity or (j.get("capacity") or j.get("产能") or "")
                             nature = nature or (j.get("nature") or j.get("项目性质") or "")
+                            location = location or (j.get("location") or j.get("建设地点") or j.get("项目地点") or "")
                     except Exception:
                         for ln in raw.splitlines():
                             if "项目名称" in ln and "：" in ln: proj_name = proj_name or ln.split("：",1)[1].strip()[:60]
@@ -629,6 +630,7 @@ def import_materials_from_dir(pid: str) -> dict:
                             if "建筑面积" in ln and "：" in ln: area = area or ln.split("：",1)[1].strip()[:20]
                             if "产能" in ln and "：" in ln: capacity = capacity or ln.split("：",1)[1].strip()[:30]
                             if "项目性质" in ln and "：" in ln: nature = nature or ln.split("：",1)[1].strip()[:10]
+                            if "建设地点" in ln and "：" in ln: location = location or ln.split("：",1)[1].strip()[:60]
                 elif f.suffix in (".csv", ".xlsx"):
                     rows = _dict_rows(_read_rows(f))
                     for r in rows:
@@ -752,6 +754,7 @@ def import_materials_from_dir(pid: str) -> dict:
             "buildings": buildings, "facilities": facilities,
             "products": products, "public_works": public_works,
             "investment": investment, "area": area, "capacity": capacity, "nature": nature,
+            "location": location,
             "equipment_detail": eq_detail, "shifts": shifts}
 
 
