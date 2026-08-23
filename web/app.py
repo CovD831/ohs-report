@@ -356,36 +356,57 @@ def api_import_materials(pid: str):
 
 
 def import_materials_from_dir(pid: str) -> dict:
-    """从项目材料目录导入 (浦发验证: materials_pf/)"""
+    """从项目材料目录导入 (上传的文件 → 设备/检测/工艺文本)
+    列名容错: 检测 CTWA(mg/m3)|CTWA 均可; <1 → 0.5
+    """
     import csv
     from web.uploads import project_dir
     pd = project_dir(pid)
-    # 搜索材料文件 (递归)
     eq, dets = [], []
     proc = ""
+    seen_eq, seen_det = set(), set()
     for f in pd.rglob("*"):
         if not f.is_file():
             continue
         name = f.name
-        if "设备" in name:
-            with open(f, encoding="utf-8-sig", errors="ignore") as fh:
-                for row in csv.DictReader(fh):
-                    n = (row.get("设备名称") or "").strip()
-                    if n:
-                        eq.append(n)
-        if "检测" in name and f.suffix == ".csv":
-            with open(f, encoding="utf-8-sig", errors="ignore") as fh:
-                for row in csv.DictReader(fh):
-                    fac = (row.get("危害因素") or "").strip()
-                    ctwa = (row.get("CTWA") or "").strip()
-                    if fac and ctwa:
-                        try:
-                            dets.append({"factor": fac, "ctwa": float(ctwa)})
-                        except ValueError:
-                            dets.append({"factor": fac, "ctwa": None})
-        if "工艺" in name:
-            proc = f.read_text(encoding="utf-8", errors="ignore")
-    return {"equipment": eq, "detections": dets, "process_text": proc, "material_count": len(eq)}
+        try:
+            if "设备" in name:
+                with open(f, encoding="utf-8-sig", errors="ignore") as fh:
+                    for row in csv.DictReader(fh):
+                        n = (row.get("设备名称")
+                             or row.get("名称") or "").strip()
+                        if n:
+                            item = str(n).split("|")[0].strip()
+                            if item and item not in seen_eq:
+                                eq.append(item)
+                                seen_eq.add(item)
+            if "检测" in name and f.suffix == ".csv":
+                with open(f, encoding="utf-8-sig", errors="ignore") as fh:
+                    for row in csv.DictReader(fh):
+                        fac = (row.get("危害因素") or row.get("因子") or "").strip()
+                        # CTWA 列名容错
+                        ctwa_raw = ""
+                        for k in ("CTWA(mg/m3)", "CTWA", "PC-TWA", "检测值"):
+                            if k in row:
+                                ctwa_raw = (row.get(k) or "").strip()
+                                break
+                        if fac and fac not in seen_det:
+                            seen_det.add(fac)
+                            if not ctwa_raw:
+                                ctwa_f = None
+                            elif "<" in ctwa_raw or "＜" in ctwa_raw:
+                                ctwa_f = 0.5
+                            else:
+                                try:
+                                    ctwa_f = float(ctwa_raw)
+                                except ValueError:
+                                    ctwa_f = None
+                            dets.append({"factor": fac, "ctwa": ctwa_f})
+            if "工艺" in name:
+                proc = proc + "\n" + f.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+    return {"equipment": eq, "detections": dets, "process_text": proc.strip(), "material_count": len(eq)}
 
 
 @app.get("/api/projects/{pid}/export", response_class=JSONResponse)
