@@ -713,11 +713,9 @@ def _run_generate_all(pid: str, jid: str):
     done = fail = 0
 
     def _finish(f):
-        """处理一个完成的 future: 写result, 返回 (成功? )"""
+        """处理一个完成的 future: 写result"""
         nonlocal done, fail
-        key, sec = futures.pop(f), None
-        # futures[f] = (sec, sub)
-        s, sb = key
+        s, sb = futures.pop(f)
         try:
             text = f.result()
             update_section_state(pid, sb or s, "generated", text)
@@ -726,7 +724,7 @@ def _run_generate_all(pid: str, jid: str):
             fail += 1
         _tasks.set_progress(jid, done + fail)
 
-    from concurrent.futures import wait as cf_wait, FIRST_COMPLETED, TimeoutError as FT
+    from concurrent.futures import wait as cf_wait, FIRST_COMPLETED
     with ThreadPoolExecutor(max_workers=3, thread_name_prefix="ohsgen") as ex:
         futures: dict = {}
         for sec, sub in units:
@@ -734,28 +732,16 @@ def _run_generate_all(pid: str, jid: str):
                 break
             fut = ex.submit(_gen_one, pid, sec, sub, cache)
             futures[fut] = (sec, sub)
+            # 保持并发≤3: 阻塞等任一完成 (不设短超时, LLM正常需几十秒)
             while len(futures) >= 3:
                 if _tasks._should_stop(jid):
                     break
-                try:
-                    d_f = cf_wait(list(futures), timeout=12, return_when=FIRST_COMPLETED)
-                except FT:
-                    break
-                if not d_f.done:
-                    break
+                d_f = cf_wait(list(futures), return_when=FIRST_COMPLETED)
                 for f in d_f.done:
                     _finish(f)
+        # 收尾: 等剩余全部完成
         while futures:
-            try:
-                d_f = cf_wait(list(futures), timeout=20, return_when=FIRST_COMPLETED)
-            except FT:
-                break
-            if not d_f.done:
-                for f in list(futures):
-                    if not f.done():
-                        futures.pop(f, None)
-                        fail += 1
-                break
+            d_f = cf_wait(list(futures), return_when=FIRST_COMPLETED)
             for f in d_f.done:
                 _finish(f)
     err = None if fail == 0 else f"{fail} 个单元失败 ({done} 成功)"
