@@ -98,6 +98,20 @@ a { color: var(--primary); text-decoration: none; }
   margin-right:6px; background:var(--border-strong); flex-shrink:0; }
 .nav-dot.gen { background: var(--success); }
 
+/* 材料导入向导 */
+.wiz-tip { font-size: 13px; color: var(--text-secondary); margin: 4px 0 14px; }
+.wiz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.wiz-slot { border: 1.5px dashed var(--border-strong); border-radius: var(--radius-md);
+  padding: 12px 14px; cursor: pointer; transition: border-color .15s, background .15s;
+  display: block; background: var(--surface); }
+.wiz-slot:hover { border-color: var(--primary); background: var(--primary-soft); }
+.wiz-slot.core .wiz-slot-head b { color: var(--primary-strong); }
+.wiz-slot.has { border-style: solid; border-color: var(--success); }
+.wiz-slot-head { font-size: 13px; margin-bottom: 4px; }
+.wiz-slot-sub { font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
+.wiz-file { font-size: 11.5px; color: var(--text-secondary); margin-top: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 table { width: 100%; border-collapse: collapse; margin: 12px 0 24px;
   font-size: 12px; }
 th { background: var(--surface-muted); color: var(--text-secondary); text-align: left;
@@ -374,6 +388,12 @@ async function loadSection(sec) {
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', !el.dataset.sub && el.dataset.sec === sec);
   });
+  // 空项目向导: 无设备无检测 → 显示材料导入引导 (替代章节内容)
+  if (overview && !overview.hazard_count && !overview.judgement_count
+      && !sessionStorage.getItem('wizSkip_' + pid)) {
+    renderImportWizard();
+    return;
+  }
   document.getElementById('content').innerHTML = '<div class="content-header"><h1>加载中…</h1></div>';
   document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">加载中…</div>';
   const r = await fetch(`/api/projects/${pid}/sections/${sec}`);
@@ -541,6 +561,76 @@ function watchTask(jobId, total) {
     } catch (e) { _watchTimer = setTimeout(tick, 8000); }
   };
   tick();
+}
+
+let ALL_STATES = {};
+
+// ===== 材料导入向导 (空项目第一步) =====
+let WIZ_CATS = [];
+
+async function renderImportWizard() {
+  const content = document.getElementById('content');
+  document.getElementById('evidence').innerHTML =
+    '<h2>开始使用</h2><div class="ev-loading">左侧选择材料类别上传。核心材料: 设备清单(A2c)、原辅材料(A2a)、工艺说明(A2b)、检测数据(A2e)。导入后系统自动识别危害因素。</div>';
+  // 拉类别与已传状态
+  const r = await fetch(`/api/projects/${pid}/materials`);
+  const d = await r.json();
+  WIZ_CATS = d.categories || [];
+  const core = new Set(['A2a', 'A2b', 'A2c', 'A2d', 'A2e']);
+  let slots = '';
+  WIZ_CATS.forEach(c => {
+    const n = (c.files || []).length;
+    const isCore = core.has(c.key);
+    slots += `<label class="wiz-slot ${n ? 'has' : ''} ${isCore ? 'core' : ''}" title="${c.desc}">
+      <input type="file" multiple style="display:none" onchange="wizUpload('${c.key}', this)">
+      <div class="wiz-slot-head">${n ? '✅' : (isCore ? '⬆' : '＋')} <b>${c.key}</b> ${c.name}</div>
+      <div class="wiz-slot-sub">${n ? `已传 ${n} 个文件` : c.desc}</div>
+      ${(c.files || []).map(f => `<div class="wiz-file">· ${f.name}</div>`).join('')}
+    </label>`;
+  });
+  content.innerHTML = `<div class="content-header"><h1>第 1 步 · 上传企业材料</h1></div>
+    <div class="wiz-tip">按 GBZ/T 196 附录A 分类上传（<b>加粗为核心材料</b>，建议至少提供 A2a/A2b/A2c）。
+    点击卡片选择文件，可多选。</div>
+    <div class="wiz-grid">${slots}</div>
+    <div style="display:flex;gap:12px;align-items:center;margin:20px 0;">
+      <button class="btn btn-primary" style="font-size:15px;padding:11px 26px;" onclick="wizImport()">⚡ 导入并生成识别结果</button>
+      <button class="btn btn-secondary" onclick="skipWizard()">跳过，先浏览报告结构</button>
+      <span id="wizMsg" style="font-size:13px;color:var(--text-secondary);"></span>
+    </div>`;
+}
+
+async function wizUpload(catKey, input) {
+  const msg = document.getElementById('wizMsg');
+  for (const f of input.files) {
+    const fd = new FormData();
+    fd.append('file', f);
+    msg.textContent = `上传中: ${f.name}…`;
+    try {
+      const r = await fetch(`/api/projects/${pid}/upload/${catKey}`, { method: 'POST', body: fd });
+      const d = await r.json();
+      if (!d.ok) { alert(`上传失败: ${d.error || f.name}`); }
+    } catch (e) { alert(`上传失败: ${f.name}`); }
+  }
+  msg.textContent = '';
+  renderImportWizard();  // 刷新槽位
+}
+
+async function wizImport() {
+  const msg = document.getElementById('wizMsg');
+  msg.textContent = '导入中… 解析材料 → 识别危害因素';
+  const r = await fetch(`/api/projects/${pid}/import-materials`, { method: 'POST' });
+  const d = await r.json();
+  if (!d.ok) { msg.textContent = ''; alert('导入失败'); return; }
+  msg.textContent = `✓ 导入成功: 设备 ${d.equipment} 台 / 检测 ${d.detections} 条`;
+  await loadOverview();
+  loadStates();
+  setTimeout(() => loadSection('2'), 600);   // 跳到识别结果
+}
+
+function skipWizard() {
+  // 设置一次性标记, 本次会话不再拦截 (用 overview 缓存判断, 无需存储)
+  sessionStorage.setItem('wizSkip_' + pid, '1');
+  loadSection(currentSec === SEC ? '1' : currentSec);
 }
 
 let ALL_STATES = {};
