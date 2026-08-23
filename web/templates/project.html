@@ -90,6 +90,14 @@ a { color: var(--primary); text-decoration: none; }
 .stat-card .stat-sub { font-size: 12px; color: var(--text-secondary); }
 
 /* 表格 */
+/* 操作栏 (固定在内容区顶部, 与章节切换无关) */
+.toolbar { display: flex; gap: 8px; align-items: center; padding: 10px 16px;
+  border-bottom: 1px solid var(--border); background: var(--surface); }
+.toolbar-hint { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+.nav-dot { display:inline-block; width:7px; height:7px; border-radius:50%;
+  margin-right:6px; background:var(--border-strong); flex-shrink:0; }
+.nav-dot.gen { background: var(--success); }
+
 table { width: 100%; border-collapse: collapse; margin: 12px 0 24px;
   font-size: 12px; }
 th { background: var(--surface-muted); color: var(--text-secondary); text-align: left;
@@ -200,12 +208,14 @@ table td.col-method { min-width: 100px; }
 
   <!-- 中栏: 内容 -->
   <div class="content" id="content">
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="generateAll()">⚡ 整篇生成</button>
+      <button class="btn btn-primary" onclick="exportWord()">📄 导出Word</button>
+      <button class="btn btn-secondary" onclick="openDataEditor()">⚙ 数据源</button>
+      <span class="toolbar-hint" id="toolbarHint">逐章: 打开章节 → 确认机械结果 → 生成本页</span>
+    </div>
     <div class="content-header">
       <h1>加载中…</h1>
-      <button class="btn btn-primary" onclick="generateAll()" style="margin-left:auto;">⚡ 整篇生成</button>
-      <button class="btn btn-primary" onclick="exportWord()">📄 导出Word</button>
-      <button class="btn btn-secondary" onclick="openDataEditor()">⚙ 数据源编辑</button>
-      <button class="btn btn-secondary" onclick="draftLLM()" id="llmBtn">✨ LLM草稿</button>
     </div>
   </div>
 
@@ -539,6 +549,23 @@ async function loadStates() {
   const r = await fetch(`/api/projects/${pid}/data`);
   const d = await r.json();
   ALL_STATES = d.section_states || {};
+  // 章节树状态点: 已生成→绿点
+  document.querySelectorAll('.nav-item').forEach(el => {
+    const key = el.dataset.sub || el.dataset.sec;
+    if (!key) return;
+    let dot = el.querySelector('.nav-dot');
+    if (!dot) {
+      dot = document.createElement('span');
+      dot.className = 'nav-dot';
+      el.insertBefore(dot, el.firstChild);
+    }
+    const st = ALL_STATES[key];
+    dot.classList.toggle('gen', !!(st && st.state === 'generated' && (st.text || '').length > 50));
+  });
+  renderStates();
+}
+
+function renderStates() {
   // 重渲染当前章节状态徽标
   const badge = document.getElementById('secStateBadge');
   if (badge) {
