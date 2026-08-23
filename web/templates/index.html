@@ -194,8 +194,8 @@ async function generate() {
   const r = await fetch('/api/report/generate', {method:'POST'});
   const d = await r.json();
   if (!d.ok) { alert('生成启动失败'); btn.disabled=false; btn.textContent='⚡ 生成报告'; return; }
-  showProgress();
-  pollTask(d.job_id);
+  // 不留在工作台干等 —— 直接进报告阅读页, 边生成边显示
+  window.location.href = '/report/' + d.pid;
 }
 function showProgress() {
   document.getElementById('progress').style.display = 'flex';

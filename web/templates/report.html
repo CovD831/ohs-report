@@ -125,10 +125,23 @@ const SUBS = {
 
 async function init() {
   await loadOverview();
+  await reloadStates();
   buildToc();
-  loadSection(SEC);
-  // 检测是否有进行中的生成任务 → 显示进度, 完成后自动刷新
+  // 自动定位到第一个已生成的章节; 否则停在"生成中"
+  const firstGen = findFirstGenerated();
+  if (firstGen) { loadSection(firstGen); }
   checkGenTask();
+}
+async function reloadStates() {
+  // 拉取最新 section_states (生成到哪出现到哪)
+  const r = await fetch('/api/projects/' + PID + '/data');
+  const d = await r.json();
+  ALL_STATES = d.section_states || {};
+}
+function findFirstGenerated() {
+  // 返回第一个已生成的章节 (一级优先)
+  for (const sec of CH) if (secGenerated(sec)) return sec;
+  return null;
 }
 async function checkGenTask() {
   try {
@@ -138,6 +151,9 @@ async function checkGenTask() {
     if (mine) {
       document.getElementById('genProgress').style.display = 'block';
       pollGen(mine.id);
+    } else {
+      // 无进行中的任务: 不显示进度, 但刷新一次
+      await reloadStates(); buildToc();
     }
   } catch(e) {}
 }
@@ -148,18 +164,26 @@ async function pollGen(jobId) {
     const pct = d.total ? Math.round(d.live_progress / d.total * 100) : 0;
     document.getElementById('genFill').style.width = pct + '%';
     document.getElementById('genText').textContent = pct + '% (' + d.live_progress + '/' + d.total + ')';
+    // 实时刷新: 新生成的章节动态加入目录, 当前章节未生成则自动跳到最新章节
+    await reloadStates(); buildToc();
+    if (!secGenerated(SEC)) {
+      const gen = findFirstGenerated();
+      if (gen) loadSection(gen);
+    } else if (SEC && ALL_STATES[SEC] && document.getElementById('content').innerHTML.includes('生成中')) {
+      loadSection(SEC);
+    }
     if (d.status === 'done' || d.status === 'failed') {
       const gp = document.getElementById('genProgress');
       gp.innerHTML = '<div style="font-size:12px;color:var(--text-muted);">' + (d.status==='done' ? '生成完成 ✓' : '生成已停止') + '</div>';
       document.getElementById('statusBadge').textContent = d.status==='done' ? '生成完成' : '生成失败';
       document.getElementById('statusBadge').className = 'badge ' + (d.status==='done' ? 'badge-green' : 'badge-gray');
-      // 完成后刷新章节内容
-      loadSection(SEC);
+      await reloadStates(); buildToc();
+      loadSection(SEC || findFirstGenerated() || '1');
       loadOverview();
       return;
     }
   }
-  setTimeout(() => pollGen(jobId), 2500);
+  timer = setTimeout(() => pollGen(jobId), 2500);
 }
 async function loadOverview() {
   const r = await fetch('/api/projects/' + PID + '/overview');
@@ -169,19 +193,28 @@ async function loadOverview() {
   sb.textContent = (overview.has_data ? `危害${overview.hazard_count} · 判定${overview.judgement_count}` : '待上传材料');
   sb.className = 'badge ' + (overview.has_data ? 'badge-green' : 'badge-gray');
 }
+// 只显示"已生成"的章节 — 生成到哪出现到哪
 function buildToc() {
   let html = '';
   CH.forEach(sec => {
     const st = (ALL_STATES[sec] || {}).state;
-    html += `<a class="toc-item ${sec===SEC?'active':''} ${st==='generated'?'gen':''}" onclick="loadSection('${sec}')">${sec} ${TITLES[sec]}</a>`;
+    if (st !== 'generated') return;  // 未生成不出现
+    html += `<a class="toc-item ${sec===SEC?'active':''} gen" onclick="loadSection('${sec}')">${sec} ${TITLES[sec]}</a>`;
     (SUBS[sec]||[]).forEach(sub => {
-      const [s, ...t] = sub.split(' ');
       const stx = (ALL_STATES[sub] || {}).state;
-      html += `<a class="toc-item" style="padding-left:22px;" onclick="loadSection('${sub}')">${sub}</a>`;
+      if (stx !== 'generated') return;  // 未生成不出现
+      html += `<a class="toc-item ${sub===SEC?'active':''} gen" style="padding-left:22px;" onclick="loadSection('${sub}')">${sub}</a>`;
     });
   });
-  document.getElementById('toc').innerHTML = html;
+  document.getElementById('toc').innerHTML = html
+    || '<div class="empty-block" style="padding:20px;">正在生成，章节将陆续出现…</div>';
 }
+
+// 标志: 当前章节是否已生成 (决定显示"生成中"还是实际内容)
+function secGenerated(sec) {
+  return (ALL_STATES[sec] || {}).state === 'generated';
+}
+
 async function loadSection(sec) {
   SEC = sec;
   buildToc();
