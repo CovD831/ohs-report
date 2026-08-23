@@ -200,17 +200,25 @@ def api_report_generate(request: Request):
     p = get_project(pid)
     if not p:
         return JSONResponse({"error": "not found"}, status_code=404)
-    # 先导入材料 (解析设备/检测/工艺)
+    # 先导入材料 (解析设备/检测/工艺 + 项目概况名/行业)
     imported = import_materials_from_dir(pid)
     data = dict(p["data"])
     data["equipment"] = imported["equipment"]
     data["detections"] = imported["detections"]
     data["process_text"] = imported["process_text"]
-    data["industry"] = data.get("industry", "")
+    # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
+    if imported.get("industry"):
+        data["industry"] = imported["industry"]
+    proj_name = imported.get("name") or p["name"]
+    if proj_name and proj_name != "未命名报告":
+        p["name"] = proj_name
+        data["name"] = proj_name
     # 生命周期: 重新生成必须先清空旧的 section_states,
     # 否则打勾的是上次材料的旧内容, 与当前数据不一致 (用户指出的 bug)
     data["section_states"] = {}
     _save_project_data(pid, data)
+    if proj_name and proj_name != "未命名报告":
+        update_project(pid, proj_name, data)
     _cache.pop(f"assess:{pid}", None)
     total = count_units(data)
     user = request.state.user if hasattr(request.state, "user") else None
@@ -518,17 +526,33 @@ def import_materials_from_dir(pid: str) -> dict:
     """从项目材料目录导入 (上传的文件 → 设备/检测/工艺文本)
     列名容错: 检测 CTWA(mg/m3)|CTWA 均可; <1 → 0.5
     """
-    import csv
+    import csv, json
     from web.uploads import project_dir
     pd = project_dir(pid)
     eq, dets = [], []
     proc = ""
+    proj_name, industry = "", ""
     seen_eq, seen_det = set(), set()
     for f in pd.rglob("*"):
         if not f.is_file():
             continue
         name = f.name
         try:
+            # C1/C2 项目概况/批文: 提取项目名/行业
+            if ("概况" in name or "批文" in name or "立项" in name) and f.suffix in (".json", ".txt"):
+                raw = f.read_text(encoding="utf-8", errors="ignore")
+                try:
+                    j = json.loads(raw)
+                    if isinstance(j, dict):
+                        proj_name = proj_name or (j.get("name") or j.get("项目名称") or "")
+                        industry = industry or (j.get("industry") or j.get("行业") or "")
+                except Exception:
+                    # 纯文本: 找项目名/行业关键词行
+                    for ln in raw.splitlines():
+                        if "项目名称" in ln and "：" in ln:
+                            proj_name = proj_name or ln.split("：", 1)[1].strip()[:60]
+                        if "行业" in ln and "：" in ln:
+                            industry = industry or ln.split("：", 1)[1].strip()[:40]
             if "设备" in name:
                 with open(f, encoding="utf-8-sig", errors="ignore") as fh:
                     for row in csv.DictReader(fh):
@@ -565,7 +589,8 @@ def import_materials_from_dir(pid: str) -> dict:
                 proc = proc + "\n" + f.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             continue
-    return {"equipment": eq, "detections": dets, "process_text": proc.strip(), "material_count": len(eq)}
+    return {"equipment": eq, "detections": dets, "process_text": proc.strip(),
+            "material_count": len(eq), "name": proj_name, "industry": industry}
 
 
 @app.get("/api/projects/{pid}/export", response_class=JSONResponse)
