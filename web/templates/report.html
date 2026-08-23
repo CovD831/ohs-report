@@ -244,9 +244,43 @@ async function loadSection(sec) {
     document.getElementById('content').innerHTML = `<div class="section-title">${title}</div><div class="para">${(st.text||'').replace(/^#+\s*/,'')}</div>`;
     return;
   }
+  // 已生成章节: 读 section_states 里的 LLM 正文 (打勾=真有内容)
+  const st = ALL_STATES[sec];
+  if (st && st.state === 'generated' && st.text) {
+    document.getElementById('content').innerHTML = renderLLM(sec, st);
+    return;
+  }
+  // 未生成: 回退机械段落占位
   const r = await fetch('/api/projects/' + PID + '/sections/' + sec);
   const d = await r.json();
   document.getElementById('content').innerHTML = renderSection(sec, d);
+}
+// 渲染 LLM 正文 (markdown 简单转 HTML, 标题/段落/表格)
+function renderLLM(sec, st) {
+  const title = st.title || TITLES[sec] || sec;
+  let h = `<div class="section-title">${title.replace(/^#+\s*/,'')}</div>`;
+  // 简单 markdown → HTML: ## 标题, 段落, 列表
+  const lines = (st.text || '').split('\n');
+  let inList = false;
+  lines.forEach(ln => {
+    const s = ln.trim();
+    if (!s) return;
+    if (s.startsWith('## ') || s.startsWith('# ')) {
+      if (inList) { h += '</ul>'; inList = false; }
+      h += `<h3 style="font-size:14px;margin:14px 0 6px;">${s.replace(/^#+\s*/,'')}</h3>`;
+    } else if (s.startsWith('**') && s.endsWith('**')) {
+      if (inList) { h += '</ul>'; inList = false; }
+      h += `<h3 style="font-size:14px;margin:12px 0 6px;">${s.replace(/^\*\*|\*\*$/g,'')}</h3>`;
+    } else if (s.startsWith('- ')) {
+      if (!inList) { h += '<ul style="margin:6px 0;padding-left:20px;">'; inList = true; }
+      h += `<li>${s.slice(2)}</li>`;
+    } else {
+      if (inList) { h += '</ul>'; inList = false; }
+      h += `<div class="para">${s}</div>`;
+    }
+  });
+  if (inList) h += '</ul>';
+  return h;
 }
 function renderSection(sec, d) {
   const title = d.title || TITLES[sec] || sec;

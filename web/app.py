@@ -203,6 +203,9 @@ def api_report_generate(request: Request):
     data["detections"] = imported["detections"]
     data["process_text"] = imported["process_text"]
     data["industry"] = data.get("industry", "")
+    # 生命周期: 重新生成必须先清空旧的 section_states,
+    # 否则打勾的是上次材料的旧内容, 与当前数据不一致 (用户指出的 bug)
+    data["section_states"] = {}
     _save_project_data(pid, data)
     _cache.pop(f"assess:{pid}", None)
     total = len(SECTION_SKELETON) + sum(len(v) for v in SUB_SECTIONS.values())
@@ -721,13 +724,18 @@ def _run_generate_all(pid: str, jid: str):
     done = fail = 0
 
     def _finish(f):
-        """处理一个完成的 future: 写result"""
+        """处理一个完成的 future: 写result (空结果不标记generated, 打勾必须真有内容)"""
         nonlocal done, fail
         s, sb = futures.pop(f)
         try:
             text = f.result()
-            update_section_state(pid, sb or s, "generated", text)
-            done += 1
+            # 生命周期的关键: 空/占位结果不算"已生成", 否则打勾但无内容
+            t = text.strip() if text else ""
+            if len(t) < 30 or t.startswith("暂不支持"):
+                fail += 1
+            else:
+                update_section_state(pid, sb or s, "generated", text)
+                done += 1
         except Exception:
             fail += 1
         _tasks.set_progress(jid, done + fail)
