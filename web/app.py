@@ -1043,19 +1043,8 @@ def _run_generate_all(pid: str, jid: str):
                 fail += 1
     err = None if fail == 0 else f"{fail} 个单元失败 ({done} 成功)"
 
-    # 三级单元 (数据驱动, 机械生成 → 目录/内容三级节点)
-    try:
-        from web.unit_gen import extract_units
-        cache_result = _assess_cached(pid)
-        units = extract_units(cache_result["project"], cache_result["assess"])
-        for un in units:
-            # key: 挂到报告级 (含类型前缀避免与一级/二级冲突)
-            key = f"u::{un['type']}::{un['title']}"
-            # 清洗 text 里的 markdown ** 标记(被当字面量), 名称与描述分离
-            t = (un.get("text") or "").replace("**", "").replace("：", "：").strip()
-            update_section_state(pid, key, "generated", t)
-    except Exception:
-        pass
+    # 三级/四级数据驱动单元在 _run_generate_all 主循环生成 (report_struct 的 SUBS3/SUBS4/DATA4)
+    # 不再用 extract_units 生成 u:: 单元 (旧格式, 已被危害网格+三级/四级替代)
     return err
 
 

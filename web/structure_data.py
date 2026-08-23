@@ -123,7 +123,7 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
         if field == "hazards":
             return [h.get("factor", "") for h in hazards] or []
         if field == "detections":
-            # 检测: factor+ctwa+所属限值 (从 oel_limit 查)
+            # 检测: factor+ctwa+标准限值标签 (PC-TWA/PC-STEL, 依据GBZ 2.1)
             out = []
             for d in dets:
                 limit = ""
@@ -141,7 +141,7 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
                 item = {"危害因素": d.get("factor", ""), "接触水平": d.get("ctwa"),
                         "单位": d.get("unit", "mg/m³")}
                 if limit:
-                    item["限值"] = limit
+                    item["标准限值"] = limit
                 out.append(item)
             return out
         if field == "risk_level":
