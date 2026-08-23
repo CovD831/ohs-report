@@ -105,6 +105,7 @@ a { color: var(--primary); text-decoration: none; }
   padding: 12px 14px; cursor: pointer; transition: border-color .15s, background .15s;
   display: block; background: var(--surface); }
 .wiz-slot:hover { border-color: var(--primary); background: var(--primary-soft); }
+.wiz-slot.drag { border-color: var(--primary-strong); background: var(--primary-soft); border-style: solid; }
 .wiz-slot.core .wiz-slot-head b { color: var(--primary-strong); }
 .wiz-slot.has { border-style: solid; border-color: var(--success); }
 .wiz-slot-head { font-size: 13px; margin-bottom: 4px; }
@@ -603,11 +604,13 @@ async function renderImportWizard() {
       <button class="btn btn-secondary" onclick="skipWizard()">跳过，先浏览报告结构</button>
       <span id="wizMsg" style="font-size:13px;color:var(--text-secondary);"></span>
     </div>`;
+  bindWizDrop();
 }
 
 async function wizUpload(catKey, input) {
   const msg = document.getElementById('wizMsg');
-  for (const f of input.files) {
+  const files = input.files || [];
+  for (const f of files) {
     const fd = new FormData();
     fd.append('file', f);
     msg.textContent = `上传中: ${f.name}…`;
@@ -619,6 +622,25 @@ async function wizUpload(catKey, input) {
   }
   msg.textContent = '';
   renderImportWizard();  // 刷新槽位
+}
+
+// 向导槽位: 拖拽支持 (dragover/drop)
+function bindWizDrop() {
+  document.querySelectorAll('.wiz-slot').forEach(slot => {
+    slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('drag'); });
+    slot.addEventListener('dragleave', () => slot.classList.remove('drag'));
+    slot.addEventListener('drop', e => {
+      e.preventDefault(); slot.classList.remove('drag');
+      const inp = slot.querySelector('input[type=file]');
+      const files = e.dataTransfer.files;
+      if (files.length && inp) {
+        const dt = new DataTransfer();
+        for (const f of files) dt.items.add(f);
+        inp.files = dt.files;
+        inp.dispatchEvent(new Event('change'));
+      }
+    });
+  });
 }
 
 async function wizImport() {

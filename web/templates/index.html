@@ -46,6 +46,15 @@ a { color: var(--primary); text-decoration: none; }
 .project-card:hover { border-color: var(--primary); }
 .project-card .name { font-weight: 600; font-size: 15px; }
 .project-card .meta { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
+
+/* 新建项目上传行 (label触发 + 拖拽) */
+.up-row { border: 1.5px dashed var(--border-strong); border-radius: var(--radius-md);
+  padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px;
+  transition: border-color .15s, background .15s; }
+.up-row:hover { border-color: var(--primary); background: var(--primary-soft); }
+.up-row.drag { border-color: var(--primary-strong); background: var(--primary-soft); border-style: solid; }
+.up-btn { font-size: 12px; font-weight: 600; color: var(--primary-strong);
+  background: var(--primary-soft); border-radius: var(--radius-sm); padding: 3px 10px; white-space: nowrap; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius-sm);
   font-size: 11px; font-weight: 600; }
 .badge-status { background: var(--primary-soft); color: var(--primary-strong); }
@@ -170,21 +179,42 @@ let pendingFiles = {};  // cat → File
 
 function loadUploadCats() {
   document.getElementById('uploadCats').innerHTML = CATS.map(c => `
-    <div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
+    <label class="up-row" data-cat="${c.key}" for="file_${c.key}">
+      <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
         <div><strong style="font-size:13px;">${c.name}</strong>
           <span style="color:var(--text-muted);font-size:12px;margin-left:8px;">${c.desc}</span></div>
-        <input type="file" id="file_${c.key}" style="display:none" onchange="pickFile('${c.key}', this)">
-        <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;"
-                onclick="document.getElementById('file_${c.key}').click()">
-          ${document.getElementById('file_${c.key}')?.files?.length ? '已选' : '上传'}</button>
+        <span class="up-btn">${pendingFiles[c.key] ? '已选' : '上传'}</span>
       </div>
-      <div id="picked_${c.key}" style="font-size:12px;color:var(--text-secondary);margin-top:6px;"></div>
-    </div>`).join('');
+      <div id="picked_${c.key}" style="font-size:12px;color:var(--text-secondary);margin-top:6px;">
+        ${pendingFiles[c.key] ? '✓ ' + pendingFiles[c.key].name : '点击选择或拖拽文件到此处'}</div>
+      <input type="file" id="file_${c.key}" style="display:none" onchange="pickFile('${c.key}', this)">
+    </label>`).join('');
+  bindUploadDrop();
+}
+function bindUploadDrop() {
+  document.querySelectorAll('.up-row').forEach(row => {
+    row.addEventListener('dragover', e => { e.preventDefault(); row.classList.add('drag'); });
+    row.addEventListener('dragleave', () => row.classList.remove('drag'));
+    row.addEventListener('drop', e => {
+      e.preventDefault(); row.classList.remove('drag');
+      const key = row.dataset.cat;
+      const inp = document.getElementById('file_' + key);
+      const files = e.dataTransfer.files;
+      if (files.length && inp) {
+        const dt = new DataTransfer();
+        for (const f of files) dt.items.add(f);
+        inp.files = dt.files;
+        inp.dispatchEvent(new Event('change'));
+      }
+    });
+  });
 }
 function pickFile(key, input) {
   pendingFiles[key] = input.files[0];
   document.getElementById(`picked_${key}`).textContent = `✓ ${input.files[0].name}`;
+  if (input.closest('.up-row').querySelector('.up-btn')) {
+    input.closest('.up-row').querySelector('.up-btn').textContent = '已选';
+  }
 }
 
 async function createProject() {
