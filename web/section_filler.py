@@ -53,13 +53,28 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                                "、".join(g["factors"][:6])])
             tables.append({"name": "危害因素识别表", "cols": ["评价单元/车间", "工序", "岗位/工种",
                            "设备密闭", "物料/中间产物", "主要危害因素"], "rows": g_rows})
-        # 检测结果表
+        # 检测结果表 (按类型分张: 毒物/粉尘/噪声/高温, 有检测数据才出)
         dets = (assess.get("_project_data") or {}).get("detections", [])
         if dets:
-            det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—"), "—", "合格"]
-                        for i, d in enumerate(dets, 1)]
-            tables.append({"name": "检测结果表", "cols": ["序号", "危害因素", "CTWA", "PC-TWA", "判定"],
-                           "rows": det_rows})
+            from collections import defaultdict
+            det_by_type = defaultdict(list)
+            for d in dets:
+                fac = d.get("factor", "")
+                # 因子类型: 查 hazard_factor category (粉尘/化学因素/物理因素)
+                cat = conn.execute("SELECT category FROM hazard_factor WHERE name LIKE ? LIMIT 1", (fac + "%",)).fetchone()
+                ty = (cat[0] if cat else "化学毒物")
+                # 物理因素细分类型 (噪声/高温)
+                if "噪声" in fac:
+                    ty = "噪声"
+                elif "高温" in fac or "WBGT" in fac:
+                    ty = "高温"
+                det_by_type[ty].append(d)
+            for ty, dets_b in det_by_type.items():
+                dtype = {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(ty, "化学毒物")
+                det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—"), "—", "合格"]
+                            for i, d in enumerate(dets_b, 1)]
+                tables.append({"name": f"检测结果表({dtype})", "cols": ["序号", "危害因素", "CTWA", "PC-TWA", "判定"],
+                               "rows": det_rows})
         js = assess.get("judgements", [])
         if js:
             j_rows = [[i, j["factor"], "—", "—", "—", "—",
@@ -70,6 +85,15 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
 
     if sec == "3":
         tables = []
+        # 防尘防毒/防噪声振动/防暑防寒 检查表 (依据GBZ1标准库 theme)
+        for theme, tname in [("防尘防毒", "防尘防毒设施检查表"), ("防噪声振动", "防噪声振动检查表"),
+                             ("防暑防寒", "防暑防寒检查表")]:
+            g_rows = []
+            for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme LIKE ?", (theme + "%",)):
+                g_rows.append([len(g_rows) + 1, r[1][:60], r[0], "待确认", "待确认"])
+            if g_rows:
+                tables.append({"name": tname, "cols": ["序号", "卫生要求", "检查依据", "检查结果", "评价"],
+                               "rows": g_rows})
         rows = _rows_of(conn, "SELECT hazard_category, check_point, std_code, clause FROM protection_rule")
         tables.append({"name": "防护设施检查表", "cols": ["序号", "危害类别", "检查点", "依据"],
                        "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]})
@@ -105,12 +129,13 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         rows = _rows_of(conn, "SELECT category, require, std_code, clause FROM management_rule")
         tables.append({"name": "管理制度检查表", "cols": ["序号", "制度类别", "检查点", "依据"],
                        "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]})
-        # gbz1_rule 检查表: 选址/总体布局/辅助用室 (按 theme 分组)
+        # gbz1_rule 检查表: 按 theme 分组铺开 (8类, 依据GBZ1标准库)
         for theme, tname in [("选址", "选址检查表"), ("总体布局", "总体布局检查表"),
-                             ("辅助用室", "辅助用室检查表"), ("建筑卫生学", "建筑卫生学检查表")]:
+                             ("建筑卫生学", "建筑卫生学检查表"), ("辅助用室", "辅助用室检查表"),
+                             ("防尘防毒", "防尘防毒设施检查表"), ("防噪声振动", "防噪声振动检查表"),
+                             ("防暑防寒", "防暑防寒检查表"), ("应急救援", "应急救援检查表")]:
             g_rows = []
             for r in _rows_of(conn, "SELECT clause, rule, report_section FROM gbz1_rule WHERE theme LIKE ?", (theme + "%",)):
-                # 检查表: 卫生要求=rule, 检查依据=clause, 结果/评价待项目确认
                 g_rows.append([len(g_rows) + 1, r[1][:60], r[0], "待确认", "待确认"])
             if g_rows:
                 tables.append({"name": tname, "cols": ["序号", "卫生要求", "检查依据", "检查结果", "评价"],
