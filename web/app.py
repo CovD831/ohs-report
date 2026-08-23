@@ -12,6 +12,7 @@
 import json
 import os
 import re
+import secrets
 import sqlite3
 import time
 from pathlib import Path
@@ -41,6 +42,7 @@ from web import auth as _auth  # noqa: E402
 
 _auth.init_users()
 _sessions: dict[str, dict] = {}  # token -> user info
+GUEST_RE = re.compile(r"guest-[0-9a-f]{6}")
 
 
 def _current_user(request: Request) -> dict | None:
@@ -55,15 +57,34 @@ def _current_user(request: Request) -> dict | None:
     return u
 
 
+def _resolve_user(request: Request) -> tuple[dict, str | None]:
+    """登录用户 或 自动游客身份. 返回 (user, 待下发的游客cookie或None)
+
+    游客: 首次访问生成 guest-xxxxxx (cookie 持久1年), 审计可按游客区分
+    """
+    u = _current_user(request)
+    if u:
+        return u, None
+    gid = request.cookies.get("ohs_uid") or ""
+    if GUEST_RE.fullmatch(gid):
+        return {"username": gid, "is_admin": False}, None
+    gid = f"guest-{secrets.token_hex(3)}"
+    return {"username": gid, "is_admin": False}, gid
+
+
 @app.middleware("http")
 async def audit_middleware(request: Request, call_next):
-    """审计: 记录所有 API 请求 (谁/何时/什么/结果/耗时); 页面与登录放行"""
+    """审计 + 游客身份: 每个请求归属到 登录用户 或 guest-xxx"""
     start = time.time()
+    user, new_gid = _resolve_user(request)
+    request.state.user = user
     response = await call_next(request)
+    if new_gid:
+        response.set_cookie("ohs_uid", new_gid, max_age=365 * 86400,
+                            httponly=True, samesite="lax")
     path = request.url.path
     if path.startswith("/api/") or path.startswith("/projects/") or path == "/":
-        user = _current_user(request)
-        _auth.audit(user["username"] if user else "-",
+        _auth.audit(user["username"],
                     request.method, path, response.status_code,
                     request.client.host if request.client else "-",
                     int((time.time() - start) * 1000))
@@ -129,9 +150,7 @@ def _require_login(request: Request) -> dict | None:
 
 @app.get("/", response_class=HTMLResponse)
 def index_page(request: Request):
-    user = _require_login(request)
-    if not user:
-        return HTMLResponse('<script>location.href="/login"</script>')
+    user = request.state.user if hasattr(request.state, "user") else _current_user(request)
     projects = list_projects()
     return env.get_template("index.html").render(projects=projects, user=user)
 
@@ -225,9 +244,6 @@ def api_audit(request: Request, limit: int = 200, user: str | None = None):
 
 @app.get("/projects/{pid}", response_class=HTMLResponse)
 def project_page(request: Request, pid: str):
-    user = _require_login(request)
-    if not user:
-        return HTMLResponse('<script>location.href="/login"</script>')
     p = get_project(pid)
     if not p:
         return HTMLResponse("项目不存在", status_code=404)
