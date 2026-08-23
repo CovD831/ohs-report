@@ -370,10 +370,16 @@ def _assess_cached(pid: str, _cache: dict | None = None):
         return _cache
     p = get_project(pid)
     conn = connect()
-    project = {"name": p["name"], "industry": p["data"].get("industry", ""),
-               "equipment": p["data"].get("equipment", []),
-               "detections": p["data"].get("detections", []),
-               "process_text": p["data"].get("process_text", "")}
+    d = p["data"]
+    project = {"name": p["name"], "industry": d.get("industry", ""),
+               "equipment": d.get("equipment", []),
+               "detections": d.get("detections", []),
+               "process_text": d.get("process_text", ""),
+               "materials": d.get("materials", []),
+               "staffing": d.get("staffing", []),
+               "protection": d.get("protection", ""),
+               "ppe": d.get("ppe", []),
+               "emergency": d.get("emergency", "")}
     assess = assess_project(conn, project)
     conn.close()
     info = _build_info(project, assess)
@@ -383,7 +389,8 @@ def _assess_cached(pid: str, _cache: dict | None = None):
 def draft_sub(pid: str, sec: str, sub: str, _cache: dict | None = None) -> str:
     """二级小节 LLM 草稿 (可传预计算 _cache 提速)"""
     c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
-    info = c["info"]
+    from web.structure_data import get_chapter_info
+    info = get_chapter_info(sub or sec, c["project"], c["assess"])
     prompt = build_sub_prompt(sub, info)
     if not prompt:
         return "暂不支持该小节(可扩展)"
@@ -393,7 +400,9 @@ def draft_sub(pid: str, sec: str, sub: str, _cache: dict | None = None) -> str:
 def draft_section(pid: str, sec: str, _cache: dict | None = None) -> str:
     """生成某章 LLM 草稿 (报告1-9编号 → 引擎章节)"""
     c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
-    project, assess, info = c["project"], c["assess"], c["info"]
+    project, assess = c["project"], c["assess"]
+    from web.structure_data import get_chapter_info
+    info = get_chapter_info(sec, project, assess)
     # 报告1-9 → 引擎prompt章节
     map_sec = {"1": "10.2.3", "2": "10.2.5", "3": "10.2.6", "4": "10.2.3.7",
                "5": "10.2.11", "6": "10.2.12", "7": "10.2.1", "8": "10.2.3",
@@ -429,7 +438,8 @@ def draft_detail(pid: str, key: str, title: str, _cache: dict | None = None) -> 
     """
     from web.report_struct import section_title, sub_title, sub3_title, sub4_title
     c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
-    info = c["info"]
+    from web.structure_data import get_chapter_info
+    info = get_chapter_info(key, c["project"], c["assess"])
     # 决定权威标题 (按 key 层级)
     parts = key.split(".")
     lv = len(parts)

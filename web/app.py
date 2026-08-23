@@ -206,6 +206,10 @@ def api_report_generate(request: Request):
     data["equipment"] = imported["equipment"]
     data["detections"] = imported["detections"]
     data["process_text"] = imported["process_text"]
+    # 结构化字段: 物料/定员/防护/PPE/应急 (供按章取子集)
+    for k in ("materials", "staffing", "protection", "ppe", "emergency"):
+        if imported.get(k):
+            data[k] = imported[k]
     # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
     if imported.get("industry"):
         data["industry"] = imported["industry"]
@@ -531,6 +535,9 @@ def import_materials_from_dir(pid: str) -> dict:
     pd = project_dir(pid)
     eq, dets = [], []
     proc = ""
+    mats, staffs, ppe = [], [], []
+    seen_mat, seen_st = set(), set()
+    prot, emergency = "", ""
     proj_name, industry = "", ""
     seen_eq, seen_det = set(), set()
     for f in pd.rglob("*"):
@@ -553,6 +560,36 @@ def import_materials_from_dir(pid: str) -> dict:
                             proj_name = proj_name or ln.split("：", 1)[1].strip()[:60]
                         if "行业" in ln and "：" in ln:
                             industry = industry or ln.split("：", 1)[1].strip()[:40]
+            if "原辅材料" in name or "物料" in name:
+                with open(f, encoding="utf-8-sig", errors="ignore") as fh:
+                    for row in csv.DictReader(fh):
+                        n = (row.get("名称") or row.get("物料名称") or "").strip()
+                        if n:
+                            mat = {"name": n, "spec": row.get("规格","") or "", "usage": row.get("年用量","") or row.get("使用量","") or ""}
+                            if n not in seen_mat:
+                                mats.append(mat); seen_mat.add(n)
+            if "定员" in name or "岗位" in name:
+                with open(f, encoding="utf-8-sig", errors="ignore") as fh:
+                    for row in csv.DictReader(fh):
+                        p = (row.get("岗位") or row.get("岗位名称") or "").strip()
+                        if p:
+                            st = {"post": p, "dept": row.get("车间","") or row.get("部门","") or "", "count": row.get("人数","") or ""}
+                            if p not in seen_st:
+                                staffs.append(st); seen_st.add(p)
+            if "防护" in name and f.suffix == ".txt":
+                raw = f.read_text(encoding="utf-8", errors="ignore")
+                prot_lines = [ln.lstrip("- ").strip() for ln in raw.splitlines() if ln.strip()][:40]
+                prot = "；".join(prot_lines)
+            if "个人防护" in name or "ppe" in name.lower():
+                with open(f, encoding="utf-8-sig", errors="ignore") as fh:
+                    for row in csv.DictReader(fh):
+                        pn = (row.get("名称") or row.get("防护用品") or row.get("岗位") or "").strip()
+                        if pn:
+                            ppe.append({"item": pn, "post": row.get("岗位","") or "", "frequency": row.get("发放频次","") or ""})
+            if "应急" in name or "救援" in name:
+                raw = f.read_text(encoding="utf-8", errors="ignore")
+                emg_lines = [ln.lstrip("- ").strip() for ln in raw.splitlines() if ln.strip()][:25]
+                emergency = "；".join(emg_lines)
             if "设备" in name:
                 with open(f, encoding="utf-8-sig", errors="ignore") as fh:
                     for row in csv.DictReader(fh):
@@ -590,7 +627,9 @@ def import_materials_from_dir(pid: str) -> dict:
         except Exception:
             continue
     return {"equipment": eq, "detections": dets, "process_text": proc.strip(),
-            "material_count": len(eq), "name": proj_name, "industry": industry}
+            "material_count": len(eq), "name": proj_name, "industry": industry,
+            "materials": mats, "staffing": staffs, "protection": prot,
+            "ppe": ppe, "emergency": emergency}
 
 
 @app.get("/api/projects/{pid}/export", response_class=JSONResponse)
