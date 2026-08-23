@@ -170,20 +170,37 @@ async function addFiles(fileList) {
   const d = await r.json();
   if (d.ok) {
     selFiles = [];
-    renderFiles(d.detail);
+    renderFiles(d.detail, d.coverage);
     document.getElementById('genBtn').disabled = false;
   }
 }
-function renderFiles(detail) {
+function renderFiles(detail, coverage) {
   const box = document.getElementById('fileList');
   if (!detail) { box.innerHTML = ''; return; }
   let html = '';
-  const catNames = {A1:'立项',A2a:'原辅材料',A2b:'工艺',A2c:'设备',A2d:'定员',A2e:'检测',A2f:'防护',A2g:'健康检查',A2h:'图纸',A3:'法规',uncat:'待定'};
+  const catNames = {C1:'项目批文',C2:'项目概况',C3:'原有项目',C4:'公辅工程',C5:'总平面图',C6:'设备清单',C7:'生产工艺',C8:'原辅材料',C9:'产品产量',C10:'岗位定员',C11:'辅助用室',C12:'采光通风',C13:'防护措施',C14:'个人防护用品',C15:'应急救援',C16:'管理经费',uncat:'待定'};
   Object.entries(detail).forEach(([cat, files]) => {
     files.forEach(f => {
       html += `<div class="file-item"><span>📎 ${f.name}</span><span class="cat">${catNames[f.cat]||f.cat}</span><span class="status ok">已上传</span></div>`;
     });
   });
+  // 缺料兜底: 缺失类别 + 影响章节
+  if (coverage && coverage.missing && coverage.missing.length) {
+    const core = coverage.core_missing || [];
+    const others = coverage.missing.filter(m => !m.core);
+    const warn = core.length ? `<span style="color:var(--danger);font-weight:600;">${core.length}项核心资料缺失</span>` : '';
+    html += `<div class="coverage-warn" style="margin-top:10px;padding:10px;border-left:3px solid ${core.length?'var(--danger)':'var(--warning)'};background:${core.length?'#FFF5F5':'#FFF7E6'};">
+      <div style="font-size:13px;"><b>资料完整度 ${coverage.completeness}%</b> ${warn}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">缺以下资料，对应章节将标注"待补充"：</div>
+      <div style="font-size:12px;margin-top:4px;line-height:1.6;">`;
+    (core.length?core:others).slice(0,6).forEach(m => {
+      html += `<div>· <b>${m.name}</b> → 影响${m.impact}</div>`;
+    });
+    if (core.length) others.slice(0,4).forEach(m => {
+      html += `<div style="color:var(--text-muted);">· ${m.name} → 影响${m.impact}</div>`;
+    });
+    html += `</div></div>`;
+  }
   box.innerHTML = html;
   refreshReports();
 }

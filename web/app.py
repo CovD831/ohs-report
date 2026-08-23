@@ -185,7 +185,11 @@ async def api_report_upload(request: Request):
             result.setdefault("uncat", []).append({"name": name, "cat": cat, "ok": False, "error": str(e)})
     _upload_cache[pid] = result
     counts = {k: len(v) for k, v in result.items() if v}
-    return {"ok": True, "pid": pid, "counts": counts, "detail": result}
+    # 资料覆盖度兜底: 缺哪些类别 → 影响哪些章节 (错误兜底)
+    from web.uploads import coverage_report
+    coverage = coverage_report(pid)
+    return {"ok": True, "pid": pid, "counts": counts, "detail": result,
+            "coverage": coverage}
 
 
 @app.post("/api/report/generate", response_class=JSONResponse)
@@ -656,6 +660,9 @@ def project_overview(pid: str, request: Request):
     proj = result.get("_project_data") or {}
     dets = proj.get("detections", [])
     has_data = bool(hazards) or bool(dets) or bool((proj.get("process_text") or "").strip())
+    # 资料覆盖度 (缺料兜底: 缺什么类别 → 影响哪些章节)
+    from web.uploads import coverage_report
+    coverage = coverage_report(pid) if has_data else {"covered": [], "missing": [], "completeness": 0, "core_missing": []}
     return {
         "hazard_count": len(hazards),
         "judgement_count": len(judgements),
@@ -666,6 +673,7 @@ def project_overview(pid: str, request: Request):
         "grade_count": len(result.get("grades", [])),
         "diseases": sum(1 for h in hazards if h.get("diseases")),
         "has_data": has_data,
+        "coverage": coverage,
     }
 
 

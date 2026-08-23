@@ -205,6 +205,21 @@ async function loadOverview() {
   const sb = document.getElementById('statusBadge');
   sb.textContent = (overview.has_data ? `危害${overview.hazard_count} · 判定${overview.judgement_count}` : '待上传材料');
   sb.className = 'badge ' + (overview.has_data ? 'badge-green' : 'badge-gray');
+  // 缺料兜底提示: 缺哪些类别 → 影响哪些章节
+  const cov = overview.coverage;
+  if (cov && cov.missing && cov.missing.length && overview.has_data) {
+    const core = cov.core_missing || [];
+    const list = (core.length ? core : cov.missing).slice(0, 5);
+    let warn = document.getElementById('covHint');
+    if (!warn) {
+      warn = document.createElement('div');
+      warn.id = 'covHint';
+      warn.className = 'gen-progress';
+      document.getElementById('genProgress').insertAdjacentElement('afterend', warn);
+    }
+    warn.innerHTML = `<span style="font-size:12.5px;color:${core.length?'var(--danger)':'var(--warning)'};">📋 资料完整度 ${cov.completeness}%${core.length?' · <b>${core.length}项核心资料缺失</b>':''} — ` +
+      list.map(m => `${m.name}→影响${m.impact}`).join('；') + '，缺失章节已标注"待补充"</span>`;
+  }
 }
 // 目录: 只显示"已生成"的章节, 生成到哪出现到哪; 按结构树层级缩进
 function buildToc() {

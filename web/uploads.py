@@ -55,6 +55,53 @@ _OLD_A2X_MAP = {
     "A2d": "C10", "A2e": "C9", "A2f": "C13", "A2g": "C15", "A2h": "C5",
 }
 
+# 收集单类别 → 影响的报告章节 (缺失该资料会削弱/无法生成的章节)
+# 用于"缺什么标注影响哪"的错误兜底
+CATEGORY_IMPACTS = {
+    "C1": ("第7章 评价依据", "项目背景/立项依据"),
+    "C2": ("第1章 建设项目概况、第8章 工程概况", "项目基本情况"),
+    "C3": ("第1章 1.2、第8章 8.1.6", "原有项目情况(改扩建)"),
+    "C4": ("第8章 8.4.2 公用及辅助设施", "公辅工程"),
+    "C5": ("第1章 1.2、第8章 8.2 总体布局、8.3 建筑卫生学", "总平面布置/建筑卫生"),
+    "C6": ("第1章 1.2、第8章 8.4 工艺设备布局", "设备清单(核心)"),
+    "C7": ("第1章 1.2、第2章 2.1、第8章 8.4.1", "生产工艺流程(核心)"),
+    "C8": ("第2章 2.1 识别、第8章 8.5 物料", "原辅材料(核心)"),
+    "C9": ("第8章 8.5 物料、第1章 1.2", "产品产量"),
+    "C10": ("第1章 1.2、第8章 8.1.3", "岗位定员"),
+    "C11": ("第4章 4.4 辅助用室、第8章 8.6", "辅助用室"),
+    "C12": ("第4章 4.3 建筑卫生学、第8章 8.3", "采光通风照明"),
+    "C13": ("第3章 3.1 防护设施、第11章 11.1", "防护措施(核心)"),
+    "C14": ("第3章 3.2 个体防护、第11章 11.2", "个人防护用品"),
+    "C15": ("第3章 3.3 应急救援、第11章 11.3", "应急救援"),
+    "C16": ("第4章 4.5/4.6、第12章 12.5/12.6", "职业卫生管理/经费"),
+}
+# 核心类别 (缺失则显著影响报告完整度, 视为"关键缺漏")
+CORE_CATEGORIES = {"C1", "C2", "C6", "C7", "C8", "C10", "C13"}
+
+
+def coverage_report(pid: str, check_categories: list[str] | None = None) -> dict:
+    """资料覆盖度检查 — 兜底: 缺什么类别 → 标注影响哪些章节
+
+    check_categories: 已收集到的类别 key 列表 (None 则从项目材料目录读取)
+    返回: {covered: [类别], missing: [{cat, name, impact, core}], completeness}
+    """
+    if check_categories is None:
+        check_categories = {m.get("category") for m in list_materials(pid)} - {"uncat"}
+    cats = [c["key"] for c in CATEGORIES]
+    covered = [c for c in cats if c in check_categories]
+    missing = []
+    for c in cats:
+        if c not in check_categories:
+            meta = next((x for x in CATEGORIES if x["key"] == c), {})
+            ch, why = CATEGORY_IMPACTS.get(c, ("", "该资料"))
+            missing.append({"cat": c, "name": meta.get("name", c),
+                            "impact": ch, "why": why,
+                            "core": c in CORE_CATEGORIES})
+    completeness = round(len(covered) / len(cats) * 100)
+    return {"covered": covered, "missing": missing,
+            "completeness": completeness,
+            "core_missing": [m for m in missing if m["core"]]}
+
 
 def classify_file(filename: str, content: bytes = b"") -> str:
     """按文件名 + 内容关键词 推断资料类别, 返回类别 key 或 'unknown'(进待定区)"""
