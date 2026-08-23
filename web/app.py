@@ -15,6 +15,7 @@ import re
 import secrets
 import sqlite3
 import time
+import traceback
 from pathlib import Path
 
 from fastapi import FastAPI, Request, UploadFile
@@ -500,6 +501,86 @@ def api_generate_sub(pid: str, sec: str, sub: str):
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
     update_section_state(pid, sub, "generated", text)
     return {"ok": True, "text": text}
+
+
+# ===== 后台批量生成 (关页面不中断, 进度可轮询) =====
+from web import tasks as _tasks  # noqa: E402
+
+_tasks.init_tasks()
+
+
+def _run_generate_all(pid: str, jid: str):
+    """后台 worker: 一级9章+全部小节 逐个LLM生成 (进度实时)"""
+    from knowledge.report_skeleton import SECTION_SKELETON, SUB_SECTIONS
+    from web.llm_draft import draft_section, draft_sub
+    from web.projects_db import update_section_state
+
+    units = [(s, None) for s in SECTION_SKELETON.keys()]
+    for sec, subs in SUB_SECTIONS.items():
+        for sub, _ in subs:
+            units.append((sec, sub))
+    total = len(units)
+    conn = _conn_tasks()
+    conn.execute("UPDATE task_job SET total=? WHERE id=?", (total, jid))
+    conn.commit()
+    conn.close()
+
+    done = fail = 0
+    for i, (sec, sub) in enumerate(units, 1):
+        _tasks.set_progress(jid, i)
+        label = sub or f"第{sec}章"
+        try:
+            if sub:
+                text = draft_sub(pid, sec, sub)
+            else:
+                text = draft_section(pid, sec)
+            update_section_state(pid, sub or sec, "generated", text)
+            done += 1
+        except Exception as e:
+            fail += 1
+            _tasks.set_progress(jid, i)  # 单元失败不中断整体
+    err = None if fail == 0 else f"{fail} 个单元失败 ({done} 成功)"
+
+
+def _conn_tasks():
+    from web.tasks import _conn
+    return _conn()
+
+
+@app.post("/api/projects/{pid}/generate-all", response_class=JSONResponse)
+def api_generate_all(pid: str, request: Request):
+    """提交整篇批量生成 → 返回 job_id (后台执行)"""
+    user = request.state.user if hasattr(request.state, "user") else {"username": "-"}
+    if not get_project(pid):
+        return JSONResponse({"error": "not found"}, status_code=404)
+    from knowledge.report_skeleton import SECTION_SKELETON, SUB_SECTIONS
+    total = len(SECTION_SKELETON) + sum(len(v) for v in SUB_SECTIONS.values())
+    jid = _tasks.create_job(user["username"], pid, "generate_all", total)
+
+    def _worker():
+        try:
+            _run_generate_all(pid, jid)
+            _tasks.finish_job(jid, None)
+        except Exception as e:
+            _tasks.finish_job(jid, traceback.format_exc())
+
+    import threading
+    threading.Thread(target=_worker, daemon=True).start()
+    return {"ok": True, "job_id": jid, "total": total}
+
+
+@app.get("/api/tasks/{jid}", response_class=JSONResponse)
+def api_task_status(jid: str):
+    d = _tasks.get_job(jid)
+    if not d:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return d
+
+
+@app.get("/api/tasks", response_class=JSONResponse)
+def api_task_list(request: Request, limit: int = 30):
+    """任务列表 (admin可见全部; 游客看自己的) — 简化: 全部可见"""
+    return _tasks.list_jobs(limit)
 
 
 @app.get("/api/projects/{pid}/sections/{sec}/{sub}", response_class=JSONResponse)
