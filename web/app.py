@@ -681,11 +681,21 @@ from web import tasks as _tasks  # noqa: E402
 _tasks.init_tasks()
 
 
-def _run_generate_all(pid: str, jid: str):
-    """后台 worker: 一级9章+全部小节 逐个LLM生成 (进度实时)"""
-    from knowledge.report_skeleton import SECTION_SKELETON, SUB_SECTIONS
+def _gen_one(pid: str, sec: str, sub: str | None, cache: dict) -> str:
+    """统一生成单元 (draft_sub/draft_section 包装)"""
     from web.llm_draft import draft_section, draft_sub
+    if sub:
+        return draft_sub(pid, sec, sub, cache)
+    return draft_section(pid, sec, cache)
+
+
+def _run_generate_all(pid: str, jid: str):
+    """后台 worker: 一级9章+全部小节 LLM生成 (assess预计算1次 + 并发3)
+    进度实时; 用户取消可中断"""
+    from knowledge.report_skeleton import SECTION_SKELETON, SUB_SECTIONS
+    from web.llm_draft import draft_section, draft_sub, _assess_cached
     from web.projects_db import update_section_state
+    from concurrent.futures import ThreadPoolExecutor
 
     units = [(s, None) for s in SECTION_SKELETON.keys()]
     for sec, subs in SUB_SECTIONS.items():
@@ -697,23 +707,45 @@ def _run_generate_all(pid: str, jid: str):
     conn.commit()
     conn.close()
 
+    # 预计算 assess/info 一次, 所有单元复用 (不再每单元重复重算)
+    cache = _assess_cached(pid)
+
     done = fail = 0
-    for i, (sec, sub) in enumerate(units, 1):
-        # 用户取消 → 中断
-        if _tasks._should_stop(jid):
-            break
-        _tasks.set_progress(jid, i)
-        label = sub or f"第{sec}章"
-        try:
-            if sub:
-                text = draft_sub(pid, sec, sub)
-            else:
-                text = draft_section(pid, sec)
-            update_section_state(pid, sub or sec, "generated", text)
-            done += 1
-        except Exception as e:
-            fail += 1
-            _tasks.set_progress(jid, i)  # 单元失败不中断整体
+    # 并发3个 LLM 调用提速 (OpenRouter 支持并行, 权衡限流)
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="ohsgen") as ex:
+        futures = {}
+        for sec, sub in units:
+            if _tasks._should_stop(jid):
+                break
+            # 统一包装, 避免 draft_sub/draft_section 签名差异
+            fut = ex.submit(_gen_one, pid, sec, sub, cache)
+            futures[fut] = (sec, sub)
+            # 等一个完成立刻写结果 + 更新进度 (流式可见)
+            while len(futures) >= 3:
+                import concurrent.futures as cf
+                d_f = cf.wait(futures, return_when=cf.FIRST_COMPLETED)
+                for f in d_f.done:
+                    s, sb = futures.pop(f)
+                    try:
+                        text = f.result()
+                        update_section_state(pid, sb or s, "generated", text)
+                        done += 1
+                    except Exception:
+                        fail += 1
+                    _tasks.set_progress(jid, done + fail)
+        # 收尾剩余
+        import concurrent.futures as cf
+        while futures:
+            d_f = cf.wait(futures, return_when=cf.FIRST_COMPLETED)
+            for f in d_f.done:
+                s, sb = futures.pop(f)
+                try:
+                    text = f.result()
+                    update_section_state(pid, sb or s, "generated", text)
+                    done += 1
+                except Exception:
+                    fail += 1
+                _tasks.set_progress(jid, done + fail)
     err = None if fail == 0 else f"{fail} 个单元失败 ({done} 成功)"
 
 

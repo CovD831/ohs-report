@@ -333,8 +333,10 @@ def build_sub_prompt(sub: str, info: str) -> str:
 3. 正式报告语言, 150-300字"""
 
 
-def draft_sub(pid: str, sec: str, sub: str) -> str:
-    """二级小节 LLM 草稿"""
+def _assess_cached(pid: str, _cache: dict | None = None):
+    """计算一次并复用 assess + info (避免每单元重复计算)"""
+    if _cache is not None and _cache.get("assess") is not None:
+        return _cache
     p = get_project(pid)
     conn = connect()
     project = {"name": p["name"], "industry": p["data"].get("industry", ""),
@@ -344,23 +346,23 @@ def draft_sub(pid: str, sec: str, sub: str) -> str:
     assess = assess_project(conn, project)
     conn.close()
     info = _build_info(project, assess)
+    return {"project": project, "assess": assess, "info": info}
+
+
+def draft_sub(pid: str, sec: str, sub: str, _cache: dict | None = None) -> str:
+    """二级小节 LLM 草稿 (可传预计算 _cache 提速)"""
+    c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
+    info = c["info"]
     prompt = build_sub_prompt(sub, info)
     if not prompt:
         return "暂不支持该小节(可扩展)"
     return _llm(prompt)
 
 
-def draft_section(pid: str, sec: str) -> str:
+def draft_section(pid: str, sec: str, _cache: dict | None = None) -> str:
     """生成某章 LLM 草稿 (报告1-9编号 → 引擎章节)"""
-    p = get_project(pid)
-    conn = connect()
-    project = {"name": p["name"], "industry": p["data"].get("industry", ""),
-               "equipment": p["data"].get("equipment", []),
-               "detections": p["data"].get("detections", []),
-               "process_text": p["data"].get("process_text", "")}
-    assess = assess_project(conn, project)
-    conn.close()
-    info = _build_info(project, assess)
+    c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
+    project, assess, info = c["project"], c["assess"], c["info"]
     # 报告1-9 → 引擎prompt章节
     map_sec = {"1": "10.2.3", "2": "10.2.5", "3": "10.2.6", "4": "10.2.3.7",
                "5": "10.2.11", "6": "10.2.12", "7": "10.2.1", "8": "10.2.3",

@@ -193,22 +193,29 @@ async function loadOverview() {
   sb.textContent = (overview.has_data ? `危害${overview.hazard_count} · 判定${overview.judgement_count}` : '待上传材料');
   sb.className = 'badge ' + (overview.has_data ? 'badge-green' : 'badge-gray');
 }
-// 只显示"已生成"的章节 — 生成到哪出现到哪
+// 只显示"已生成"的章节 — 生成到哪出现到哪; 用存储的实际标题(含二级)
 function buildToc() {
   let html = '';
-  CH.forEach(sec => {
-    const st = (ALL_STATES[sec] || {}).state;
-    if (st !== 'generated') return;  // 未生成不出现
-    html += `<a class="toc-item ${sec===SEC?'active':''} gen" onclick="loadSection('${sec}')">${sec} ${TITLES[sec]}</a>`;
-    (SUBS[sec]||[]).forEach(sub => {
-      const stx = (ALL_STATES[sub] || {}).state;
-      if (stx !== 'generated') return;  // 未生成不出现
-      html += `<a class="toc-item ${sub===SEC?'active':''} gen" style="padding-left:22px;" onclick="loadSection('${sub}')">${sub}</a>`;
-    });
-  });
+  // 先一级章节
+  for (const sec of CH) {
+    const st = ALL_STATES[sec];
+    if (!st || st.state !== 'generated') continue;
+    const t = st.title || TITLES[sec] || sec;
+    html += `<a class="toc-item ${sec===SEC?'active':''} gen" onclick="loadSection('${sec}')">${sec} ${t.replace(/^#+\s*/,'')}</a>`;
+    // 二级小节 (从 section_states 找 该章的 x.y)
+    for (const key in ALL_STATES) {
+      if (/^\d+\.\d+$/.test(key) && key.split('.')[0] === sec) {
+        const s = ALL_STATES[key];
+        if (s.state !== 'generated') continue;
+        const stt = s.title || key;
+        html += `<a class="toc-item ${key===SEC?'active':''} gen" style="padding-left:22px;" onclick="loadSection('${key}')">${kfmt(key)} ${stt.replace(/^#+\s*/,'')}</a>`;
+      }
+    }
+  }
   document.getElementById('toc').innerHTML = html
     || '<div class="empty-block" style="padding:20px;">正在生成，章节将陆续出现…</div>';
 }
+function kfmt(key) { return key; }
 
 // 标志: 当前章节是否已生成 (决定显示"生成中"还是实际内容)
 function secGenerated(sec) {

@@ -134,12 +134,25 @@ def update_project(pid: str, name: str, data: dict) -> dict | None:
 
 def update_section_state(pid: str, sec: str, state: str, generated_text: str = "") -> dict:
     """章节状态: mechanical(机械待确认) → generated(已生成) → confirmed(定稿)"""
+    from web.report_struct import section_title, sub_title
     p = get_project(pid)
     if not p:
         return {"error": "not found"}
     data = dict(p["data"])
     sec_states = data.setdefault("section_states", {})
-    sec_states[sec] = {"state": state, "text": generated_text}
+    # 标题来源: 若 text 首行有 '# 标题' 则用之, 否则用结构规范标题
+    title = None
+    if generated_text:
+        for line in generated_text.splitlines():
+            s = line.strip()
+            if s.startswith('#') or s.startswith('##') or s.startswith('**'):
+                title = s.lstrip('#* ').split('\n')[0].strip()
+                break
+    if not title:
+        title = section_title(sec) if '.' not in sec or sub_title(sec) == sec else sub_title(sec)
+    if '.' in sec:
+        title = f"{sec} {sub_title(sec)}" if sub_title(sec) != sec else title
+    sec_states[sec] = {"state": state, "text": generated_text, "title": title}
     conn = _conn()
     conn.execute("UPDATE project SET data=?, updated=? WHERE id=?",
                  (json.dumps(data, ensure_ascii=False), time.time(), pid))
