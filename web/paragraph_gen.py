@@ -33,6 +33,9 @@ def gen_paragraphs(conn: sqlite3.Connection, sec: str, assess: dict) -> list[str
         ]
 
     if sec == "2":
+        if not hazards:
+            return ["【待补充】尚未识别到职业病危害因素——请先通过「⚙ 数据源编辑 → 从材料导入」"
+                    "上传设备清单、原辅材料与工艺说明，系统将自动完成识别。"]
         return [
             f"本项目可能产生的主要职业病危害因素为{names}。",
             "有毒物料、设备密闭不严处跑冒滴漏、设备运行噪声等是主要产生环节。",

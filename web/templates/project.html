@@ -339,11 +339,15 @@ function statCards(d) {
   if (overview) {
     s += `<div class="stats">
       <div class="stat-card"><div class="stat-label">危害因素</div>
-        <div class="stat-value blue">${overview.hazard_count}</div>
-        <div class="stat-sub">识别引擎从设备/物料/工艺</div></div>
+        ${overview.hazard_count
+          ? `<div class="stat-value blue">${overview.hazard_count}</div><div class="stat-sub">识别引擎从设备/物料/工艺</div>`
+          : `<div class="stat-value" style="color:var(--text-muted);">0</div><div class="stat-sub">待导入设备/原辅材料</div>`}</div>
       <div class="stat-card"><div class="stat-label">检测判定</div>
-        <div class="stat-value ${overview.failed ? 'red' : 'green'}">${overview.failed ? '不合格' : '合格'}</div>
-        <div class="stat-sub">${overview.passed}/${overview.judgement_count} 项达标</div></div>
+        ${overview.judgement_count
+          ? `<div class="stat-value ${overview.failed ? 'red' : 'green'}">${overview.failed ? '不合格' : '合格'}</div>
+             <div class="stat-sub">${overview.passed}/${overview.judgement_count} 项达标</div>`
+          : `<div class="stat-value" style="color:var(--text-muted);">—</div>
+             <div class="stat-sub">待导入检测数据 (A2e)</div>`}</div>
       <div class="stat-card"><div class="stat-label">作业分级</div>
         <div class="stat-value blue">${overview.grade_count}</div>
         <div class="stat-sub">GBZ/T 229.1-3</div></div>
@@ -358,7 +362,7 @@ function statCards(d) {
 async function loadSection(sec) {
   currentSec = sec;
   document.querySelectorAll('.nav-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.sec === sec);
+    el.classList.toggle('active', !el.dataset.sub && el.dataset.sec === sec);
   });
   document.getElementById('content').innerHTML = '<div class="content-header"><h1>加载中…</h1></div>';
   document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">加载中…</div>';
@@ -433,7 +437,7 @@ async function loadSection(sec) {
 async function loadSubSection(sec, sub) {
   currentSec = sub;
   document.querySelectorAll('.nav-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.sub === sub || (el.dataset.sec === sec && !el.dataset.sub));
+    el.classList.toggle('active', el.dataset.sub === sub);
   });
   const content = document.getElementById('content');
   content.innerHTML = '<div class="content-header"><h1>加载中…</h1></div>';
@@ -475,7 +479,7 @@ async function loadSubSection(sec, sub) {
     html += `</div>`;
   }
   content.innerHTML = html;
-  document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">小节内容加载自一级章节, 依据见上级</div>';
+  document.getElementById('evidence').innerHTML = '<h2>依据侧栏</h2><div class="ev-loading">本小节内容加载自一级章节，判定依据请查看上级章节；上传 A2e 检测数据后，这里将显示判定条款与原文。</div>';
 }
 
 async function generateSub(sec, sub) {
