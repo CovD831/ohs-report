@@ -422,6 +422,36 @@ def draft_section(pid: str, sec: str, _cache: dict | None = None) -> str:
     return _llm(prompt)
 
 
+def draft_detail(pid: str, key: str, title: str, _cache: dict | None = None) -> str:
+    """三级/四级单元 LLM 草稿 — 按标题 + 项目数据描述生成叙述段.
+
+    key 形如 '2.1.1'/'5.8.2.1'/'8.4.1.1', title 为该项标题.
+    """
+    from web.report_struct import section_title, sub_title, sub3_title, sub4_title
+    c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
+    info = c["info"]
+    # 决定权威标题 (按 key 层级)
+    parts = key.split(".")
+    lv = len(parts)
+    if lv == 3:
+        canon = sub3_title(key)
+    elif lv >= 4:
+        canon = sub4_title(key)
+    else:
+        canon = title
+    # 构造 prompt: 用标题 + 项目数据 info, 生成该节叙述
+    prompt = f"""撰写预评价报告「{canon}」小节的叙述段落。
+
+{info}
+
+要求:
+1. 围绕「{canon}」展开, 结合本项目实际数据 (设备/工艺/危害/检测/防护)
+2. 正式报告语言, 120-300字
+3. 无数据可引用的项, 用'依据标准推断'或'待补充', 不编造数值
+4. 不引用【】/标签/表格格式"""
+    return _llm(prompt)
+
+
 if __name__ == "__main__":
     pid = sys.argv[1] if len(sys.argv) > 1 else "demo-cx"
     sec = sys.argv[2] if len(sys.argv) > 2 else "10.2.6"

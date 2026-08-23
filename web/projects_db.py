@@ -134,19 +134,25 @@ def update_project(pid: str, name: str, data: dict) -> dict | None:
 
 def update_section_state(pid: str, sec: str, state: str, generated_text: str = "") -> dict:
     """章节状态: mechanical(机械待确认) → generated(已生成) → confirmed(定稿)"""
-    from web.report_struct import section_title, sub_title
+    from web.report_struct import section_title, sub_title, sub3_title, sub4_title
     p = get_project(pid)
     if not p:
         return {"error": "not found"}
     data = dict(p["data"])
     sec_states = data.setdefault("section_states", {})
     # 标题统一用 report_struct 正规标题 (避免LLM输出带序号/标题串, 造成'4 4.1'重复)
-    if "." in sec:
-        # 二级: "4.1" → 标题 = 序号 + 规范标题
+    ndots = sec.count(".")
+    if ndots >= 3:                          # 四级: "5.8.2.1"
+        st = sub4_title(sec)
+        title = f"{sec} {st}" if st != sec else sec
+    elif ndots == 2:                        # 三级: "2.1.1"
+        st = sub3_title(sec)
+        title = f"{sec} {st}" if st != sec else sec
+    elif ndots == 1:                        # 二级: "4.1"
         st = sub_title(sec)
         title = f"{sec} {st}" if st != sec else sec
-    else:
-        title = section_title(sec)  # 一级: "1" → "建设项目概况"
+    else:                                   # 一级: "1"
+        title = section_title(sec)
     sec_states[sec] = {"state": state, "text": generated_text, "title": title}
     conn = _conn()
     conn.execute("UPDATE project SET data=?, updated=? WHERE id=?",

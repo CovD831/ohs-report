@@ -165,7 +165,7 @@ async def api_report_upload(request: Request):
         # 兼容单文件
         files = [f for f in form.getlist("file") if hasattr(f, "read") and hasattr(f, "filename")]
     result: dict[str, list[dict]] = {}
-    cats = "A1,A2a,A2b,A2c,A2d,A2e,A2f,A2g,A2h,A3".split(",")
+    cats = "C1,C2,C3,C4,C5,C6,C7,C8,C9,C10,C11,C12,C13,C14,C15,C16".split(",")
     for c in cats:
         result[c] = []
     result["uncat"] = []
@@ -178,7 +178,7 @@ async def api_report_upload(request: Request):
         name = f.filename or "unnamed"
         cat = classify_file(name, content)
         try:
-            save_upload(pid, cat if cat in cats else "A3", name, content)
+            save_upload(pid, cat if cat in cats else "C2", name, content)
             result.setdefault(cat if cat in cats else "uncat", []).append({
                 "name": name, "cat": cat if cat in cats else "uncat", "ok": True})
         except Exception as e:
@@ -191,7 +191,7 @@ async def api_report_upload(request: Request):
 @app.post("/api/report/generate", response_class=JSONResponse)
 def api_report_generate(request: Request):
     """一键生成: 导入已传材料 → 识别/判定/分级 → 后台生成全部章节"""
-    from knowledge.report_skeleton import SECTION_SKELETON, SUB_SECTIONS
+    from web.report_struct import count_units
     pid = _resolve_pid(request)
     p = get_project(pid)
     if not p:
@@ -208,7 +208,7 @@ def api_report_generate(request: Request):
     data["section_states"] = {}
     _save_project_data(pid, data)
     _cache.pop(f"assess:{pid}", None)
-    total = len(SECTION_SKELETON) + sum(len(v) for v in SUB_SECTIONS.values())
+    total = count_units(data)
     user = request.state.user if hasattr(request.state, "user") else None
     jid = _tasks.create_job((user or {}).get("username", "-"), pid, "generate_all", total)
 
@@ -393,7 +393,23 @@ def report_page(request: Request, pid: str):
     p = get_project(pid)
     if not p:
         return HTMLResponse("报告不存在", status_code=404)
-    return env.get_template("report.html").render(pid=pid)
+    # 注入报告整体结构 (1-12章 + 二级 + 三级 + 固定四级), 供前端目录动态渲染
+    from web.report_struct import CHAPTERS, SUBS, SUBS3, SUBS4, _extract_product_units
+    tree = []
+    for ch in CHAPTERS:
+        node = {"key": ch, "title": CHAPTERS[ch], "level": 1, "children": []}
+        for sn, t in SUBS.get(ch, []):
+            snode = {"key": sn, "title": f"{sn} {t}", "level": 2, "children": []}
+            for sub3, (parent, t3) in SUBS3.items():
+                if parent == sn:
+                    s3node = {"key": sub3, "title": f"{sub3} {t3}", "level": 3, "children": []}
+                    for num, t4 in SUBS4.get(sub3, []):
+                        s3node["children"].append({"key": num, "title": f"{num} {t4}", "level": 4, "children": []})
+                    snode["children"].append(s3node)
+            node["children"].append(snode)
+        tree.append(node)
+    prod = _extract_product_units(p["data"] or {})
+    return env.get_template("report.html").render(pid=pid, struct=tree, prod=prod)
 
 
 @app.post("/api/projects/{pid}/upload/{cat}", response_class=JSONResponse)
@@ -692,32 +708,49 @@ from web import tasks as _tasks  # noqa: E402
 _tasks.init_tasks()
 
 
-def _gen_one(pid: str, sec: str, sub: str | None, cache: dict) -> str:
-    """统一生成单元 (draft_sub/draft_section 包装)"""
-    from web.llm_draft import draft_section, draft_sub
+def _gen_one(pid: str, sec: str, sub: str | None, title: str | None = None, cache: dict | None = None) -> str:
+    """统一生成单元: 按 key 层级分发 (一级 draft_section / 二级 draft_sub / 三级四级 draft_detail)"""
+    from web.llm_draft import draft_section, draft_sub, draft_detail
+    # 三级/四级 (key 点数 >= 2 且非纯二级)
+    if sub and sub.count(".") >= 2:
+        return draft_detail(pid, sub, title or "", cache)
     if sub:
         return draft_sub(pid, sec, sub, cache)
     return draft_section(pid, sec, cache)
 
 
 def _run_generate_all(pid: str, jid: str):
-    """后台 worker: 一级9章+全部小节 LLM生成 (assess预计算1次 + 并发3)
-    进度实时; 用户取消可中断"""
-    from knowledge.report_skeleton import SECTION_SKELETON, SUB_SECTIONS
-    from web.llm_draft import draft_section, draft_sub, _assess_cached
+    """后台 worker: 1-12章 + 二级 + 三级 + 四级 LLM生成 (assess预计算 + 并发)
+    进度实时; 用户取消可中断. 四级含固定模板 + 数据驱动(产品/工段级)"""
+    from web.llm_draft import draft_section, draft_sub, draft_detail, _assess_cached
     from web.projects_db import update_section_state
+    from web.report_struct import CHAPTERS, SUBS, SUBS3, SUBS4, DATA4, _extract_product_units
+    from web.projects_db import get_project
     from concurrent.futures import ThreadPoolExecutor
 
-    # units 按报告阅读顺序: 章节 → 该章小节 → 下一章 → 下一章小节...
-    # (之前全一级再全二级, 导致先显示所有一级标题再补二级 — 你指出的顺序问题)
-    from web.report_struct import CHAPTERS, SUBS
-    units = []
-    for ch in "123456789":
-        units.append((ch, None))                     # 该章标题
-        for sn, _ in SUBS.get(ch, []):
-            units.append((ch, sn))                   # 该章小节
-    total = len(units)
+    # units 按报告阅读顺序: 章 → 二级 → 三级 → 固定四级 → 下一章...
+    p = get_project(pid)
+    proj_data = p["data"] if p else {}
     conn = _conn_tasks()
+    units = []
+    for ch in CHAPTERS:
+        units.append((ch, None, f"{ch} {CHAPTERS[ch]}"))                # 该章
+        for sn, t in SUBS.get(ch, []):
+            units.append((ch, sn, f"{sn} {t}"))                          # 二级
+            # 三级
+            for sub3, (parent, t3) in SUBS3.items():
+                if parent == sn:
+                    units.append((sub3.split(".")[0], sub3, f"{sub3} {t3}"))  # 三级
+                    # 固定四级 (SUBS4 key 是三级编号)
+                    for num, t4 in SUBS4.get(sub3, []):
+                        units.append((num.split(".")[0], num, f"{num} {t4}"))  # 四级
+            # 数据驱动四级 (产品/工段级): parent==SN 的三级若在 DATA4, 动态生成四级
+            # DATA4 的 key 是三级编号(如 8.4.1), 产品/工段四级 = 8.4.1.1 特殊单体...
+    # 数据驱动四级: 从 DATA4 的三级, 按产品/工段动态生成四级 units
+    prod_units = _extract_product_units(proj_data or {})
+    for sub4, title4 in prod_units:
+        units.append((sub4.split(".")[0], sub4, f"{sub4} {title4}"))
+    total = len(units)
     conn.execute("UPDATE task_job SET total=? WHERE id=?", (total, jid))
     conn.commit()
     conn.close()
@@ -750,10 +783,10 @@ def _run_generate_all(pid: str, jid: str):
     conc = int(_os.environ.get("LLM_CONCURRENCY", "5"))
     with ThreadPoolExecutor(max_workers=conc, thread_name_prefix="ohsgen") as ex:
         futures: dict = {}
-        for sec, sub in units:
+        for sec, sub, title in units:
             if _tasks._should_stop(jid):
                 break
-            fut = ex.submit(_gen_one, pid, sec, sub, cache)
+            fut = ex.submit(_gen_one, pid, sec, sub, title, cache)
             futures[fut] = (sec, sub)
             # 保持并发≤3: 阻塞等任一完成 (不设短超时, LLM正常需几十秒)
             while len(futures) >= 3:

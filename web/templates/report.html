@@ -75,6 +75,7 @@ tr.risky td { background: #FFF7E6; }   /* 行级需关注: 浅黄 */
 td.risky-cell { background: #FFF1CC; font-weight: 600; color: #B45309; }  /* 超标单元格: 更强黄 */
 .mat-detail { padding: 8px 12px; border-left: 3px solid var(--border); margin-bottom: 6px; font-size: 13px; line-height: 1.6; }
 .mat-detail.risky { border-left-color: #B45309; background: #FFF7E6; }
+.review-hint { background: #FFF7E6; border-left: 4px solid #D97706; padding: 8px 12px; font-size: 12.5px; color: #92400E; margin-bottom: 12px; border-radius: 4px; }
 </style>
 </head>
 <body>
@@ -113,39 +114,47 @@ td.risky-cell { background: #FFF1CC; font-weight: 600; color: #B45309; }  /* 超
 let PID = '{{ pid }}';
 let SEC = '1';
 let ALL_STATES = {};
-const CH = ['1','2','3','4','5','6','7','8','9'];
-const TITLES = {
-  '1':'建设项目概况','2':'职业病危害因素识别与评价','3':'职业病危害防护措施评价',
-  '4':'综合性评价','5':'职业病补充措施及建议','6':'评价结论','7':'评价依据与方法',
-  '8':'工程分析','9':'类比调查'
-};
-const SUBS = {
-  '1':['1.1 基本情况','1.2 项目建设概况','1.3 地理与周边环境'],
-  '2':['2.1 职业病危害因素识别','2.2 职业病危害因素风险评价','2.3 主要职业病危害因素'],
-  '3':['3.1 职业病防护设施评价','3.2 个人使用的职业病防护用品','3.3 应急救援措施'],
-  '4':['4.1 选址、总体布局评价','4.2 生产工艺及设备布局','4.3 建筑卫生学评价','4.4 辅助用室评价','4.5 职业卫生管理评价'],
-  '5':['5.1 补充措施建议'],
-  '6':['6.1 评价结论'],
-  '8':['8.1 原辅材料','8.2 主要设备','8.3 生产工艺'],
-};
+// 注入的报告整体结构 (1-12章树) + 数据四级 (产品/工段)
+const STRUCT = {{ struct|tojson }};
+const PROD4 = {{ prod|tojson }};
+// 数据四级并进结构树 (8.4.1 / 10.1.1 三级下长四级)
+function mergeProd() {
+  const byParent = {};
+  PROD4.forEach(([key, title]) => {
+    const p = key.slice(0, key.lastIndexOf('.'));   // '8.4.1' 或 '10.1.1'
+    (byParent[p] = byParent[p] || []).push({key, title});
+  });
+  STRUCT.forEach(ch => {
+    (ch.children||[]).forEach(s2 => {
+      (s2.children||[]).forEach(s3 => {
+        if (byParent[s3.key]) {
+          s3.children = (s3.children||[]).concat(byParent[s3.key].map(p => ({key:p.key, title:`${p.key} ${p.title}`, level:4, children:[]})));
+        }
+      });
+    });
+  });
+}
+mergeProd();
+// 展平结构: key -> {title, level} 映射 (供 buildToc 和寻址)
+const KEYMAP = {};
+(function flat(nodes){ nodes.forEach(n => { KEYMAP[n.key] = n; (n.children||[]).forEach(n2 => flat([n2])); }); })(STRUCT);
+// 一级章节顺序
+const CH = STRUCT.map(n => n.key);
 
 async function init() {
   await loadOverview();
   await reloadStates();
   buildToc();
-  // 自动定位到第一个已生成的章节; 否则停在"生成中"
   const firstGen = findFirstGenerated();
   if (firstGen) { loadSection(firstGen); }
   checkGenTask();
 }
 async function reloadStates() {
-  // 拉取最新 section_states (生成到哪出现到哪)
   const r = await fetch('/api/projects/' + PID + '/data');
   const d = await r.json();
   ALL_STATES = d.section_states || {};
 }
 function findFirstGenerated() {
-  // 返回第一个已生成的章节 (一级优先)
   for (const sec of CH) if (secGenerated(sec)) return sec;
   return null;
 }
@@ -158,7 +167,6 @@ async function checkGenTask() {
       document.getElementById('genProgress').style.display = 'block';
       pollGen(mine.id);
     } else {
-      // 无进行中的任务: 不显示进度, 但刷新一次
       await reloadStates(); buildToc();
     }
   } catch(e) {}
@@ -170,7 +178,6 @@ async function pollGen(jobId) {
     const pct = d.total ? Math.round(d.live_progress / d.total * 100) : 0;
     document.getElementById('genFill').style.width = pct + '%';
     document.getElementById('genText').textContent = pct + '% (' + d.live_progress + '/' + d.total + ')';
-    // 实时刷新: 新生成的章节动态加入目录, 当前章节未生成则自动跳到最新章节
     await reloadStates(); buildToc();
     if (!secGenerated(SEC)) {
       const gen = findFirstGenerated();
@@ -199,94 +206,75 @@ async function loadOverview() {
   sb.textContent = (overview.has_data ? `危害${overview.hazard_count} · 判定${overview.judgement_count}` : '待上传材料');
   sb.className = 'badge ' + (overview.has_data ? 'badge-green' : 'badge-gray');
 }
-// 只显示"已生成"的章节 — 生成到哪出现到哪; 用存储的实际标题(含二级)
+// 目录: 只显示"已生成"的章节, 生成到哪出现到哪; 按结构树层级缩进
 function buildToc() {
   let html = '';
-  // 先一级章节
-  for (const sec of CH) {
-    const st = ALL_STATES[sec];
-    if (!st || st.state !== 'generated') continue;
-    const t = (st.title || TITLES[sec] || sec).replace(/^#+\s*/,'');
-    // 一级: 标题已含序号, 但确保是 "第N章 标题" 或 "N 标题" 格式 — 直接显示title去序号前缀
-    html += `<a class="toc-item ${sec===SEC?'active':''} gen" onclick="loadSection('${sec}')">${t}</a>`;
-    // 二级小节 (从 section_states 找 该章的 x.y)
-    for (const key in ALL_STATES) {
-      if (/^\d+\.\d+$/.test(key) && key.split('.')[0] === sec) {
-        if (ALL_STATES[key].state !== 'generated') continue;
-        const stt = (ALL_STATES[key].title || key).replace(/^#+\s*/,'');
-        html += `<a class="toc-item ${key===SEC?'active':''} gen" style="padding-left:22px;" onclick="loadSection('${key}')">${stt}</a>`;
-      }
-    }
+  function walk(node, depth) {
+    const st = ALL_STATES[node.key];
+    if (!st || st.state !== 'generated') return;
+    const t = (st.title || node.title).replace(/^#+\s*/,'');
+    const pad = 10 + (depth-1) * 14;
+    html += `<a class="toc-item ${node.key===SEC?'active':''} gen" style="padding-left:${pad}px;${depth>=3?'font-size:12.5px;':''}" onclick="loadSection('${node.key}')">${t}</a>`;
+    (node.children||[]).forEach(c => walk(c, depth+1));
   }
-  // 三级单元不再单独占目录(占用空间且归属不清) — 改为在危害识别章节正文中展示
+  STRUCT.forEach(n => walk(n, 1));
   document.getElementById('toc').innerHTML = html
     || '<div class="empty-block" style="padding:20px;">正在生成，章节将陆续出现…</div>';
 }
 function kfmt(key) { return key; }
-
-// 标志: 当前章节是否已生成 (决定显示"生成中"还是实际内容)
 function secGenerated(sec) {
   return (ALL_STATES[sec] || {}).state === 'generated';
 }
-
 async function loadSection(sec) {
   SEC = sec;
   buildToc();
-  // 三级单元: 本地从 ALL_STATES 渲染 (不走章节API)
-  if (sec.startsWith('u::')) {
-    const st = ALL_STATES[sec] || {};
-    const parts = sec.split('::');
-    const title = st.title || parts[2] || sec;
-    document.getElementById('content').innerHTML = `<div class="section-title">${title}</div><div class="para">${(st.text||'').replace(/^#+\s*/,'')}</div>`;
-    return;
-  }
-  // 已生成章节: 读 section_states 里的 LLM 正文 (打勾=真有内容) + 追加机械支撑表格
   const st = ALL_STATES[sec];
   if (st && st.state === 'generated' && st.text) {
     document.getElementById('content').innerHTML = renderLLM(sec, st);
-    // 异步拉取该章机械表格(识别/检测/判定)作支撑数据, 含置信度颜色
+    // 内嵌该章数据表 (识别/检测/防护/检查表) 作正文支撑
     loadSupportTables(sec);
     return;
   }
-  // 未生成: 回退机械段落占位
   const r = await fetch('/api/projects/' + PID + '/sections/' + sec);
   const d = await r.json();
   document.getElementById('content').innerHTML = renderSection(sec, d);
 }
-// 追加机械支撑表格 (识别表/检测表/判定表) + 置信度颜色(超标标黄)
+// 内嵌正文支撑表 (章节对应数据表) + 超标/需关注单元格标黄
 async function loadSupportTables(sec) {
   try {
     const r = await fetch('/api/projects/' + PID + '/sections/' + sec);
     const d = await r.json();
     const tables = d.tables || [];
     if (!tables.length) return;
-    let h = '<div class="support-block"><div class="support-title">数据支撑</div>';
+    let h = '';
     tables.forEach(t => {
-      h += `<div class="table-card"><div class="table-title">${t.name}</div><table><thead><tr>`;
+      h += `<div class="table-card" style="margin-top:18px;"><div class="table-title">${t.name}</div><table><thead><tr>`;
       (t.headers || []).forEach(hd => { h += `<th>${hd}</th>`; });
       h += '</tr></thead><tbody>';
       (t.rows || []).forEach(row => {
-        // 置信度颜色: 含'超标'/'不合格'/红色关键字的行标黄
         const rowStr = row.join(',');
-        const risky = /超标|不合格|不合格|超限|严重|需注意/i.test(rowStr);
+        const risky = /超标|不合格|超限|严重|需注意|超过/i.test(rowStr);
         h += `<tr${risky?' class="risky"':''}>`;
         row.forEach(c => {
-          const cellRisky = /超标|不合格|超限/i.test(String(c));
+          const cellRisky = /超标|不合格|超限|超过/i.test(String(c));
           h += `<td${cellRisky?' class="risky-cell"':''}>${c ?? ''}</td>`;
         });
         h += '</tr>';
       });
       h += '</tbody></table></div>';
     });
-    h += '</div>';
     document.getElementById('content').insertAdjacentHTML('beforeend', h);
   } catch(e) {}
 }
-// 渲染 LLM 正文 (markdown 简单转 HTML, 标题/段落/表格)
+// 渲染 LLM 正文 (markdown→HTML) + AI"需人工审核"高亮 (判定/结论段)
 function renderLLM(sec, st) {
-  const title = st.title || TITLES[sec] || sec;
-  let h = `<div class="section-title">${title.replace(/^#+\s*/,'')}</div>`;
-  // 简单 markdown → HTML: ## 标题, 段落, 列表
+  const title = (st.title || KEYMAP[sec]?.title || sec).replace(/^#+\s*/,'');
+  // 一级/二级/三级章节: AI 生成文字需人工审核 (判定/结论段标黄提示)
+  const needsReview = ['6','2','10.4','11','3'].some(p => sec===p || sec.startsWith(p+'.'));
+  let h = `<div class="section-title">${title}</div>`;
+  if (needsReview) {
+    h += `<div class="review-hint">⚠ 本节为 AI 辅助生成，判定性结论需人工审核复核</div>`;
+  }
   const lines = (st.text || '').split('\n');
   let inList = false;
   lines.forEach(ln => {
@@ -307,25 +295,10 @@ function renderLLM(sec, st) {
     }
   });
   if (inList) h += '</ul>';
-  // 危害识别章节(2)追加物质详情: 从 `u::物质::*` 三级单元取, 置信度颜色(需注意标黄)
-  if (sec === '2' || sec.startsWith('2.')) {
-    const mats = Object.keys(ALL_STATES).filter(k => k.startsWith('u::物质::') && ALL_STATES[k].state === 'generated');
-    if (mats.length) {
-      h += '<div class="support-block"><div class="support-title">主要危害物质详情</div>';
-      mats.sort().forEach(k => {
-        const name = k.split('::')[2];
-        const t = (ALL_STATES[k].text || '').replace(/\*\*/g,'');
-        // 置信度颜色: 含"致癌|致敏|高毒|剧毒|需注意"标黄
-        const risky = /致癌|致敏|高毒|剧毒|需注意|神经|损害/i.test(t);
-        h += `<div class="mat-detail${risky?' risky':''}"><b>${name}</b> — ${t}</div>`;
-      });
-      h += '</div>';
-    }
-  }
   return h;
 }
 function renderSection(sec, d) {
-  const title = d.title || TITLES[sec] || sec;
+  const title = d.title || KEYMAP[sec]?.title || sec;
   let h = `<div class="section-title">${title}</div>`;
   const paras = d.paragraphs || [];
   if (paras.length) {
@@ -361,6 +334,7 @@ async function exportWord() {
   } else { alert('导出失败：' + (d.error || '')); }
 }
 let overview = null;
+let timer = null;
 init().then(loadStates);
 </script>
 </body>
