@@ -597,13 +597,28 @@ def import_materials_from_dir(pid: str) -> dict:
         return out
 
     def _get(row, *keys):
-        """列名容错取值: 任一 key 命中(含前缀匹配 like)非空"""
+        """列名容错取值: 任一 key 命中(前缀优先, 含关键词兜底)非空"""
         for k in keys:
+            if not k:
+                continue
+            # 1) 精确匹配
             for rk, rv in row.items():
                 if rk.strip() == k and rv:
                     return rv
-                # 前缀匹配: 列名带单位如'占地面积(㎡)' 命中'占地面积'
+            # 2) 前缀匹配: 列名带单位如'占地面积(㎡)' 命中'占地面积'
+            for rk, rv in row.items():
                 if k and rv and rk.strip().startswith(k):
+                    return rv
+            # 3) 包含匹配兜底: '建筑名称'/'原辅料名称' 命中关键词('名称'不在前缀)
+            #    但排除单位后缀误配(如'层数'不该匹配'计算容积率面积')
+            for rk, rv in row.items():
+                rks = rk.strip()
+                if not rv:
+                    continue
+                if k in rks:
+                    # 排除: 关键词是'层数'但列名其实是'计算容积率面积'(含面积单位)
+                    if k in ("层数", "高度") and ("容积率" in rks or "面积" in rks and k == "层数"):
+                        continue
                     return rv
         return ""
 
@@ -659,9 +674,14 @@ def import_materials_from_dir(pid: str) -> dict:
             if "建构筑" in name or "建筑" in name or "总平面" in name:
                 rows = _dict_rows(_read_rows(f))
                 for r in rows:
-                    nm = _get(r, "名称", "建筑物名称")
-                    if nm and nm not in ("名称",):
-                        buildings.append({"name": nm, "area": _get(r, "占地面积", "占地"), "floor_area": _get(r, "建筑面积"), "floors": _get(r, "层数"), "height": _get(r, "建筑高度")})
+                    nm = _get(r, "名称", "建筑物名称", "建筑名称")
+                    if nm and nm not in ("名称", "建筑名称", "建筑物名称"):
+                        buildings.append({"name": nm, "area": _get(r, "占地面积", "占地"),
+                                          "floor_area": _get(r, "建筑面积"),
+                                          "floors": _get(r, "层数"),
+                                          "height": _get(r, "建筑高度"),
+                                          "fire_risk": _get(r, "火灾危险性", "火危"),  # 格兰富表列: 火危类别/耐火等级
+                                          "fire_grade": _get(r, "耐火等级")})
             # 设施配置明细 (岗位×设施×数量)
             if "设施" in name or "配置" in name:
                 rows = _dict_rows(_read_rows(f))
@@ -680,7 +700,11 @@ def import_materials_from_dir(pid: str) -> dict:
             if "原辅材料" in name or "物料" in name or "原料" in name:
                 rows = _dict_rows(_read_rows(f))
                 for r in rows:
-                    n = _get(r, "名称", "物料名称", "原辅材料")
+                    # 过滤表头重复行/列名行 (值==列名的行是表头残留)
+                    vals = [str(v).strip() for v in r.values()]
+                    if any(v in ("原辅料名称", "名称", "物料名称", "原辅材料") for v in vals):
+                        continue
+                    n = _get(r, "名称", "物料名称", "原辅材料", "原辅料名称")
                     if n:
                         mat = {"name": n, "spec": _get(r, "规格", "规格型号"), "usage": _get(r, "年用量", "使用量", "用量"), "state": _get(r, "状态", "物态"), "msds": _get(r, "MSDS", "是否MSDS")}
                         if n not in seen_mat:
