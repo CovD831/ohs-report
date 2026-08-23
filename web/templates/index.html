@@ -12,231 +12,210 @@
   --border: #DFE3E1; --border-strong: #C4CCC8;
   --text: #1A2521; --text-secondary: #46534E; --text-muted: #8A948F;
   --radius-sm: 3px; --radius-md: 5px; --radius-lg: 8px;
-  --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 32px;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: PingFang SC, Noto Sans SC, system-ui, -apple-system, sans-serif;
-  font-size: 14px; line-height: 1.6; color: var(--text); background: var(--neutral); }
-.mono { font-family: JetBrains Mono, SF Mono, Menlo, Consolas, monospace; font-size: 13px; }
-a { color: var(--primary); text-decoration: none; }
-
-.topbar { background: var(--surface); border-bottom: 1px solid var(--border);
-  padding: 0 24px; height: 56px; display: flex; align-items: center; gap: 16px; }
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
-.brand-logo { width: 28px; height: 28px; border-radius: var(--radius-sm);
-  background: var(--primary); color: white; display: flex; align-items: center;
-  justify-content: center; font-size: 13px; font-weight: 700; }
-
-.btn { display: inline-flex; align-items: center; gap: 6px; border: none;
-  border-radius: var(--radius-md); padding: 7px 14px; font-size: 13px; cursor: pointer;
-  font-family: inherit; }
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  margin: 0; color: var(--text); background: var(--neutral); font-size: 14px; }
+.topbar { background: var(--primary-strong); color: #fff; height: 52px;
+  display: flex; align-items: center; padding: 0 20px; }
+.topbar .brand { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.topbar .brand-logo { width: 24px; height: 24px; border-radius: 4px; background: rgba(255,255,255,.18);
+  display: flex; align-items: center; justify-content: center; font-size: 13px; }
+.topbar .right { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 12.5px; }
+.topbar a { color: rgba(255,255,255,.85); text-decoration: none; }
+.topbar a:hover { color: #fff; }
+.container { max-width: 880px; margin: 0 auto; padding: 28px 20px; }
+.page-title { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+.page-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 22px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; margin-bottom: 18px; }
+.drop-zone { border: 2px dashed var(--border-strong); border-radius: var(--radius-md); padding: 36px 20px;
+  text-align: center; transition: border-color .15s, background .15s; cursor: pointer; }
+.drop-zone:hover, .drop-zone.drag { border-color: var(--primary); background: var(--primary-soft); }
+.drop-zone .big { font-size: 32px; color: var(--primary); margin-bottom: 8px; }
+.drop-zone .hint { font-size: 14px; font-weight: 600; }
+.drop-zone .sub { font-size: 12.5px; color: var(--text-muted); margin-top: 6px; }
+.file-list { margin-top: 14px; }
+.file-item { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 6px 10px;
+  background: var(--surface-muted); border-radius: var(--radius-sm); margin-bottom: 5px; }
+.file-item .status { margin-left: auto; font-size: 11px; }
+.file-item .ok { color: var(--success); }
+.file-item .cat { color: var(--text-muted); }
+.action-row { display: flex; gap: 10px; align-items: center; margin-top: 16px; }
+.btn { border: none; border-radius: var(--radius-sm); padding: 9px 16px; font-size: 14px;
+  cursor: pointer; white-space: nowrap; }
 .btn-primary { background: var(--primary); color: #fff; }
 .btn-primary:hover { background: var(--primary-strong); }
-.btn-secondary { background: var(--surface-muted); color: var(--text); }
-.btn-secondary:hover { background: var(--border); }
-
-.container { max-width: 1080px; margin: 0 auto; padding: var(--space-xl) var(--space-md); }
-.page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-lg); }
-.page-head h1 { font-size: 22px; font-weight: 600; }
-.project-grid { display: grid; gap: var(--space-md); }
-
-.card { background: var(--surface); border-radius: var(--radius-md); padding: var(--space-md);
-  box-shadow: 0 1px 2px rgba(15,23,42,0.04); border: 1px solid var(--border); }
-.project-card { display: flex; justify-content: space-between; align-items: center; }
-.project-card:hover { border-color: var(--primary); }
-.project-card .name { font-weight: 600; font-size: 15px; }
-.project-card .meta { color: var(--text-secondary); font-size: 13px; margin-top: 4px; }
-
-/* 新建项目上传行 (label触发 + 拖拽) */
-.up-row { border: 1.5px dashed var(--border-strong); border-radius: var(--radius-md);
-  padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 4px;
-  transition: border-color .15s, background .15s; }
-.up-row:hover { border-color: var(--primary); background: var(--primary-soft); }
-.up-row.drag { border-color: var(--primary-strong); background: var(--primary-soft); border-style: solid; }
-.up-btn { font-size: 12px; font-weight: 600; color: var(--primary-strong);
-  background: var(--primary-soft); border-radius: var(--radius-sm); padding: 3px 10px; white-space: nowrap; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius-sm);
-  font-size: 11px; font-weight: 600; }
-.badge-status { background: var(--primary-soft); color: var(--primary-strong); }
-
-/* 新建表单 */
-.modal-mask { position: fixed; inset: 0; background: rgba(15,23,42,0.4); display: none;
-  align-items: center; justify-content: center; z-index: 200; }
-.modal-mask.show { display: flex; }
-.modal { background: var(--surface); border-radius: var(--radius-md); padding: 24px;
-  width: 440px; box-shadow: 0 8px 30px rgba(15,23,42,0.15); }
-.modal h3 { font-size: 16px; margin-bottom: 16px; }
-.modal label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
-.modal input { width: 100%; padding: 8px 12px; border: 1px solid var(--border);
-  border-radius: var(--radius-md); font-size: 14px; margin-bottom: 16px; font-family: inherit; }
-.modal input:focus { outline: none; border-color: var(--primary); }
-.modal .actions { display: flex; justify-content: flex-end; gap: 8px; }
-.empty { color: var(--text-muted); text-align: center; padding: 48px 0; }
+.btn-secondary { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+.btn-secondary:hover { border-color: var(--primary); color: var(--primary-strong); }
+.btn-primary:disabled { opacity: .5; cursor: wait; }
+.spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--primary);
+  border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.progress { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-secondary); }
+.progress-bar { flex: 1; height: 8px; background: var(--surface-muted); border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--primary); transition: width .3s; }
+.report-links { margin-top: 4px; }
+.report-link { display: flex; align-items: center; gap: 10px; padding: 13px 16px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 10px; text-decoration: none; color: var(--text); }
+.report-link:hover { border-color: var(--primary); }
+.report-link .r-icon { color: var(--primary); }
+.report-link .r-name { font-weight: 600; flex: 1; }
+.report-link .r-status { font-size: 12px; color: var(--text-muted); }
+.empty { text-align: center; color: var(--text-muted); padding: 24px; font-size: 13px; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+.step { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 14px; background: var(--surface); }
+.step-no { width: 22px; height: 22px; border-radius: 50%; background: var(--primary); color: #fff;
+  font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; margin-bottom: 8px; }
+.step-t { font-weight: 600; font-size: 13.5px; margin-bottom: 4px; }
+.step-d { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
 </style>
 </head>
 <body>
 <div class="topbar">
-  <div class="brand"><div class="brand-logo">预</div><span>职业病危害预评价报告工作台</span></div>
-  <div style="margin-left:auto;font-size:12px;color:var(--text-secondary);">
-    {% if user and user.is_admin %}
-      <a href="/admin" style="color:var(--primary-strong);">管理后台</a>
-    {% elif user and user.username.startswith('guest-') %}
-      游客 {{ user.username[-6:] }}
-      · <a href="/login" style="color:var(--text-secondary);">管理员登录</a>
-    {% endif %}
+  <div class="brand"><div class="brand-logo">预</div>职业病危害预评价报告工作台</div>
+  <div class="right">
+    <span id="whoami">—</span>
+    <a href="/login" id="adminLink" style="display:none;">管理员登录</a>
+    <a href="/admin" id="adminDash" style="display:none;">管理后台</a>
   </div>
 </div>
 
 <div class="container">
-  <div class="page-head">
-    <h1>项目列表</h1>
-    <button class="btn btn-primary" onclick="showCreate()">＋ 新建项目</button>
+  <div class="page-title">我的报告工作台</div>
+  <div class="page-sub">上传企业材料 → 一键生成职业病危害预评价报告 → 导出 Word</div>
+
+  <div class="card">
+    <div class="drop-zone" id="dropZone">
+      <div class="big">↑</div>
+      <div class="hint">拖拽企业材料文件到这里，或点击选择</div>
+      <div class="sub">支持一次拖多个文件，系统自动归类（设备清单/原辅材料/工艺说明/检测数据/防护措施…）。</div>
+      <input type="file" id="fileInput" multiple style="display:none">
+    </div>
+    <div class="file-list" id="fileList"></div>
+    <div class="action-row">
+      <button class="btn btn-primary" id="genBtn" onclick="generate()">⚡ 生成报告</button>
+      <span style="font-size:12.5px;color:var(--text-muted);">上传后点此，自动完成识别、判定与全文生成</span>
+    </div>
+    <div class="progress" id="progress" style="display:none;">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <span id="progressText">0%</span>
+    </div>
   </div>
 
-  {% if not projects %}
-  <!-- 空态: 三步引导 -->
-  <div class="guide" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px;">
-    <div class="card" style="padding:20px;">
-      <div class="guide-no">3</div>
-      <div style="font-weight:600;margin-bottom:6px;">第 1 步 · 上传企业材料</div>
-      <div style="font-size:13px;color:var(--text-secondary);line-height:1.7;">按 GBZ/T 196 附录A 上传立项文件、原辅材料、设备清单、工艺说明、检测数据等 10 类材料。</div>
-    </div>
-    <div class="card" style="padding:20px;">
-      <div class="guide-no">2</div>
-      <div style="font-weight:600;margin-bottom:6px;">第 2 步 · 一键生成报告</div>
-      <div style="font-size:13px;color:var(--text-secondary);line-height:1.7;">系统自动完成危害识别、限值判定、作业分级，并逐章生成叙述文字（可逐章人工确认后生成）。</div>
-    </div>
-    <div class="card" style="padding:20px;">
-      <div class="guide-no">3</div>
-      <div style="font-weight:600;margin-bottom:6px;">第 3 步 · 导出 Word</div>
-      <div style="font-size:13px;color:var(--text-secondary);line-height:1.7;">报告按 1-9 章结构（与真实报告一致）导出，含两级目录、三级标题与页码，可直接编辑提交。</div>
-    </div>
-  </div>
-  {% endif %}
-
-  <div class="project-grid">
-    {% if projects %}
-      {% for p in projects %}
-      <a href="/projects/{{ p['id'] }}" class="card project-card">
-        <div>
-          <div class="name">{{ p['name'] }}</div>
-          <div class="meta">行业码 <span class="mono">{{ p['data'].get('industry', '—') }}</span>
-            · 设备 {{ p['data'].get('equipment', []) | length }} 台
-            · 检测 {{ p['data'].get('detections', []) | length }} 条</div>
-        </div>
-        <span class="badge badge-status">{{ p['status'] }}</span>
-      </a>
-      {% endfor %}
-    {% else %}
-      <div class="empty">↑ 点击"新建项目"，从上传材料开始</div>
-    {% endif %}
-  </div>
-</div>
-
-<!-- 新建项目模态 (向导: 基本信息+材料上传) -->
-<div class="modal-mask" id="createModal">
-  <div class="modal" style="width:640px;max-height:90vh;overflow-y:auto;">
-    <h3>新建项目</h3>
-    <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
-      第 1 步：填写基本信息；第 2 步：上传材料（GBZ/T 196 附录A，每类一个窗口）
-    </div>
-    <label>项目名称</label>
-    <input id="newName" placeholder="如：XX新材料年产X吨XX项目">
-    <label>行业码 (GB/T 4754 中类, 如 261)</label>
-    <input id="newIndustry" placeholder="261" class="mono">
-    <div style="font-size:13px;font-weight:600;margin:16px 0 8px;">第 2 步：上传材料文件</div>
-    <div id="uploadCats" style="display:grid;gap:10px;">
-      <!-- 动态加载类别 -->
-    </div>
-    <div class="actions" style="margin-top:20px;">
-      <button class="btn btn-secondary" onclick="closeCreate()">取消</button>
-      <button class="btn btn-primary" onclick="createProject()">创建项目</button>
-    </div>
-  </div>
+  <div id="reportLinks"></div>
 </div>
 
 <script>
-function showCreate() {
-  document.getElementById('createModal').classList.add('show');
-  loadUploadCats();
-}
-function closeCreate() { document.getElementById('createModal').classList.remove('show'); }
+let selFiles = [];
+let PID = null;
 
-// 类别定义 (与后端 CATEGORIES 一致)
-const CATS = [
-  {key:'A1', name:'立项文件', desc:'项目建议书/可研报告/备案证明'},
-  {key:'A2a', name:'原辅材料清单', desc:'原料/辅料/产品/副产/中间品'},
-  {key:'A2b', name:'生产工艺说明', desc:'工艺流程描述/流程图'},
-  {key:'A2c', name:'设备清单', desc:'设备名称/规格/数量/内部物料'},
-  {key:'A2d', name:'劳动定员表', desc:'车间/工种/人数/工作内容'},
-  {key:'A2e', name:'类比项目检测数据', desc:'类比项目检测报告'},
-  {key:'A2f', name:'防护措施', desc:'拟采取的防护设施/用品'},
-  {key:'A2g', name:'职业健康检查资料', desc:'改扩建: 现有检查资料'},
-  {key:'A2h', name:'设计图纸', desc:'区域位置/总平面/竖向图'},
-  {key:'A3', name:'法规标准(可选)', desc:'地方法规/行业标准'},
-];
-let pendingFiles = {};  // cat → File
-
-function loadUploadCats() {
-  document.getElementById('uploadCats').innerHTML = CATS.map(c => `
-    <label class="up-row" data-cat="${c.key}" for="file_${c.key}">
-      <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
-        <div><strong style="font-size:13px;">${c.name}</strong>
-          <span style="color:var(--text-muted);font-size:12px;margin-left:8px;">${c.desc}</span></div>
-        <span class="up-btn">${pendingFiles[c.key] ? '已选' : '上传'}</span>
-      </div>
-      <div id="picked_${c.key}" style="font-size:12px;color:var(--text-secondary);margin-top:6px;">
-        ${pendingFiles[c.key] ? '✓ ' + pendingFiles[c.key].name : '点击选择或拖拽文件到此处'}</div>
-      <input type="file" id="file_${c.key}" style="display:none" onchange="pickFile('${c.key}', this)">
-    </label>`).join('');
-  bindUploadDrop();
+async function init() {
+  const r = await fetch('/api/report');
+  const d = await r.json();
+  PID = d.pid;
+  if (d.report) {
+    const st = d.report.status;
+    // 已有报告则加载状态 + 显示链接
+    refreshReports();
+    if (st === 'generating') pollTask();
+  }
+  // 身份显示
+  const who = document.getElementById('whoami');
+  who.textContent = PID ? '身份已就绪' : '—';
+  // admin 链接
+  const adm = fetch('/admin', {method:'HEAD'}).then(r=>r.status);
+  fetch('/api/admin/audit').then(r=>{ if(r.ok){ document.getElementById('adminDash').style.display='inline'; document.getElementById('adminLink').style.display='none'; }}).catch(()=>{});
 }
-function bindUploadDrop() {
-  document.querySelectorAll('.up-row').forEach(row => {
-    row.addEventListener('dragover', e => { e.preventDefault(); row.classList.add('drag'); });
-    row.addEventListener('dragleave', () => row.classList.remove('drag'));
-    row.addEventListener('drop', e => {
-      e.preventDefault(); row.classList.remove('drag');
-      const key = row.dataset.cat;
-      const inp = document.getElementById('file_' + key);
-      const files = e.dataTransfer.files;
-      if (files.length && inp) {
-        const dt = new DataTransfer();
-        for (const f of files) dt.items.add(f);
-        inp.files = dt.files;
-        inp.dispatchEvent(new Event('change'));
-      }
+async function refreshReports() {
+  const r = await fetch('/api/report');
+  const d = await r.json();
+  const box = document.getElementById('reportLinks');
+  if (!d.report) { box.innerHTML = ''; return; }
+  const st = d.report.status;
+  box.innerHTML = `
+    <a class="report-link" href="/report/${PID}">
+      <span class="r-icon">📄</span>
+      <span class="r-name">我生成的报告</span>
+      <span class="r-status">${st === 'generating' ? '生成中…' : st === 'ready' ? '可查看' : '草稿'}</span>
+      <span class="r-status">查看 →</span>
+    </a>`;
+}
+bindDrop();
+function bindDrop() {
+  const drop = document.getElementById('dropZone');
+  const input = document.getElementById('fileInput');
+  drop.addEventListener('click', () => input.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault(); drop.classList.remove('drag');
+    addFiles(e.dataTransfer.files);
+  });
+  input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
+}
+async function addFiles(fileList) {
+  for (const f of fileList) selFiles.push(f);
+  renderFiles();
+  // 立即上传
+  const fd = new FormData();
+  selFiles.forEach(f => fd.append('files', f));
+  const r = await fetch('/api/report/upload', {method:'POST', body:fd});
+  const d = await r.json();
+  if (d.ok) {
+    selFiles = [];
+    renderFiles(d.detail);
+    document.getElementById('genBtn').disabled = false;
+  }
+}
+function renderFiles(detail) {
+  const box = document.getElementById('fileList');
+  if (!detail) { box.innerHTML = ''; return; }
+  let html = '';
+  const catNames = {A1:'立项',A2a:'原辅材料',A2b:'工艺',A2c:'设备',A2d:'定员',A2e:'检测',A2f:'防护',A2g:'健康检查',A2h:'图纸',A3:'法规',uncat:'待定'};
+  Object.entries(detail).forEach(([cat, files]) => {
+    files.forEach(f => {
+      html += `<div class="file-item"><span>📎 ${f.name}</span><span class="cat">${catNames[f.cat]||f.cat}</span><span class="status ok">已上传</span></div>`;
     });
   });
+  box.innerHTML = html;
+  refreshReports();
 }
-function pickFile(key, input) {
-  pendingFiles[key] = input.files[0];
-  document.getElementById(`picked_${key}`).textContent = `✓ ${input.files[0].name}`;
-  if (input.closest('.up-row').querySelector('.up-btn')) {
-    input.closest('.up-row').querySelector('.up-btn').textContent = '已选';
-  }
-}
-
-async function createProject() {
-  const name = document.getElementById('newName').value.trim() || '未命名项目';
-  const industry = document.getElementById('newIndustry').value.trim();
-  const r = await fetch('/api/projects', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ name, industry })
-  });
+let timer = null;
+async function generate() {
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true; btn.textContent = '正在生成…';
+  const r = await fetch('/api/report/generate', {method:'POST'});
   const d = await r.json();
-  if (!d.id) { alert('创建失败'); return; }
-  // 上传已选文件
-  let uploaded = 0;
-  for (const [cat, file] of Object.entries(pendingFiles)) {
-    if (!file) continue;
-    const fd = new FormData(); fd.append('file', file);
-    const up = await fetch(`/api/projects/${d.id}/upload/${cat}`, { method: 'POST', body: fd });
-    if ((await up.json()).ok) uploaded++;
-  }
-  alert(`项目已创建${uploaded ? `，上传 ${uploaded} 个材料` : ''}。`);
-  location.href = '/projects/' + d.id;
+  if (!d.ok) { alert('生成启动失败'); btn.disabled=false; btn.textContent='⚡ 生成报告'; return; }
+  showProgress();
+  pollTask(d.job_id);
 }
+function showProgress() {
+  document.getElementById('progress').style.display = 'flex';
+}
+async function pollTask(jobId) {
+  const r = await fetch('/api/tasks/' + jobId);
+  const d = await r.json();
+  if (d) {
+    const pct = d.total ? Math.round(d.live_progress / d.total * 100) : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressText').textContent = pct + '% (' + d.live_progress + '/' + d.total + ')';
+    if (d.status === 'done') {
+      const btn = document.getElementById('genBtn');
+      btn.disabled = false; btn.textContent = '⚡ 重新生成';
+      refreshReports();
+      return;
+    }
+    if (d.status === 'failed') {
+      alert('生成失败：' + (d.error||''));
+      document.getElementById('genBtn').disabled = false;
+      document.getElementById('genBtn').textContent = '⚡ 重新生成';
+      return;
+    }
+  }
+  timer = setTimeout(() => pollTask(jobId), 2500);
+}
+init();
 </script>
 </body>
 </html>

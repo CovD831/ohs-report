@@ -26,7 +26,7 @@ from knowledge.evidence_engine import evidence_for_section  # noqa: E402
 from knowledge.report_skeleton import SECTION_SKELETON, sub_sections  # noqa: E402
 from knowledge.project_assess import assess_project  # noqa: E402
 from knowledge.oel import connect  # noqa: E402
-from web.projects_db import list_projects, get_project, create_project, update_project, seed_demo
+from web.projects_db import get_project, create_project, update_project, seed_demo, get_or_create_report, update_section_state
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "data" / "ohs.db"
@@ -110,6 +110,19 @@ def _get_project_data(pid: str) -> dict:
     }
 
 
+def _save_project_data(pid: str, data: dict) -> bool:
+    """保存项目数据回数据库 (import/一键生成后更新)"""
+    p = get_project(pid)
+    if not p:
+        return False
+    conn = connect()
+    conn.execute("UPDATE project SET data=?, updated=? WHERE id=?",
+                 (json.dumps(data, ensure_ascii=False), time.time(), pid))
+    conn.commit()
+    conn.close()
+    return True
+
+
 def _get_assess(pid: str) -> dict:
     """评估结果缓存 (项目数据变化时失效)"""
     key = f"assess:{pid}"
@@ -118,6 +131,109 @@ def _get_assess(pid: str) -> dict:
         _cache[key] = assess_project(conn, _get_project_data(pid))
         conn.close()
     return _cache[key]
+
+
+# ============ 报告工作台 (上传→一键生成→顺读报告) ============
+_upload_cache: dict[str, dict] = {}  # pid -> 上传列表
+
+
+def _resolve_pid(request: Request) -> str:
+    """按当前身份取回唯一报告 pid (一个身份=一份报告, 无则创建)"""
+    user = request.state.user if hasattr(request.state, "user") else None
+    return get_or_create_report(user)["id"]
+
+
+def _assert_owner(request: Request, pid: str) -> bool:
+    """身份归属校验: pid 必须属于当前用户, 或当前是 admin"""
+    user = request.state.user if hasattr(request.state, "user") else None
+    if not user:
+        return False
+    if user.get("is_admin"):
+        return True
+    p = get_project(pid)
+    return bool(p and p.get("owner_id") == user.get("username"))
+
+
+@app.post("/api/report/upload", response_class=JSONResponse)
+async def api_report_upload(request: Request):
+    """一次上传多个文件 → 自动归类 → 存材料目录 → 返回分类结果"""
+    from web.uploads import classify_file, save_upload, project_dir
+    pid = _resolve_pid(request)
+    form = await request.form()
+    files = form.getlist("files")
+    if not files:
+        # 兼容单文件
+        files = [f for f in form.getlist("file") if hasattr(f, "read") and hasattr(f, "filename")]
+    result: dict[str, list[dict]] = {}
+    cats = "A1,A2a,A2b,A2c,A2d,A2e,A2f,A2g,A2h,A3".split(",")
+    for c in cats:
+        result[c] = []
+    result["uncat"] = []
+    for f in files:
+        if not hasattr(f, "read") or not hasattr(f, "filename"):
+            continue
+        content = await f.read(20 * 1024 * 1024 + 1)
+        if len(content) > 20 * 1024 * 1024:
+            continue
+        name = f.filename or "unnamed"
+        cat = classify_file(name, content)
+        try:
+            save_upload(pid, cat if cat in cats else "A3", name, content)
+            result.setdefault(cat if cat in cats else "uncat", []).append({
+                "name": name, "cat": cat if cat in cats else "uncat", "ok": True})
+        except Exception as e:
+            result.setdefault("uncat", []).append({"name": name, "cat": cat, "ok": False, "error": str(e)})
+    _upload_cache[pid] = result
+    counts = {k: len(v) for k, v in result.items() if v}
+    return {"ok": True, "pid": pid, "counts": counts, "detail": result}
+
+
+@app.post("/api/report/generate", response_class=JSONResponse)
+def api_report_generate(request: Request):
+    """一键生成: 导入已传材料 → 识别/判定/分级 → 后台生成全部章节"""
+    from knowledge.report_skeleton import SECTION_SKELETON, SUB_SECTIONS
+    pid = _resolve_pid(request)
+    p = get_project(pid)
+    if not p:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    # 先导入材料 (解析设备/检测/工艺)
+    imported = import_materials_from_dir(pid)
+    data = dict(p["data"])
+    data["equipment"] = imported["equipment"]
+    data["detections"] = imported["detections"]
+    data["process_text"] = imported["process_text"]
+    data["industry"] = data.get("industry", "")
+    _save_project_data(pid, data)
+    _cache.pop(f"assess:{pid}", None)
+    total = len(SECTION_SKELETON) + sum(len(v) for v in SUB_SECTIONS.values())
+    user = request.state.user if hasattr(request.state, "user") else None
+    jid = _tasks.create_job((user or {}).get("username", "-"), pid, "generate_all", total)
+
+    def _job():
+        try:
+            _run_generate_all(pid, jid)
+            _tasks.finish_job(jid, None)
+        except Exception as e:
+            _tasks.finish_job(jid, traceback.format_exc())
+
+    import threading
+    threading.Thread(target=_job, daemon=True).start()
+    return {"ok": True, "pid": pid, "job_id": jid, "total": total,
+            "imported": {"equipment": len(imported["equipment"]),
+                         "detections": len(imported["detections"])}}
+
+
+@app.get("/api/report", response_class=JSONResponse)
+def api_report_get(request: Request):
+    """当前身份的报告 + 材料清单 + 章节状态"""
+    pid = _resolve_pid(request)
+    p = get_project(pid)
+    if not p:
+        return {"pid": pid, "report": None}
+    from web.uploads import list_materials
+    mats = list_materials(pid)
+    return {"pid": pid, "report": {"name": p["name"], "status": p["status"],
+            "data": p["data"]}, "materials": mats}
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -152,8 +268,9 @@ def _require_login(request: Request) -> dict | None:
 @app.get("/", response_class=HTMLResponse)
 def index_page(request: Request):
     user = request.state.user if hasattr(request.state, "user") else _current_user(request)
-    projects = list_projects()
-    return env.get_template("index.html").render(projects=projects, user=user)
+    # 报告工作台: 预创建当前身份的报告 (一个身份=一份)
+    pid = get_or_create_report(user)["id"]
+    return env.get_template("index.html").render(user=user, pid=pid)
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -255,6 +372,17 @@ def project_page(request: Request, pid: str):
                          "subs": [{"id": s, "title": t} for s, t in sub_sections(sec)]})
     return env.get_template("project.html").render(
         project=p, sections=sections, pid=pid)
+
+
+@app.get("/report/{pid}", response_class=HTMLResponse)
+def report_page(request: Request, pid: str):
+    """报告阅读页 (顺读式) — 一个身份一份报告, 校验归属"""
+    if not _assert_owner(request, pid):
+        return HTMLResponse("无权访问该报告", status_code=403)
+    p = get_project(pid)
+    if not p:
+        return HTMLResponse("报告不存在", status_code=404)
+    return env.get_template("report.html").render(pid=pid)
 
 
 @app.post("/api/projects/{pid}/upload/{cat}", response_class=JSONResponse)
@@ -410,7 +538,10 @@ def import_materials_from_dir(pid: str) -> dict:
 
 
 @app.get("/api/projects/{pid}/export", response_class=JSONResponse)
-def api_export(pid: str):
+def api_export(pid: str, request: Request):
+    if not _assert_owner(request, pid):
+        return JSONResponse({"error": "无权访问"}, status_code=403)
+
     """导出 Word 报告 (附录D格式)"""
     from web.word_export import export_docx
     from web.projects_db import get_project as gp
@@ -432,7 +563,10 @@ def api_export(pid: str):
 
 
 @app.get("/api/projects/{pid}/download", response_class=FileResponse)
-def api_download_report(pid: str):
+def api_download_report(pid: str, request: Request):
+    if not _assert_owner(request, pid):
+        return JSONResponse({"error": "无权访问"}, status_code=403)
+
     """下载导出的 Word 报告 (受控, 不走裸 /data 路径, 避免nginx拦截)"""
     out = ROOT / "data" / f"report_{pid}.docx"
     if not out.is_file():
@@ -479,7 +613,10 @@ def api_project_data(pid: str):
 
 
 @app.get("/api/projects/{pid}/overview", response_class=JSONResponse)
-def project_overview(pid: str):
+def project_overview(pid: str, request: Request):
+    if not _assert_owner(request, pid):
+        return JSONResponse({"error": "无权访问"}, status_code=403)
+
     """项目总览 (统计卡片数据)"""
     if not get_project(pid):
         return JSONResponse({"error": "not found"}, status_code=404)
@@ -619,7 +756,10 @@ def api_task_list(request: Request, limit: int = 30):
 
 
 @app.get("/api/projects/{pid}/sections/{sec}/{sub}", response_class=JSONResponse)
-def sub_section_content(pid: str, sec: str, sub: str):
+def sub_section_content(pid: str, sec: str, sub: str, request: Request):
+    if not _assert_owner(request, pid):
+        return JSONResponse({"error": "无权访问"}, status_code=403)
+
     """二级小节内容 (1.1/2.1/3.1...)"""
     from knowledge.report_skeleton import sub_sections
     if not get_project(pid):
@@ -656,7 +796,10 @@ def sub_section_content(pid: str, sec: str, sub: str):
 
 
 @app.get("/api/projects/{pid}/sections/{sec}", response_class=JSONResponse)
-def section_content(pid: str, sec: str):
+def section_content(pid: str, sec: str, request: Request):
+    if not _assert_owner(request, pid):
+        return JSONResponse({"error": "无权访问"}, status_code=403)
+
     """章节内容 + 依据 (报告1-9编号; 数据槽填充)"""
     if not get_project(pid):
         return JSONResponse({"error": "not found"}, status_code=404)

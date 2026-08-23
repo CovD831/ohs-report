@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报告 · 职业病危害预评价报告工作台</title>
+<style>
+:root {
+  --primary: #0F6B5C; --primary-soft: #E3F0ED; --primary-strong: #0A5247;
+  --tertiary: #B45309; --success: #15803D; --danger: #B91C1C;
+  --neutral: #F2F4F3; --surface: #FFFFFF; --surface-muted: #ECEFEE;
+  --border: #DFE3E1; --border-strong: #C4CCC8;
+  --text: #1A2521; --text-secondary: #46534E; --text-muted: #8A948F;
+  --radius-sm: 3px; --radius-md: 5px; --radius-lg: 8px;
+}
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  margin: 0; color: var(--text); background: var(--neutral); font-size: 14px; line-height: 1.7; }
+.topbar { background: var(--primary-strong); color: #fff; height: 52px;
+  display: flex; align-items: center; padding: 0 20px; position: sticky; top: 0; z-index: 10; }
+.topbar .brand { font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.topbar .brand-logo { width: 24px; height: 24px; border-radius: 4px; background: rgba(255,255,255,.18);
+  display: flex; align-items: center; justify-content: center; font-size: 13px; }
+.topbar .right { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 12.5px; }
+.topbar a { color: rgba(255,255,255,.85); text-decoration: none; }
+.topbar a:hover { color: #fff; }
+.toolbar { display: flex; gap: 8px; padding: 14px 24px; align-items: center;
+  border-bottom: 1px solid var(--border); background: var(--surface); }
+.btn { border: none; border-radius: var(--radius-sm); padding: 8px 14px; font-size: 13px;
+  cursor: pointer; white-space: nowrap; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-strong); }
+.btn-secondary { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+.btn-secondary:hover { border-color: var(--primary); color: var(--primary-strong); }
+.btn-ghost { background: transparent; color: var(--text-secondary); }
+.layout { display: flex; min-height: calc(100vh - 52px); }
+.sidebar { width: 240px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border);
+  padding: 16px 12px; overflow-y: auto; max-height: calc(100vh - 52px); position: sticky; top: 52px; }
+.toc-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: .05em; margin: 8px 8px 8px; }
+.toc-item { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: var(--radius-sm);
+  cursor: pointer; font-size: 13px; color: var(--text-secondary); text-decoration: none; }
+.toc-item:hover { background: var(--surface-muted); }
+.toc-item.active { background: var(--primary-soft); color: var(--primary-strong); font-weight: 600; }
+.toc-item.gen::after { content: '✓'; color: var(--success); font-size: 11px; margin-left: auto; font-weight: 700; }
+.toc-item.pending::after { content: '·'; color: var(--text-muted); margin-left: auto; }
+.content { flex: 1; padding: 28px 40px; max-width: 850px; margin: 0 auto; background: #fff; }
+.doc-title { font-size: 22px; font-weight: 700; margin: 0 0 4px; letter-spacing: .01em; }
+.doc-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
+.section-title { font-size: 18px; font-weight: 700; margin: 8px 0 14px; padding-bottom: 10px;
+  border-bottom: 2px solid var(--primary); }
+.para { margin: 12px 0; text-align: justify; }
+.para .muted { color: var(--text-muted); font-size: 13px; }
+.table-card { margin: 16px 0; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.table-title { font-size: 13px; font-weight: 600; padding: 8px 12px; background: var(--surface-muted);
+  border-bottom: 1px solid var(--border); color: var(--text-secondary); }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { background: var(--surface-muted); color: var(--text-secondary); text-align: left;
+  padding: 7px 10px; font-weight: 500; border-bottom: 1px solid var(--border); }
+td { padding: 7px 10px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+tr:nth-child(even) td { background: var(--surface-muted); }
+.empty-block { padding: 32px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.progress-ring { display: inline-flex; gap: 8px; align-items: center; color: var(--text-secondary); }
+.spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--primary);
+  border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.badge { display: inline-block; padding: 2px 8px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 600; }
+.badge-gray { background: var(--surface-muted); color: var(--text-muted); }
+.badge-green { background: #E6F4EA; color: var(--success); }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand"><div class="brand-logo">预</div>职业病危害预评价报告工作台</div>
+  <div class="right"><a href="/">← 返回工作台</a></div>
+</div>
+
+<div class="toolbar">
+  <h1 style="font-size:16px;margin:0;" id="reportTitle">加载中…</h1>
+  <span class="badge badge-gray" id="statusBadge">—</span>
+  <div style="margin-left:auto;display:flex;gap:8px;">
+    <button class="btn btn-secondary" onclick="window.location.href='/'">重传材料</button>
+    <button class="btn btn-primary" onclick="exportWord()">导出 Word</button>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="toc-label">章节目录</div>
+    <div id="toc">加载中…</div>
+  </div>
+  <div class="content" id="content"><div class="empty-block">选择左侧章节查看内容</div></div>
+</div>
+
+<script>
+let PID = '__PID__';
+let SEC = '1';
+let ALL_STATES = {};
+const CH = ['1','2','3','4','5','6','7','8','9'];
+const TITLES = {
+  '1':'建设项目概况','2':'职业病危害因素识别与评价','3':'职业病危害防护措施评价',
+  '4':'综合性评价','5':'职业病补充措施及建议','6':'评价结论','7':'评价依据与方法',
+  '8':'工程分析','9':'类比调查'
+};
+const SUBS = {
+  '1':['1.1 基本情况','1.2 项目建设概况','1.3 地理与周边环境'],
+  '2':['2.1 职业病危害因素识别','2.2 职业病危害因素风险评价','2.3 主要职业病危害因素'],
+  '3':['3.1 职业病防护设施评价','3.2 个人使用的职业病防护用品','3.3 应急救援措施'],
+  '4':['4.1 选址、总体布局评价','4.2 生产工艺及设备布局','4.3 建筑卫生学评价','4.4 辅助用室评价','4.5 职业卫生管理评价'],
+  '5':['5.1 补充措施建议'],
+  '6':['6.1 评价结论'],
+  '8':['8.1 原辅材料','8.2 主要设备','8.3 生产工艺'],
+};
+
+async function init() {
+  await loadOverview();
+  buildToc();
+  loadSection(SEC);
+}
+async function loadOverview() {
+  const r = await fetch('/api/projects/' + PID + '/overview');
+  overview = await r.json();
+  document.getElementById('reportTitle').textContent = '职业病危害预评价报告';
+  const sb = document.getElementById('statusBadge');
+  sb.textContent = (overview.has_data ? `危害${overview.hazard_count} · 判定${overview.judgement_count}` : '待上传材料');
+  sb.className = 'badge ' + (overview.has_data ? 'badge-green' : 'badge-gray');
+}
+function buildToc() {
+  let html = '';
+  CH.forEach(sec => {
+    const st = (ALL_STATES[sec] || {}).state;
+    html += `<a class="toc-item ${sec===SEC?'active':''} ${st==='generated'?'gen':''}" onclick="loadSection('${sec}')">${sec} ${TITLES[sec]}</a>`;
+    (SUBS[sec]||[]).forEach(sub => {
+      const [s, ...t] = sub.split(' ');
+      const stx = (ALL_STATES[sub] || {}).state;
+      html += `<a class="toc-item" style="padding-left:22px;" onclick="loadSection('${sub}')">${sub}</a>`;
+    });
+  });
+  document.getElementById('toc').innerHTML = html;
+}
+async function loadSection(sec) {
+  SEC = sec;
+  buildToc();
+  const r = await fetch('/api/projects/' + PID + '/sections/' + sec);
+  const d = await r.json();
+  document.getElementById('content').innerHTML = renderSection(sec, d);
+}
+function renderSection(sec, d) {
+  const title = d.title || TITLES[sec] || sec;
+  let h = `<div class="section-title">${title}</div>`;
+  const paras = d.paragraphs || [];
+  if (paras.length) {
+    paras.forEach(p => { h += `<div class="para">${p}</div>`; });
+  } else {
+    h += '<div class="para muted">本节点暂无可读文本（数据未生成或待材料）。</div>';
+  }
+  (d.tables || []).forEach(t => {
+    h += `<div class="table-card"><div class="table-title">${t.name}</div><table><thead><tr>`;
+    (t.headers || []).forEach(hd => { h += `<th>${hd}</th>`; });
+    h += `</tr></thead><tbody>`;
+    (t.rows || []).forEach(row => {
+      h += `<tr>` + row.map(c => `<td>${c ?? ''}</td>`).join('') + `</tr>`;
+    });
+    h += `</tbody></table></div>`;
+  });
+  return h;
+}
+async function loadStates() {
+  const r = await fetch('/api/projects/' + PID + '/data');
+  const d = await r.json();
+  ALL_STATES = d.section_states || {};
+  buildToc();
+}
+async function exportWord() {
+  const r = await fetch('/api/projects/' + PID + '/export');
+  const d = await r.json();
+  if (d.ok) {
+    const a = document.createElement('a');
+    a.href = '/api/projects/' + PID + '/download';
+    a.download = '职业病危害预评价报告.docx';
+    document.body.appendChild(a); a.click(); a.remove();
+  } else { alert('导出失败：' + (d.error || '')); }
+}
+let overview = null;
+init().then(loadStates);
+</script>
+</body>
+</html>

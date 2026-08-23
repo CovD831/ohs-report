@@ -32,6 +32,46 @@ CATEGORIES = [
 ]
 
 
+def classify_file(filename: str, content: bytes = b"") -> str:
+    """按文件名关键词推断类别, 返回类别 key 或 'unknown' (进待定区)"""
+    name = filename.lower()
+    # 精确|包含关键词 → 类别 (启发式, 多个命中按优先级)
+    rules = [
+        (("立项", "项目建议书", "可研", "可行性", "备案", "hse-"), "A1"),
+        (("原辅材料", "原辅料", "原料", "物料清单", "化学", "成分"), "A2a"),
+        (("工艺", "流程", "生产方式", "作业"), "A2b"),
+        (("设备", "机器", "装备", "设施清单"), "A2c"),
+        (("定员", "劳动", "人员", "岗位", "编制"), "A2d"),
+        (("检测", "监(测)?", "分析报告", "类比", "ctwa", "twa"), "A2e"),
+        (("防护", "pp", "措施", "劳动保护", "应急"), "A2f"),
+        (("健康检查", "体检", "职业健康", "health"), "A2g"),
+        (("图纸", "平面", "总平", "布置", "区域位置", "竖向", "设计图", "dwg"), "A2h"),
+        (("法规", "标准", "规范", "gb", "gbz"), "A3"),
+    ]
+    for keywords, cat in rules:
+        for kw in keywords:
+            if kw in name:
+                return cat
+    # 依据扩展名兜底: 表格多半是设备/原料/检测
+    ext = Path(filename).suffix.lower()
+    if ext in (".csv", ".xlsx", ".xls"):
+        return "A2x"  # 不确定的表格 → 待定区
+    return "unknown"
+
+
+def sort_uploads(files: list[dict]) -> dict[str, list[dict]]:
+    """一次批量文件 → 按类别分桶 {cat_key: [文件...]}, unknown/A2x 进待定区"""
+    buckets: dict[str, list[dict]] = {c["key"]: [] for c in CATEGORIES}
+    buckets["uncat"] = []
+    for f in files:
+        cat = classify_file(f.get("name", ""), f.get("content", b""))
+        if cat in buckets:
+            buckets[cat].append(f)
+        else:
+            buckets["uncat"].append(f)
+    return buckets
+
+
 def project_dir(pid: str, create: bool = False) -> Path:
     d = MATERIAL_ROOT / pid
     if create:

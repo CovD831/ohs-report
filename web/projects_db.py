@@ -25,32 +25,82 @@ def _conn() -> sqlite3.Connection:
           name      TEXT NOT NULL,
           data      TEXT NOT NULL,      -- JSON: {industry, equipment, detections...}
           status    TEXT DEFAULT 'draft',   -- draft|generating|ready|reviewing
+          owner_id  TEXT DEFAULT '',        -- 身份隔离: 游客guest-xxx / 登录用户名
           created   REAL,
           updated   REAL
         )
     """)
+    # 迁移: 旧库可能没有 owner_id 列
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(project)").fetchall()]
+    if "owner_id" not in cols:
+        conn.execute("ALTER TABLE project ADD COLUMN owner_id TEXT DEFAULT ''")
+    conn.commit()
     return conn
 
 
-def list_projects() -> list[dict]:
-    conn = _conn()
-    rows = conn.execute("SELECT id, name, data, status, updated FROM project "
-                        "ORDER BY updated DESC").fetchall()
-    conn.close()
-    return [{"id": r["id"], "name": r["name"],
-             "data": json.loads(r["data"]), "status": r["status"],
-             "updated": r["updated"]} for r in rows]
+def _owner_key(user: dict | None) -> str:
+    """每个身份的唯一 owner 标识 (游客 guest-xxx / 登录用户名)"""
+    if not user:
+        return "anon"
+    return user.get("username") or "anon"
 
 
 def get_project(pid: str) -> dict | None:
     conn = _conn()
-    r = conn.execute("SELECT id, name, data, status FROM project WHERE id=?",
+    r = conn.execute("SELECT id, name, data, status, owner_id FROM project WHERE id=?",
                      (pid,)).fetchone()
     conn.close()
     if not r:
         return None
     return {"id": r["id"], "name": r["name"],
-            "data": json.loads(r["data"]), "status": r["status"]}
+            "data": json.loads(r["data"]), "status": r["status"],
+            "owner_id": r["owner_id"]}
+
+
+def get_or_create_report(user: dict | None, name: str = "", industry: str = "") -> dict:
+    """按身份取回唯一的报告；不存在则创建。重传覆盖 (一个身份=一份报告)"""
+    owner = _owner_key(user)
+    conn = _conn()
+    r = conn.execute("SELECT id, name, data, status, owner_id FROM project "
+                     "WHERE owner_id=? ORDER BY created DESC LIMIT 1", (owner,)).fetchone()
+    if r:
+        conn.close()
+        return {"id": r["id"], "name": r["name"],
+                "data": json.loads(r["data"]), "status": r["status"],
+                "owner_id": r["owner_id"], "is_new": False}
+    pid = uuid.uuid4().hex[:10]
+    project_data = {"industry": industry}
+    conn.execute("INSERT INTO project (id, name, data, status, owner_id, created, updated) "
+                 "VALUES (?,?,?,?,?,?,?)",
+                 (pid, name or "未命名报告", json.dumps(project_data, ensure_ascii=False),
+                  "draft", owner, time.time(), time.time()))
+    conn.commit()
+    conn.close()
+    return {"id": pid, "name": name or "未命名报告", "data": project_data,
+            "status": "draft", "owner_id": owner, "is_new": True}
+
+
+def list_reports(user: dict | None) -> list[dict]:
+    """列出当前身份的报告 (只返回 owner 自己的)"""
+    owner = _owner_key(user)
+    conn = _conn()
+    rows = conn.execute("SELECT id, name, data, status, owner_id, updated FROM project "
+                        "WHERE owner_id=? ORDER BY updated DESC", (owner,)).fetchall()
+    conn.close()
+    return [{"id": r["id"], "name": r["name"],
+             "data": json.loads(r["data"]), "status": r["status"],
+             "owner_id": r["owner_id"], "updated": r["updated"]} for r in rows]
+
+
+def list_all_reports() -> list[dict]:
+    """管理后台: 全部报告"""
+    conn = _conn()
+    rows = conn.execute("SELECT id, name, data, status, owner_id, updated FROM project "
+                        "ORDER BY updated DESC").fetchall()
+    conn.close()
+    return [{"id": r["id"], "name": r["name"],
+             "data": json.loads(r["data"]), "status": r["status"],
+             "owner_id": r["owner_id"], "updated": r["updated"]} for r in rows]
 
 
 def create_project(name: str, industry: str = "") -> dict | None:
