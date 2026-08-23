@@ -786,9 +786,10 @@ def _run_generate_all(pid: str, jid: str):
         _tasks.set_progress(jid, done + fail)
 
     from concurrent.futures import wait as cf_wait, FIRST_COMPLETED
-    # 并发度可配: 默认5 (DeepSeek支持并发; 过高可能触发限流, 5是稳妥值)
     import os as _os
     conc = int(_os.environ.get("LLM_CONCURRENCY", "5"))
+    # 单单元 LLM 最长等待(秒): 正常几十秒, 超过则放弃该单元(不拖整体)
+    UNIT_TIMEOUT = int(_os.environ.get("LLM_UNIT_TIMEOUT", "80"))
     with ThreadPoolExecutor(max_workers=conc, thread_name_prefix="ohsgen") as ex:
         futures: dict = {}
         for sec, sub, title in units:
@@ -796,18 +797,39 @@ def _run_generate_all(pid: str, jid: str):
                 break
             fut = ex.submit(_gen_one, pid, sec, sub, title, cache)
             futures[fut] = (sec, sub)
-            # 保持并发≤3: 阻塞等任一完成 (不设短超时, LLM正常需几十秒)
+            # 保持并发: 等任一完成; 单个挂死超时 -> 放弃该单元, 流水继续
             while len(futures) >= 3:
                 if _tasks._should_stop(jid):
                     break
-                d_f = cf_wait(list(futures), return_when=FIRST_COMPLETED)
+                d_f = cf_wait(list(futures), timeout=UNIT_TIMEOUT, return_when=FIRST_COMPLETED)
                 for f in d_f.done:
                     _finish(f)
-        # 收尾: 等剩余全部完成
-        while futures:
-            d_f = cf_wait(list(futures), return_when=FIRST_COMPLETED)
+                # 超时仍无完成: 尝试取消挂死单元, 标fail继续(不无限等)
+                if not d_f.done and len(futures) >= 3:
+                    stuck = [f for f in futures if not f.done()]
+                    for f in stuck:
+                        if f in futures:
+                            futures.pop(f, None)
+                            fail += 1
+                    # 立即重试内层, 避免死循环
+                    continue
+        # 收尾: 等剩余全部完成 (带上限, 防零散挂死)
+        import time as _t
+        _deadline = _t.time() + UNIT_TIMEOUT * 3
+        while futures and _t.time() < _deadline:
+            d_f = cf_wait(list(futures), timeout=UNIT_TIMEOUT, return_when=FIRST_COMPLETED)
             for f in d_f.done:
                 _finish(f)
+            if not d_f.done:
+                for f in [f for f in futures if not f.done()]:
+                    if f in futures:
+                        futures.pop(f, None)
+                        fail += 1
+        # 剩余未完成的(超时放弃)
+        for f in list(futures):
+            if f in futures:
+                futures.pop(f, None)
+                fail += 1
     err = None if fail == 0 else f"{fail} 个单元失败 ({done} 成功)"
 
     # 三级单元 (数据驱动, 机械生成 → 目录/内容三级节点)
