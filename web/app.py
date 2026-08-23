@@ -711,42 +711,67 @@ def _run_generate_all(pid: str, jid: str):
     cache = _assess_cached(pid)
 
     done = fail = 0
-    # 并发3个 LLM 调用提速 (OpenRouter 支持并行, 权衡限流)
+
+    def _finish(f):
+        """处理一个完成的 future: 写result, 返回 (成功? )"""
+        nonlocal done, fail
+        key, sec = futures.pop(f), None
+        # futures[f] = (sec, sub)
+        s, sb = key
+        try:
+            text = f.result()
+            update_section_state(pid, sb or s, "generated", text)
+            done += 1
+        except Exception:
+            fail += 1
+        _tasks.set_progress(jid, done + fail)
+
+    from concurrent.futures import wait as cf_wait, FIRST_COMPLETED, TimeoutError as FT
     with ThreadPoolExecutor(max_workers=3, thread_name_prefix="ohsgen") as ex:
-        futures = {}
+        futures: dict = {}
         for sec, sub in units:
             if _tasks._should_stop(jid):
                 break
-            # 统一包装, 避免 draft_sub/draft_section 签名差异
             fut = ex.submit(_gen_one, pid, sec, sub, cache)
             futures[fut] = (sec, sub)
-            # 等一个完成立刻写结果 + 更新进度 (流式可见)
             while len(futures) >= 3:
-                import concurrent.futures as cf
-                d_f = cf.wait(futures, return_when=cf.FIRST_COMPLETED)
-                for f in d_f.done:
-                    s, sb = futures.pop(f)
-                    try:
-                        text = f.result()
-                        update_section_state(pid, sb or s, "generated", text)
-                        done += 1
-                    except Exception:
-                        fail += 1
-                    _tasks.set_progress(jid, done + fail)
-        # 收尾剩余
-        import concurrent.futures as cf
-        while futures:
-            d_f = cf.wait(futures, return_when=cf.FIRST_COMPLETED)
-            for f in d_f.done:
-                s, sb = futures.pop(f)
+                if _tasks._should_stop(jid):
+                    break
                 try:
-                    text = f.result()
-                    update_section_state(pid, sb or s, "generated", text)
-                    done += 1
-                except Exception:
-                    fail += 1
-                _tasks.set_progress(jid, done + fail)
+                    d_f = cf_wait(list(futures), timeout=12, return_when=FIRST_COMPLETED)
+                except FT:
+                    break
+                if not d_f.done:
+                    break
+                for f in d_f.done:
+                    _finish(f)
+        while futures:
+            try:
+                d_f = cf_wait(list(futures), timeout=20, return_when=FIRST_COMPLETED)
+            except FT:
+                break
+            if not d_f.done:
+                for f in list(futures):
+                    if not f.done():
+                        futures.pop(f, None)
+                        fail += 1
+                break
+            for f in d_f.done:
+                _finish(f)
     err = None if fail == 0 else f"{fail} 个单元失败 ({done} 成功)"
+
+    # 三级单元 (数据驱动, 机械生成 → 目录/内容三级节点)
+    try:
+        from web.unit_gen import extract_units
+        cache_result = _assess_cached(pid)
+        units = extract_units(cache_result["project"], cache_result["assess"])
+        for un in units:
+            # key: 挂到报告级 (含类型前缀避免与一级/二级冲突)
+            key = f"u::{un['type']}::{un['title']}"
+            update_section_state(pid, key, "generated", un.get("text", ""))
+    except Exception:
+        pass
+    return err
 
 
 def _conn_tasks():

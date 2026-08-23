@@ -208,9 +208,20 @@ function buildToc() {
         const s = ALL_STATES[key];
         if (s.state !== 'generated') continue;
         const stt = s.title || key;
-        html += `<a class="toc-item ${key===SEC?'active':''} gen" style="padding-left:22px;" onclick="loadSection('${key}')">${kfmt(key)} ${stt.replace(/^#+\s*/,'')}</a>`;
+        html += `<a class="toc-item ${key===SEC?'active':''} gen" style="padding-left:22px;" onclick="loadSection('${key}')">${key} ${stt.replace(/^#+\s*/,'')}</a>`;
       }
     }
+  }
+  // 三级单元 (物质/工序/岗位/设备 详情) — 数据驱动
+  const units = Object.keys(ALL_STATES).filter(k => k.startsWith('u::') && ALL_STATES[k].state === 'generated');
+  if (units.length) {
+    html += `<div class="toc-label" style="margin-top:14px;">危害因素详情</div>`;
+    units.sort().forEach(k => {
+      const parts = k.split('::');
+      const [type, title] = [parts[1], parts.slice(2).join('::')];
+      const full = ALL_STATES[k].title || title;
+      html += `<a class="toc-item ${k===SEC?'active':''} gen" style="padding-left:30px;font-size:12.5px;" onclick="loadSection('${encodeURIComponent(k)}')">${type} · ${full.replace(/^#+\s*/,'')}</a>`;
+    });
   }
   document.getElementById('toc').innerHTML = html
     || '<div class="empty-block" style="padding:20px;">正在生成，章节将陆续出现…</div>';
@@ -225,6 +236,14 @@ function secGenerated(sec) {
 async function loadSection(sec) {
   SEC = sec;
   buildToc();
+  // 三级单元: 本地从 ALL_STATES 渲染 (不走章节API)
+  if (sec.startsWith('u::')) {
+    const st = ALL_STATES[sec] || {};
+    const parts = sec.split('::');
+    const title = st.title || parts[2] || sec;
+    document.getElementById('content').innerHTML = `<div class="section-title">${title}</div><div class="para">${(st.text||'').replace(/^#+\s*/,'')}</div>`;
+    return;
+  }
   const r = await fetch('/api/projects/' + PID + '/sections/' + sec);
   const d = await r.json();
   document.getElementById('content').innerHTML = renderSection(sec, d);
