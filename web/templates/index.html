@@ -6,12 +6,12 @@
 <title>职业病危害预评价报告工作台</title>
 <style>
 :root {
-  --primary: #2563EB; --primary-soft: #DBEAFE; --primary-strong: #1D4ED8;
-  --tertiary: #F59E0B; --success: #16A34A; --danger: #DC2626;
-  --neutral: #F8FAFC; --surface: #FFFFFF; --surface-muted: #F1F5F9;
-  --border: #E2E8F0; --border-strong: #CBD5E1;
-  --text: #0F172A; --text-secondary: #475569; --text-muted: #94A3B8;
-  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+  --primary: #0F6B5C; --primary-soft: #E3F0ED; --primary-strong: #0A5247;
+  --tertiary: #B45309; --success: #15803D; --danger: #B91C1C;
+  --neutral: #F2F4F3; --surface: #FFFFFF; --surface-muted: #ECEFEE;
+  --border: #DFE3E1; --border-strong: #C4CCC8;
+  --text: #1A2521; --text-secondary: #46534E; --text-muted: #8A948F;
+  --radius-sm: 3px; --radius-md: 5px; --radius-lg: 8px;
   --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 32px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -70,7 +70,7 @@ a { color: var(--primary); text-decoration: none; }
   <div class="brand"><div class="brand-logo">预</div><span>职业病危害预评价报告工作台</span></div>
   <div style="margin-left:auto;font-size:12px;color:var(--text-secondary);">
     {% if user and user.is_admin %}
-      <a href="/admin" style="color:var(--primary-strong);">⚙ 管理后台</a>
+      <a href="/admin" style="color:var(--primary-strong);">管理后台</a>
     {% elif user and user.username.startswith('guest-') %}
       游客 {{ user.username[-6:] }}
       · <a href="/login" style="color:var(--text-secondary);">管理员登录</a>
@@ -88,17 +88,17 @@ a { color: var(--primary); text-decoration: none; }
   <!-- 空态: 三步引导 -->
   <div class="guide" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px;">
     <div class="card" style="padding:20px;">
-      <div style="font-size:24px;margin-bottom:8px;">📄</div>
+      <div class="guide-no">3</div>
       <div style="font-weight:600;margin-bottom:6px;">第 1 步 · 上传企业材料</div>
       <div style="font-size:13px;color:var(--text-secondary);line-height:1.7;">按 GBZ/T 196 附录A 上传立项文件、原辅材料、设备清单、工艺说明、检测数据等 10 类材料。</div>
     </div>
     <div class="card" style="padding:20px;">
-      <div style="font-size:24px;margin-bottom:8px;">⚡</div>
+      <div class="guide-no">2</div>
       <div style="font-weight:600;margin-bottom:6px;">第 2 步 · 一键生成报告</div>
       <div style="font-size:13px;color:var(--text-secondary);line-height:1.7;">系统自动完成危害识别、限值判定、作业分级，并逐章生成叙述文字（可逐章人工确认后生成）。</div>
     </div>
     <div class="card" style="padding:20px;">
-      <div style="font-size:24px;margin-bottom:8px;">📄</div>
+      <div class="guide-no">3</div>
       <div style="font-weight:600;margin-bottom:6px;">第 3 步 · 导出 Word</div>
       <div style="font-size:13px;color:var(--text-secondary);line-height:1.7;">报告按 1-9 章结构（与真实报告一致）导出，含两级目录、三级标题与页码，可直接编辑提交。</div>
     </div>
@@ -177,7 +177,7 @@ function loadUploadCats() {
         <input type="file" id="file_${c.key}" style="display:none" onchange="pickFile('${c.key}', this)">
         <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;"
                 onclick="document.getElementById('file_${c.key}').click()">
-          📁 ${document.getElementById('file_${c.key}')?.files?.length ? '已选' : '上传'}</button>
+          ${document.getElementById('file_${c.key}')?.files?.length ? '已选' : '上传'}</button>
       </div>
       <div id="picked_${c.key}" style="font-size:12px;color:var(--text-secondary);margin-top:6px;"></div>
     </div>`).join('');

@@ -6,12 +6,12 @@
 <title>{{ project['name'] }} — 报告工作台</title>
 <style>
 :root {
-  --primary: #2563EB; --primary-soft: #DBEAFE; --primary-strong: #1D4ED8;
-  --tertiary: #F59E0B; --success: #16A34A; --danger: #DC2626;
-  --neutral: #F8FAFC; --surface: #FFFFFF; --surface-muted: #F1F5F9;
-  --border: #E2E8F0; --border-strong: #CBD5E1;
-  --text: #0F172A; --text-secondary: #475569; --text-muted: #94A3B8;
-  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+  --primary: #0F6B5C; --primary-soft: #E3F0ED; --primary-strong: #0A5247;
+  --tertiary: #B45309; --success: #15803D; --danger: #B91C1C;
+  --neutral: #F2F4F3; --surface: #FFFFFF; --surface-muted: #ECEFEE;
+  --border: #DFE3E1; --border-strong: #C4CCC8;
+  --text: #1A2521; --text-secondary: #46534E; --text-muted: #8A948F;
+  --radius-sm: 3px; --radius-md: 5px; --radius-lg: 8px;
   --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 32px;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -166,7 +166,7 @@ table td.col-method { min-width: 100px; }
 .drawer-body label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
 
 /* 按钮 */
-.btn { display: inline-flex; align-items: center; gap: 6px; border: none;
+.btn { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; border: none;
   border-radius: var(--radius-md); padding: 7px 14px; font-size: 13px; cursor: pointer;
   font-family: inherit; }
 .btn-primary { background: var(--primary); color: #fff; }
@@ -223,9 +223,9 @@ table td.col-method { min-width: 100px; }
   <!-- 中栏: 内容 -->
   <div class="content" id="content">
     <div class="toolbar">
-      <button class="btn btn-primary" onclick="generateAll()">⚡ 整篇生成</button>
-      <button class="btn btn-primary" onclick="exportWord()">📄 导出Word</button>
-      <button class="btn btn-secondary" onclick="openDataEditor()">⚙ 数据源</button>
+      <button class="btn btn-primary" onclick="generateAll()">整篇生成</button>
+      <button class="btn btn-primary" onclick="exportWord()">导出 Word</button>
+      <button class="btn btn-secondary" onclick="openDataEditor()">数据源</button>
       <span class="toolbar-hint" id="toolbarHint">逐章: 打开章节 → 确认机械结果 → 生成本页</span>
     </div>
     <div class="content-header">
@@ -236,11 +236,11 @@ table td.col-method { min-width: 100px; }
   <!-- 数据源编辑抽屉 -->
   <div class="drawer-mask" id="dataDrawer" onclick="if(event.target===this)closeDataEditor()">
     <div class="drawer">
-      <div class="drawer-head"><h3>⚙ 项目数据源</h3>
+      <div class="drawer-head"><h3>项目数据源</h3>
         <button class="btn btn-secondary" onclick="closeDataEditor()">关闭</button></div>
       <div class="drawer-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <label style="margin:0;">📁 已上传材料 (附录A)</label>
+          <label style="margin:0;">已上传材料 (附录A)</label>
           <button class="btn btn-primary" onclick="importMaterials()" style="font-size:12px;">⬆ 从材料导入</button>
         </div>
         <div id="matList" style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">加载中…</div>
@@ -284,7 +284,7 @@ function openDataEditor() {
 function loadMaterials() {
   fetch('/api/materials').then(r => r.json()).then(d => {
     document.getElementById('matList').innerHTML = d.files.map(f =>
-      `<div>📄 ${f.name} <span style="color:var(--text-muted)">${f.lines}行/${f.size}字节</span></div>`
+      `<div>${f.name} <span style="color:var(--text-muted)">${f.lines}行/${f.size}字节</span></div>`
     ).join('') || '无材料文件';
   });
 }
@@ -335,11 +335,11 @@ async function draftLLM() {
       // 在内容区顶部插入 LLM 草稿框
       const box = document.createElement('div');
       box.style.cssText = 'background:var(--surface-muted);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;margin-bottom:16px;';
-      box.innerHTML = `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">✨ LLM草稿（数据来自机械结果，仅供参考，需人工审核）</div>
+      box.innerHTML = `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">LLM 草稿（数据来自机械结果，仅供参考，需人工审核）</div>
         <div style="white-space:pre-wrap;font-size:13px;line-height:1.7;">${d.text.replace(/</g, '&lt;')}</div>`;
       document.getElementById('content').prepend(box);
     } else alert(d.error || '生成失败');
-  } finally { btn.textContent = '✨ LLM草稿'; }
+  } finally { btn.textContent = 'LLM 草稿'; }
 }
 
 const pid = "{{ pid }}";
@@ -406,8 +406,8 @@ async function loadSection(sec) {
     <span class="badge ${isGen ? 'badge-success' : 'badge-gray'}" id="secStateBadge">
       ${isGen ? '✓ 已生成' : '机械结果(待确认)'}</span>
     <button class="btn btn-primary" style="margin-left:auto;" id="genBtn"
-      onclick="generateSection('${sec}')">${isGen ? '↻ 重新生成本页' : '⚡ 生成本页'}</button>
-    <button class="btn btn-secondary" onclick="exportWord()">📄 导出Word</button></div>`;
+      onclick="generateSection('${sec}')">${isGen ? '↻ 重新生成本页' : '生成本页'}</button>
+    <button class="btn btn-secondary" onclick="exportWord()">导出 Word</button></div>`;
   html += statCards(d);
   // 已生成的 LLM 正文 (优先展示)
   if (isGen && st.text) {
@@ -419,10 +419,10 @@ async function loadSection(sec) {
   // 10.2.13 格式节: 显示导出面板
   if (sec === '10.2.13') {
     html += `<div style="border:2px dashed var(--border);border-radius:var(--radius-md);padding:32px;text-align:center;margin:24px 0;">
-      <div style="font-size:16px;font-weight:600;margin-bottom:8px;">📄 报告导出（最终步骤）</div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:8px;">报告导出（最终步骤）</div>
       <div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
         全部章节生成后，点击导出完整的 Word 报告（含目录）</div>
-      <button class="btn btn-primary" style="font-size:15px;padding:10px 24px;" onclick="exportWord()">📄 导 出 Word 报 告</button>
+      <button class="btn btn-primary" style="font-size:15px;padding:10px 24px;" onclick="exportWord()">导出 Word 报告</button>
     </div>`;
   }
   d.paragraphs.forEach((p, i) => { html += `<p class="para">${p}</p>`; });
@@ -477,7 +477,7 @@ async function loadSubSection(sec, sub) {
   const isGen = st.state === 'generated';
   let html = `<div class="content-header"><h1>${d.title}</h1>
     <span class="badge ${isGen ? 'badge-success' : 'badge-gray'}">${isGen ? '✓ 已生成' : '机械结果(待确认)'}</span>
-    <button class="btn btn-primary" style="margin-left:auto;" onclick="generateSub('${sec}','${sub}')">⚡ 生成本页</button></div>`;
+    <button class="btn btn-primary" style="margin-left:auto;" onclick="generateSub('${sec}','${sub}')">生成本页</button></div>`;
   if (isGen && st.text) {
     html += `<div style="background:#F9FAFB;border:1px solid var(--border);border-left:3px solid var(--success);border-radius:var(--radius-md);padding:16px;margin:0 0 16px;">
       <div style="font-size:12px;color:var(--success);font-weight:600;margin-bottom:8px;">📝 本书内容（已生成 · 数据来自机械结果）</div>
@@ -547,7 +547,7 @@ function watchTask(jobId, total) {
       const d = await r.json();
       const p = d.live_progress || 0, tot = d.total || total;
       const pct = Math.min(100, Math.round(p / tot * 100));
-      bar.innerHTML = `<div style="font-size:13px;font-weight:600;margin-bottom:8px;">⚡ 整篇生成 ${d.status === 'done' ? '完成' : d.status === 'failed' ? '失败' : '进行中'}</div>
+      bar.innerHTML = `<div style="font-size:13px;font-weight:600;margin-bottom:8px;">整篇生成 · ${d.status === 'done' ? '完成' : d.status === 'failed' ? '失败' : '进行中'}</div>
         <div style="background:var(--surface-muted);border-radius:6px;height:10px;overflow:hidden;">
           <div style="width:${pct}%;height:100%;background:${d.status === 'failed' ? '#DC2626' : 'var(--primary)'};"></div></div>
         <div style="font-size:11.5px;color:var(--text-secondary);margin-top:6px;">${p} / ${tot} (${pct}%)
@@ -593,7 +593,7 @@ async function renderImportWizard() {
     点击卡片选择文件，可多选。</div>
     <div class="wiz-grid">${slots}</div>
     <div style="display:flex;gap:12px;align-items:center;margin:20px 0;">
-      <button class="btn btn-primary" style="font-size:15px;padding:11px 26px;" onclick="wizImport()">⚡ 导入并生成识别结果</button>
+      <button class="btn btn-primary" style="font-size:15px;padding:11px 26px;" onclick="wizImport()">导入并生成识别结果</button>
       <button class="btn btn-secondary" onclick="skipWizard()">跳过，先浏览报告结构</button>
       <span id="wizMsg" style="font-size:13px;color:var(--text-secondary);"></span>
     </div>`;
@@ -632,8 +632,6 @@ function skipWizard() {
   sessionStorage.setItem('wizSkip_' + pid, '1');
   loadSection(currentSec === SEC ? '1' : currentSec);
 }
-
-let ALL_STATES = {};
 
 async function loadStates() {
   const r = await fetch(`/api/projects/${pid}/data`);
