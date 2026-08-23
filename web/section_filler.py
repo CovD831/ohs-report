@@ -267,33 +267,39 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         return [{"name": "类比可比性表", "cols": ["序号", "比较要素", "拟建项目", "类比项目"], "rows": rows}]
 
     if sec == "10":
-        # 健康影响表 + 接触限值表 (危害因素×健康影响×职业病 + 危害因素×PC-TWA×PC-STEL)
+        # 健康影响表 + 接触限值表 (用 entity_link 的 link_health_effect/link_oel, 含职业病)
         tables = []
         hazards = [h["factor"] for h in assess.get("hazards", [])] or []
-        # 健康影响表
+        # 健康影响表 (危害因素×健康影响×职业病×侵入途径, 用 entity_link 链)
         he_rows = []
         seen_he = set()
+        from web.entity_link import link_health_effect, link_disease, is_physical
         for fac in hazards[:30]:
             if fac in seen_he:
                 continue
             seen_he.add(fac)
-            r = conn.execute("SELECT effect, route FROM health_effect WHERE factor LIKE ? LIMIT 1", (fac + "%",)).fetchone()
-            if r:
-                he_rows.append([fac, r[0][:60] if r[0] else "—", r[1] or "—"])
+            hes = link_health_effect(conn, fac)
+            ds = link_disease(conn, fac)
+            if hes:
+                he_rows.append([fac, (hes[0].get("effect") or "—")[:60],
+                                "、".join(ds)[:30] if ds else "—",
+                                (hes[0].get("route") or "—")])
+            elif ds:  # 物理因素: 无化学健康影响但有职业病(噪声聋/中暑)
+                he_rows.append([fac, is_physical(fac) and "—", "、".join(ds)[:30], "—"])
         if he_rows:
-            tables.append({"name": "健康影响表", "cols": ["危害因素", "健康影响", "侵入途径"], "rows": he_rows})
-        # 接触限值表 (从 detections 的 factor 匹配 oel_limit)
+            tables.append({"name": "健康影响表", "cols": ["危害因素", "健康影响", "所致职业病", "侵入途径"], "rows": he_rows})
+        # 接触限值表 (用 link_oel: CAS+归一化, 物理走GBZ2.2)
         det_factors = [d["factor"] for d in (assess.get("_project_data") or {}).get("detections", [])]
         lim_rows = []
         seen_l = set()
+        from web.entity_link import link_oel
         for fac in (det_factors + hazards)[:30]:
             if fac in seen_l:
                 continue
             seen_l.add(fac)
-            rows = conn.execute("SELECT oel_type, value, unit FROM oel_limit WHERE factor_name LIKE ?", (fac + "%",)).fetchall()
-            if rows:
-                for oel_type, val, unit in rows[:2]:
-                    lim_rows.append([fac, oel_type, val, unit])
+            oels = link_oel(conn, fac)
+            for o in oels[:3]:
+                lim_rows.append([fac, o["type"], o["value"], o["unit"]])
         if lim_rows:
             tables.append({"name": "接触限值表", "cols": ["危害因素", "限值类型", "限值", "单位"], "rows": lim_rows})
         return tables

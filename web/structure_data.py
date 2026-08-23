@@ -6,6 +6,14 @@
 from __future__ import annotations
 from typing import Any
 
+
+def _is_physical(name: str) -> bool:
+    """物理因素判断 (噪声/高温/振动/工频等, 不走化学限值链, 用GBZ2.2)"""
+    n = name or ""
+    phys = ["噪声", "高温", "振动", "工频", "紫外", "微波", "激光", "红外",
+            "射频", "WBGT", "低气压", "高气压", "局部振动"]
+    return any(p in n for p in phys)
+
 # ============ 结构化字段 schema (字段名 → (描述, 类型)) ============
 PROJECT_INFO_SCHEMA: dict[str, tuple[str, str]] = {
     # 基本 (data 里现有 + C1/C2 概况)
@@ -19,7 +27,13 @@ PROJECT_INFO_SCHEMA: dict[str, tuple[str, str]] = {
     "location": ("建设地点", "str"),
     # 工程
     "equipment": ("主要设备清单", "list"),
+    "equipment_detail": ("设备明细(名称/规格/数量)", "list"),
     "process_text": ("生产工艺流程", "str"),
+    "buildings": ("建构筑物(名称/占地/建面/层数)", "list"),
+    "facilities": ("防护设施配置(岗位/设施/数量)", "list"),
+    "products": ("产品及产量", "list"),
+    "shifts": ("班制定员(工种/各班组/合计)", "list"),
+    "public_works": ("公辅工程", "list"),
     # 物料/劳动
     "materials": ("主要原辅材料", "list"),
     "staffing": ("岗位定员", "list"),
@@ -38,7 +52,9 @@ PROJECT_INFO_SCHEMA: dict[str, tuple[str, str]] = {
 # 章级 → 字段; 二级小节 → (章字段 + 该小节侧重的字段)
 CHAPTER_INFO_MAPPING: dict[str, list[str]] = {
     # --- 正文 1-6 章 ---
-    "1": ["name", "industry", "nature", "investment", "capacity", "area", "location", "risk_level", "equipment", "staffing"],
+    "1": ["name", "industry", "nature", "investment", "capacity", "area", "location",
+          "risk_level", "equipment", "staffing", "buildings", "facilities", "products",
+          "equipment_detail", "shifts", "public_works"],
     "2": ["hazards", "detections", "materials", "process_text", "equipment", "staffing"],
     "3": ["protection", "ppe", "emergency", "hazards"],
     "4": ["equipment", "materials", "staffing", "protection", "area", "location"],
@@ -46,7 +62,8 @@ CHAPTER_INFO_MAPPING: dict[str, list[str]] = {
     "6": ["name", "industry", "risk_level", "nature", "capacity"],
     # --- 附录 7-12 章 ---
     "7": ["name", "industry", "risk_level", "nature"],
-    "8": ["equipment", "process_text", "materials", "staffing", "industry", "name", "nature", "capacity", "area"],
+    "8": ["equipment", "process_text", "materials", "staffing", "industry", "name",
+          "nature", "capacity", "area", "buildings", "public_works", "products", "shifts"],
     "9": ["analogous_test", "industry", "ppe", "emergency"],
     "10": ["hazards", "detections", "materials", "process_text", "equipment", "staffing"],
     "11": ["protection", "ppe", "emergency"],
@@ -123,19 +140,24 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
         if field == "hazards":
             return [h.get("factor", "") for h in hazards] or []
         if field == "detections":
-            # 检测: factor+ctwa+标准限值标签 (PC-TWA/PC-STEL, 依据GBZ 2.1)
+            # 检测: factor+ctwa+标准限值 (用 entity_link 的 link_oel: CAS+名字归一化, 物理走GBZ2.2)
             out = []
             for d in dets:
                 limit = ""
                 try:
-                    from .llm_draft import connect
-                    conn = connect()
-                    for r in conn.execute(
-                            "SELECT oel_type, value, unit FROM oel_limit WHERE factor_name LIKE ? LIMIT 1",
-                            (d.get("factor", "") + "%",)):
-                        limit = f"{r[0]} {r[1]} {r[2]}"
-                        break
+                    from .entity_link import link_oel
+                    from .llm_draft import connect as _c
+                    conn = _c()
+                    # link_oel: 物理因素返回[]/化学用CAS+归一化匹配; 物理用phys_standard
+                    oels = link_oel(conn, d.get("factor", ""))
                     conn.close()
+                    if oels:
+                        o = oels[0]
+                        limit = f"{o['type']} {o['value']} {o['unit']}"
+                    elif not _is_physical(d.get("factor", "")):
+                        # 化学但link_oel没查到 → 物理标准兜底
+                        from .report_experience import phys_standard
+                        limit = phys_standard(d.get("factor", ""))
                 except Exception:
                     limit = ""
                 item = {"危害因素": d.get("factor", ""), "接触水平": d.get("ctwa"),

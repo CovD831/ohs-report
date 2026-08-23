@@ -122,15 +122,20 @@ def extract_units_from_text(process_text: str) -> list[str]:
     import re
     t = (process_text or "")
     # 匹配"划分为N个评价单元：A、B、C"
-    m = re.search(r"划分为?\s*[\d一二三四五六七八九十]+个评价单元[：:]\s*([^。]+)", t)
+    m = re.search(r"划分为?\s*[\d一二三四五六七八九十]+个评价单元[：:]?\s*([^。]+)", t)
     if m:
         parts = re.split(r"[、，,；;]", m.group(1))
         return [p.strip() for p in parts if p.strip()]
-    # 匹配"评价单元：文件"或"X单元"
-    units = re.findall(r"([\u4e00-\u9fff]+(?:单元|车间|工段|工序|系统))", t)
+    # 兜底: 短名词单元 (以单元/车间/工段/工序/系统结尾的短词组, ≤10字, 避免抓长句)
+    # 用 [^\s，。；、,()（）] 限制不含标点, 且只取短片段
+    units = re.findall(r"([\u4e00-\u9fffA-Za-z0-9]{1,10}(?:单元|车间|工段|工序|系统))", t)
     seen = []
     for u in units:
-        if u not in seen:
+        # 过滤: 不以"的/由/在/为/及/和/等"作连接词的前缀碎片 (长句残留)
+        if u and u not in seen and len(u) <= 12:
+            # 剔除含连接词的长串 (如"注液废气由密闭设备注液机的抽风系统"含"的/由")
+            if any(k in u for k in ("的", "由", "在", "为", "及", "和", "与", "或")):
+                continue
             seen.append(u)
     return seen[:15]
 
@@ -173,6 +178,14 @@ def build_grid(conn, project: dict) -> list[dict]:
         u_core = unit.rstrip("单元车间系统工段")
         # 评价单元类型 → 典型危害规则表 (准确优先, 明确映射)
         unit_factors = _UNIT_FACTORS.get(u_core, [])
+        # 规则表没覆盖的(新行业如化工树脂/3D打印/锂电池), 用报告经验反查(按行业筛选)
+        if not unit_factors:
+            try:
+                from web.report_experience import unit_experience
+                ind = project.get("industry", "")
+                unit_factors = unit_experience(unit, ind) or unit_experience(u_core, ind)
+            except Exception:
+                unit_factors = []
         # 该单元的设备 (设备名含单元核心词, 或工序规整后==单元)
         u_eqs = []
         for e in eqs:
