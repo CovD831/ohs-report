@@ -217,8 +217,11 @@ async function loadOverview() {
       warn.className = 'gen-progress';
       document.getElementById('genProgress').insertAdjacentElement('afterend', warn);
     }
-    warn.innerHTML = `<span style="font-size:12.5px;color:${core.length?'var(--danger)':'var(--warning)'};">📋 资料完整度 ${cov.completeness}%${core.length?' · <b>${core.length}项核心资料缺失</b>':''} — ` +
-      list.map(m => `${m.name}→影响${m.impact}`).join('；') + '，缺失章节已标注"待补充"</span>`;
+    let msg = '📋 资料完整度 ' + cov.completeness + '%';
+    if (core.length) msg += ' · ' + core.length + '项核心资料缺失';
+    msg += ' — ' + list.map(m => m.name + '→影响' + m.impact).join('；') + '，缺失章节已标注待补充';
+    const col = core.length ? 'var(--danger)' : 'var(--warning)';
+    warn.innerHTML = '<span style="font-size:12.5px;color:' + col + ';">' + msg + '</span>';
   }
 }
 // 目录: 只显示"已生成"的章节, 生成到哪出现到哪; 按结构树层级缩进
