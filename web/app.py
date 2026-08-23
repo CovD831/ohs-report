@@ -760,7 +760,15 @@ def api_export(pid: str, request: Request):
                "staffing": data.get("staffing", []),
                "protection": data.get("protection", ""),
                "ppe": data.get("ppe", []),
-               "emergency": data.get("emergency", "")}
+               "emergency": data.get("emergency", ""),
+               "buildings": data.get("buildings", []),
+               "facilities": data.get("facilities", []),
+               "products": data.get("products", []),
+               "public_works": data.get("public_works", []),
+               "investment": data.get("investment", ""),
+               "area": data.get("area", ""),
+               "capacity": data.get("capacity", ""),
+               "nature": data.get("nature", "")}
     assess = assess_project(conn, project)
     # 把完整项目数据塞进 assess._project_data, 供 fill_section 内嵌表格取数
     assess["_project_data"] = dict(project)
