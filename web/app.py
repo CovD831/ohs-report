@@ -431,6 +431,16 @@ def api_export(pid: str):
     return {"ok": True, "path": f"/data/report_{pid}.docx", "size": out.stat().st_size}
 
 
+@app.get("/api/projects/{pid}/download", response_class=FileResponse)
+def api_download_report(pid: str):
+    """下载导出的 Word 报告 (受控, 不走裸 /data 路径, 避免nginx拦截)"""
+    out = ROOT / "data" / f"report_{pid}.docx"
+    if not out.is_file():
+        return JSONResponse({"error": "报告不存在, 请先导出"}, status_code=404)
+    return FileResponse(out, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        filename=f"report_{pid}.docx")
+
+
 @app.get("/data/{filename:path}")
 def report_file(filename: str):
     """只允许下载生成的 Word 报告，禁止暴露数据库和上传材料。"""
