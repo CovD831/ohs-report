@@ -3,6 +3,7 @@
 # 首次/依赖变更: bash deploy.sh (老方式, 全量镜像)
 # 日常改代码:   bash quick_deploy.sh
 set -e
+set -o pipefail   # 关键: 让管道返回 docker build 的真实退出码 (否则 tail 会掩盖失败)
 SRV="ohs"
 REMOTE_DIR='~/ohs-report'
 
@@ -16,7 +17,7 @@ scp -q /tmp/ohs_src.tgz $SRV:/tmp/
 ssh $SRV "mkdir -p $REMOTE_DIR && cd $REMOTE_DIR && tar xzf /tmp/ohs_src.tgz && rm /tmp/ohs_src.tgz"
 
 echo "=== 3. 远端构建 (服务器2核, 约5-8分钟) ==="
-ssh $SRV "cd $REMOTE_DIR && docker build -t ohs-report:latest . 2>&1 | tail -2"
+ssh $SRV "cd $REMOTE_DIR && docker build -t ohs-report:latest . 2>&1 | tail -4"
 
 echo "=== 4. 重启应用容器 (配置/卷不动) ==="
 ssh $SRV "cd $REMOTE_DIR && docker compose up -d --no-deps --force-recreate ohs-report 2>&1 | tail -1"
