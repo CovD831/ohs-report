@@ -267,12 +267,22 @@ def assess_project(conn, project: dict) -> dict:
     risk = None
     ind = project.get("industry")
     if ind:
-        # risk_category 存 C261 格式 → 兼容输入 261 / C261 / 0261
-        candidates = {ind}
-        if ind.isdigit() and len(ind) in (3, 4):
-            candidates.add("C" + ind[-3:])
-        if ind.startswith("C"):
-            candidates.add(ind[1:])  # C261 → 261 (保底)
+        # 从"441 电力、热力生产和供应业"/"C384"/"C3841"提取纯代码, 兼容 risk_category(C261/D44格式)
+        import re
+        m = re.search(r"([A-Z]?\d{2,4})", str(ind))
+        pure = m.group(1) if m else str(ind).strip()
+        candidates = {str(ind), pure}
+        # 中类码: 3位取本身, 4位取前3位(C3841→C384), 2位(大类)保留
+        m4 = re.search(r"([A-Z]?)(\d{3,4})", pure)
+        if m4:
+            prefix, digits = m4.group(1), m4.group(2)
+            code3 = digits[:3]  # 取前3位 (C3841→384)
+            candidates.add("C" + code3)
+            candidates.add(code3)
+            candidates.add(prefix + digits[:2])  # 大类2位 (D44 或 44)
+            candidates.add("D" + digits[:2])
+        # 去掉纯文字候选
+        candidates = {c for c in candidates if re.search(r"\d", c)}
         for cand in candidates:
             r = conn.execute(
                 "SELECT industry_code, industry_name, risk_level FROM risk_category "
@@ -280,6 +290,30 @@ def assess_project(conn, project: dict) -> dict:
             if r:
                 risk = {"code": r[0], "name": r[1], "level": r[2]}
                 break
+        # 精确匹配: 用行业名关键词在 risk_category 里找更具体的 (焚烧发电→火力发电)
+        if risk and ind:
+            # 关键词→risk_category 行的匹配 (如"生活垃圾焚烧发电"→"火力发电"严重)
+            kw_rows = conn.execute(
+                "SELECT industry_code, industry_name, risk_level FROM risk_category "
+                "WHERE industry_name LIKE ? OR industry_name LIKE ? OR industry_name LIKE ?",
+                ("%" + str(ind)[:6] + "%", "%发电%", "%电力生产%")).fetchall()
+            if kw_rows and ("发电" in str(ind) or "电力生产" in str(ind)):
+                # 发电/电力生产应取"严重"(火力/热电联产/生物质能)
+                for kr in kw_rows:
+                    if "严重" in kr[2]:
+                        risk = {"code": kr[0], "name": kr[1], "level": kr[2]}
+                        break
+        # 工艺特征兜底: 垃圾/焚烧发电 → 生物质能发电(严重) (行业代码441太泛化, 按工艺归"严重")
+        if risk and risk["level"] != "严重":
+            eqs = project.get("equipment") or []
+            eqs_txt = " ".join(str(e) for e in eqs)
+            if ("垃圾" in str(ind) or "焚烧" in eqs_txt or "垃圾" in eqs_txt
+                    or "余热锅炉" in eqs_txt or "汽轮发电机" in eqs_txt):
+                r2 = conn.execute(
+                    "SELECT industry_code, industry_name, risk_level FROM risk_category "
+                    "WHERE industry_name LIKE '%生物质能发电%' AND risk_level='严重'").fetchone()
+                if r2:
+                    risk = {"code": r2[0], "name": r2[1], "level": r2[2]}
     chain = industry_chain(conn, ind) if ind else None
     # 2) 危害识别
     hazards = identify_hazards(conn, project.get("equipment", []),
