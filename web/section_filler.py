@@ -41,14 +41,19 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         return tables
 
     if sec == "2":
-        # 识别 + 检测 + 判定 + 分级
-        hz = assess.get("hazards", [])
+        # 危害分析网格表 (评价单元→工序→岗位→物料→危害因素→接触方式, 动态生成)
         tables = []
-        if hz:
-            rows = [[i, h["factor"], "; ".join(h.get("sources", [])[:2]),
-                     "各岗位", h.get("method") or "—"] for i, h in enumerate(hz, 1)]
-            tables.append({"name": "危害因素识别表", "cols": ["序号", "危害因素", "产生环节", "接触岗位", "检测方法"],
-                           "rows": rows})
+        from web.hazard_grid import build_grid
+        grid = build_grid(conn, assess.get("_project_data", {}))
+        if grid:
+            g_rows = []
+            for g in grid:
+                g_rows.append([g["unit"], g["process"], "、".join(g["posts"][:3]),
+                               g["enclosed"] or "—", "、".join(g["materials"][:3]),
+                               "、".join(g["factors"][:6])])
+            tables.append({"name": "危害因素识别表", "cols": ["评价单元/车间", "工序", "岗位/工种",
+                           "设备密闭", "物料/中间产物", "主要危害因素"], "rows": g_rows})
+        # 检测结果表
         dets = (assess.get("_project_data") or {}).get("detections", [])
         if dets:
             det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—"), "—", "合格"]
@@ -100,6 +105,16 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         rows = _rows_of(conn, "SELECT category, require, std_code, clause FROM management_rule")
         tables.append({"name": "管理制度检查表", "cols": ["序号", "制度类别", "检查点", "依据"],
                        "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]})
+        # gbz1_rule 检查表: 选址/总体布局/辅助用室 (按 theme 分组)
+        for theme, tname in [("选址", "选址检查表"), ("总体布局", "总体布局检查表"),
+                             ("辅助用室", "辅助用室检查表"), ("建筑卫生学", "建筑卫生学检查表")]:
+            g_rows = []
+            for r in _rows_of(conn, "SELECT clause, rule, report_section FROM gbz1_rule WHERE theme LIKE ?", (theme + "%",)):
+                # 检查表: 卫生要求=rule, 检查依据=clause, 结果/评价待项目确认
+                g_rows.append([len(g_rows) + 1, r[1][:60], r[0], "待确认", "待确认"])
+            if g_rows:
+                tables.append({"name": tname, "cols": ["序号", "卫生要求", "检查依据", "检查结果", "评价"],
+                               "rows": g_rows})
         ill = conn.execute("SELECT room, plane, lx FROM illumination_std").fetchall()
         if ill:
             tables.append({"name": "照度标准表", "cols": ["序号", "房间/场所", "参考面", "照度lx"],
