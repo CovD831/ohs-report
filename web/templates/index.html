@@ -207,21 +207,33 @@ function renderFiles(detail, coverage) {
     });
   });
   // 缺料兜底: 缺失类别 + 影响章节
-  if (coverage && coverage.missing && coverage.missing.length) {
+  if (coverage && (coverage.missing?.length || coverage.field_missing?.length)) {
     const core = coverage.core_missing || [];
-    const others = coverage.missing.filter(m => !m.core);
+    const others = (coverage.missing||[]).filter(m => !m.core);
     const warn = core.length ? `<span style="color:var(--danger);font-weight:600;">${core.length}项核心资料缺失</span>` : '';
-    html += `<div class="coverage-warn" style="margin-top:10px;padding:10px;border-left:3px solid ${core.length?'var(--danger)':'var(--warning)'};background:${core.length?'#FFF5F5':'#FFF7E6'};">
-      <div style="font-size:13px;"><b>资料完整度 ${coverage.completeness}%</b> ${warn}</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">缺以下资料，对应章节将标注"待补充"：</div>
+    html += `<div class="coverage-warn" style="margin-top:10px;padding:10px;border-left:3px solid ${core.length?'var(--danger)':'var(--warning)'};background:${core.length?'#FFF5F5':'#FFF7E6'};">`;
+      html += `<div style="font-size:13px;"><b>资料完整度 ${coverage.completeness}%</b> ${warn} <span style="color:var(--text-muted);">(字段完整度 ${coverage.field_completeness||coverage.completeness}%)</span></div>`;
+      if (coverage.missing?.length) {
+      html += `<div style="font-size:12px;color:var(--text-muted);margin-top:4px;">缺以下资料，对应章节将标注"待补充"：</div>
       <div style="font-size:12px;margin-top:4px;line-height:1.6;">`;
-    (core.length?core:others).slice(0,6).forEach(m => {
-      html += `<div>· <b>${m.name}</b> → 影响${m.impact}</div>`;
-    });
-    if (core.length) others.slice(0,4).forEach(m => {
-      html += `<div style="color:var(--text-muted);">· ${m.name} → 影响${m.impact}</div>`;
-    });
-    html += `</div></div>`;
+      (core.length?core:others).slice(0,6).forEach(m => {
+        html += `<div>· <b>${m.name}</b> → 影响${m.impact}</div>`;
+      });
+      if (core.length) others.slice(0,4).forEach(m => {
+        html += `<div style="color:var(--text-muted);">· ${m.name} → 影响${m.impact}</div>`;
+      });
+      html += `</div>`;
+      }
+      // 字段级缺失: 缺文件的什么字段
+      const fm = coverage.field_missing || [], fp = coverage.field_partial || [];
+      if (fm.length || fp.length) {
+      html += `<div style="font-size:12px;color:var(--danger);margin-top:5px;">⚠ 已上传文件缺少字段：</div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.5;">`;
+      fm.slice(0,5).forEach(m=>{ html += `<div>· ${m.source}：${m.desc}（缺）</div>`; });
+      fp.slice(0,5).forEach(p=>{ html += `<div>· ${p.source}：${p.desc}（空${p.empty_subfields.join('/')}）</div>`; });
+      html += `</div>`;
+      }
+      html += `</div>`;
   }
   box.innerHTML = html;
   renderMaterialCheck(detail);

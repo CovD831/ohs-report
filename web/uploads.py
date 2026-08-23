@@ -81,11 +81,12 @@ CATEGORY_IMPACTS = {
 CORE_CATEGORIES = {"C1", "C2", "C6", "C7", "C8", "C10", "C13", "C17"}
 
 
-def coverage_report(pid: str, check_categories: list[str] | None = None) -> dict:
-    """资料覆盖度检查 — 兜底: 缺什么类别 → 标注影响哪些章节
+def coverage_report(pid: str, check_categories: list[str] | None = None, project: dict | None = None) -> dict:
+    """资料覆盖度检查 — 双层兜底: ①缺什么文件(类别) ②缺什么文件的什么字段
 
     check_categories: 已收集到的类别 key 列表 (None 则从项目材料目录读取)
-    返回: {covered: [类别], missing: [{cat, name, impact, core}], completeness}
+    project: 提取后的项目 data (提供则加字段级校验)
+    返回: {covered, missing, completeness, core_missing, field_missing, filed_completeness}
     """
     if check_categories is None:
         check_categories = {m.get("category") for m in list_materials(pid)} - {"uncat"}
@@ -100,9 +101,17 @@ def coverage_report(pid: str, check_categories: list[str] | None = None) -> dict
                             "impact": ch, "why": why,
                             "core": c in CORE_CATEGORIES})
     completeness = round(len(covered) / len(cats) * 100)
-    return {"covered": covered, "missing": missing,
-            "completeness": completeness,
-            "core_missing": [m for m in missing if m["core"]]}
+    result = {"covered": covered, "missing": missing,
+              "completeness": completeness,
+              "core_missing": [m for m in missing if m["core"]]}
+    # 字段级校验 (project 提供时)
+    if project:
+        from web.project_schema import validate_project
+        fv = validate_project(project)
+        result["field_missing"] = fv["required_missing"]
+        result["field_partial"] = fv["partial"]
+        result["field_completeness"] = fv["completeness"]
+    return result
 
 
 def classify_file(filename: str, content: bytes = b"") -> str:

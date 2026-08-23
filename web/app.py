@@ -185,9 +185,13 @@ async def api_report_upload(request: Request):
             result.setdefault("uncat", []).append({"name": name, "cat": cat, "ok": False, "error": str(e)})
     _upload_cache[pid] = result
     counts = {k: len(v) for k, v in result.items() if v}
-    # 资料覆盖度兜底: 缺哪些类别 → 影响哪些章节 (错误兜底)
+    # 资料覆盖度兜底: ①缺什么文件(类别) ②缺什么文件的什么字段 (双层兜底)
     from web.uploads import coverage_report
-    coverage = coverage_report(pid)
+    try:
+        imported = import_materials_from_dir(pid)  # 提取后做字段级校验
+    except Exception:
+        imported = None
+    coverage = coverage_report(pid, project=imported)
     return {"ok": True, "pid": pid, "counts": counts, "detail": result,
             "coverage": coverage}
 
