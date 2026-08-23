@@ -140,60 +140,67 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
     # 目录
     add_toc(doc)
 
-    # 各章节 (按小节组织)
-    from knowledge.report_skeleton import sub_sections
-    from web.subsection_gen import build_subsection
-    from web.unit_gen import build_units
-    for sec, sk in SECTION_SKELETON.items():
-        _heading(doc, f"{sec}  {sk['title']}", 1)
-        subs = sub_sections(sec)
-        if not subs:
-            # 无小节: 章级内容
-            generated = (section_states or {}).get(sec, {}).get("text", "")
-            if generated:
-                for line in generated.split("\n"):
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        _para(doc, line, FANGSONG, 14, indent=0.74)
+    # 各章节 (按 report_struct 新结构: 1-12章 + 二级 + 三级 + 四级)
+    from web.report_struct import CHAPTERS, SUBS, SUBS3, SUBS4, _extract_product_units
+    from knowledge.report_skeleton import SUB_SECTIONS
+    ss = section_states or {}
+    # 数据四级 (产品/工段级) 从项目数据提取
+    prod4 = _extract_product_units(project or {})
+    prod4_by_parent = {}
+    for k, t in prod4:
+        prod4_by_parent.setdefault(k.rsplit(".", 1)[0], []).append((k, t))
+    for sec in CHAPTERS:
+        sec_meta = ss.get(sec, {})
+        sec_text = sec_meta.get("text", "")
+        _heading(doc, f"{sec}  {CHAPTERS[sec]}", 1)
+        if sec_text and sec_meta.get("state") == "generated":
+            for line in sec_text.split("\n"):
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    _para(doc, line, FANGSONG, 14, indent=0.74)
+        if not SUBS.get(sec):
+            # 无小节的章 (如第6章结论): 章节级表格
             tables = fill_section(conn, sec, assess)
             _write_tables(doc, tables)
             continue
-        for sub, st in subs:
-            _heading(doc, f"{sub}  {st}", 2)
-            # 小节内容 (段落+表格+单元深文)
-            built = build_subsection(conn, sec, sub, assess)
-            for p in built["paragraphs"]:
-                _para(doc, p, FANGSONG, 14, indent=0.74)
-            # 小节 LLM 正文 (section_states[sub])
-            generated = (section_states or {}).get(sub, {}).get("text", "")
-            if generated:
-                for line in generated.split("\n"):
+        for sn, st in SUBS.get(sec, []):
+            sub_meta = ss.get(sn, {})
+            sub_text = sub_meta.get("text", "")
+            _heading(doc, f"{sn}  {st}", 2)
+            if sub_text and sub_meta.get("state") == "generated":
+                for line in sub_text.split("\n"):
                     line = line.strip()
                     if line and not line.startswith("#"):
                         _para(doc, line, FANGSONG, 14, indent=0.74)
-            _write_tables(doc, built["tables"])
-            # 三级单元 (物质深文)
-            units = build_units(sec, sub, {"name": project.get("name", ""),
-                                           "equipment": project.get("equipment", []),
-                                           "process_text": project.get("process_text", "")},
-                                assess)
-            # 深文加载 (A2i_物质毒理学.json)
-            from web.uploads import project_dir
-            deep = {}
-            deep_pf = project_dir(project.get("id", "")) / "A2i_物质毒理学.json"
-            if deep_pf.exists():
-                try:
-                    deep = json.loads(deep_pf.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
-            for u in units:
-                if u["type"] == "物质" and u["title"] in deep:
-                    u["deep"] = deep[u["title"]]
-            # 每个物质只出现一次 (仅2.1识别小节)
-            if sub != "2.1":
-                units = [u for u in units if u["type"] != "物质"]
-            add_units_section(doc, units[:10])
-
+            # 三级 + 固定四级
+            for sub3, (parent, t3) in SUBS3.items():
+                if parent != sn:
+                    continue
+                sub3_meta = ss.get(sub3, {})
+                _heading(doc, f"{sub3}  {t3}", 3)
+                if sub3_meta.get("state") == "generated":
+                    for line in (sub3_meta.get("text", "") or "").split("\n"):
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            _para(doc, line, FANGSONG, 14, indent=0.74)
+                # 固定四级
+                for num, t4 in SUBS4.get(sub3, []):
+                    _heading(doc, f"{num}  {t4}", 4)
+                    m = ss.get(num, {})
+                    if m.get("state") == "generated":
+                        for line in (m.get("text", "") or "").split("\n"):
+                            line = line.strip()
+                            if line and not line.startswith("#"):
+                                _para(doc, line, FANGSONG, 14, indent=0.74)
+            # 数据四级 (产品/工段级): 挂在 8.4.1 / 10.1.1 下的 sub3
+            for sub3_name, items in prod4_by_parent.items():
+                # sub3_name 形如 8.4.1, 找对应 SUBS3 的 key
+                for sub3, (parent, t3) in SUBS3.items():
+                    if sub3 != sub3_name:
+                        continue
+                    _heading(doc, f"{sub3}  {t3}", 3)
+                    for num, t4 in items:
+                        _heading(doc, f"{num}  {t4}", 4)
     conn.close()
     doc.save(str(out_path))
 
