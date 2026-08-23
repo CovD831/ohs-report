@@ -102,3 +102,33 @@ def list_jobs(limit: int = 50) -> list[dict]:
 def submit(job_fn, *args, **kwargs):
     """提交到线程池 (应用进程内后台执行)"""
     return _executor.submit(job_fn, *args, **kwargs)
+
+
+# 取消机制: job_id -> 停止标志
+_cancel: dict[str, bool] = {}
+
+
+def cancel_job(jid: str) -> bool:
+    """请求取消任务: 标记停止 (worker 每单元检查 _should_stop)"""
+    status = get_job(jid)
+    if not status:
+        return False
+    if status["status"] in ("done", "failed", "cancelled"):
+        return False
+    _cancel[jid] = True
+    conn = _conn()
+    conn.execute("UPDATE task_job SET status='cancelled', error='用户取消', "
+                 "finished=datetime('now','localtime') WHERE id=?", (jid,))
+    conn.commit()
+    conn.close()
+    return True
+
+
+def _should_stop(jid: str) -> bool:
+    """worker 每单元检查是否被请求取消"""
+    if _cancel.get(jid):
+        return True
+    conn = _conn()
+    r = conn.execute("SELECT status FROM task_job WHERE id=?", (jid,)).fetchone()
+    conn.close()
+    return bool(r and r[0] == "cancelled")

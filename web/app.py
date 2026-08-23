@@ -699,6 +699,9 @@ def _run_generate_all(pid: str, jid: str):
 
     done = fail = 0
     for i, (sec, sub) in enumerate(units, 1):
+        # 用户取消 → 中断
+        if _tasks._should_stop(jid):
+            break
         _tasks.set_progress(jid, i)
         label = sub or f"第{sec}章"
         try:
@@ -747,6 +750,13 @@ def api_task_status(jid: str):
     if not d:
         return JSONResponse({"error": "not found"}, status_code=404)
     return d
+
+
+@app.post("/api/tasks/{jid}/cancel", response_class=JSONResponse)
+def api_task_cancel(jid: str, request: Request):
+    """取消后台生成任务"""
+    ok = _tasks.cancel_job(jid)
+    return {"ok": ok, "error": None if ok else "任务不存在或已结束"}
 
 
 @app.get("/api/tasks", response_class=JSONResponse)
