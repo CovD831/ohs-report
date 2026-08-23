@@ -649,8 +649,15 @@ def api_export(pid: str, request: Request):
     project = {"id": pid, "name": p["name"], "industry": data.get("industry", ""),
                "equipment": data.get("equipment", []),
                "detections": data.get("detections", []),
-               "process_text": data.get("process_text", "")}
+               "process_text": data.get("process_text", ""),
+               "materials": data.get("materials", []),
+               "staffing": data.get("staffing", []),
+               "protection": data.get("protection", ""),
+               "ppe": data.get("ppe", []),
+               "emergency": data.get("emergency", "")}
     assess = assess_project(conn, project)
+    # 把完整项目数据塞进 assess._project_data, 供 fill_section 内嵌表格取数
+    assess["_project_data"] = dict(project)
     conn.close()
     out = ROOT / "data" / f"report_{pid}.docx"
     export_docx(project, assess, out, section_states=data.get("section_states"))

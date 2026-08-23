@@ -27,6 +27,40 @@ from web.section_filler import fill_section  # noqa: E402
 from web.advice_gen import fill_10211  # noqa: E402
 from web.projects_db import get_project  # noqa: E402
 
+# 二级小节 → 内嵌哪些表 (复用 fill_section 各章表格, 按小节筛)
+# 值 = (该小节所属的fill_section章, 要加的表格名列表; 空=全加该章)
+_SUB_TABLE_MAP = {
+    "1.1": ("1", ["主要设备清单"]),
+    "1.2": ("1", ["主要设备清单", "劳动定员表"]),
+    "2.1": ("2", ["危害因素识别表"]),
+    "2.2": ("2", ["判定表", "检测结果表"]),
+    "3.1": ("3", ["防护设施检查表"]),
+    "3.2": ("3", ["PPE配备表"]),
+    "3.3": ("3", ["应急救援检查表"]),
+    "7.2": ("7", ["评价依据表"]),
+    "7.3": ("7", ["评价依据表"]),
+    "8.4": ("8", ["原辅材料表"]),
+    "9.4": ("9", ["类比可比性表"]),
+    "12.4": ("4", ["管理制度检查表"]),
+}
+
+
+def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
+    """按二级小节返回内嵌表格 (复用 fill_section 各章表格)"""
+    sub = sn if "." in sn else sec
+    m = _SUB_TABLE_MAP.get(sub)
+    if not m:
+        # 该小节未指定表, 但所在章有核心表 → 章级表格
+        ch = sub.split(".")[0]
+        if ch in ("1", "2", "3", "4", "6"):
+            # 只在章的"总览小节"放章级表, 避免每小节重复
+            return []
+        return []
+    fill_ch, wanted = m
+    tables = fill_section(conn, fill_ch, assess)
+    if not wanted:
+        return tables
+    return [t for t in tables if t["name"] in wanted]
 FANGSONG = "仿宋_GB2312"
 SONG = "宋体"
 HEI = "黑体"
@@ -172,6 +206,12 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                     line = line.strip()
                     if line and not line.startswith("#"):
                         _para(doc, line, FANGSONG, 14, indent=0.74)
+            # 内嵌表格: 该小节对应的数据表 (跟真实报告一致, 表格在正文对应位置)
+            sub_tables = _tables_for_sub(conn, sec, sn, assess)
+            if sub_tables:
+                doc.add_paragraph()
+                _para(doc, "表" + sn.replace(".", ".") + " 相关数据表", HEI, 12, bold=True, align=1)
+                _write_tables(doc, sub_tables)
             # 三级 + 固定四级
             for sub3, (parent, t3) in SUBS3.items():
                 if parent != sn:

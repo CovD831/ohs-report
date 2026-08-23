@@ -17,23 +17,20 @@ def _rows_of(conn, sql, args=()):
 def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]:
     """按报告章节生成表格"""
     if sec == "1":
-        # 项目基本情况 + 定员
-        from pathlib import Path as _P
-        import csv as _csv
+        # 项目基本情况 + 设备清单 + 定员 (从 assess._project_data 取结构化数据, 非硬编码文件)
         tables = []
-        eqs = assess.get("_project_data", {}).get("equipment", [])
+        pd_ = assess.get("_project_data", {})
+        eqs = pd_.get("equipment", [])
         if eqs:
             rows = [[i, str(e).split("|")[0], str(e).split("|")[1] if "|" in str(e) else ""]
                     for i, e in enumerate(eqs, 1)]
             tables.append({"name": "主要设备清单", "cols": ["序号", "设备名称", "内部物料"], "rows": rows})
-        f_d = _P(__file__).resolve().parent.parent / "data" / "materials" / "A2d_劳动定员表.csv"
-        if f_d.exists():
-            with open(f_d, encoding="utf-8-sig") as fh:
-                d_rows = list(_csv.DictReader(fh))
-            if d_rows:
-                tables.append({"name": "劳动定员表", "cols": ["序号", "车间", "工种", "人数", "工作内容"],
-                               "rows": [[i, r.get("车间", ""), r.get("工种", ""), r.get("人数", ""),
-                                         r.get("工作内容", "")] for i, r in enumerate(d_rows, 1)]})
+        staffs = pd_.get("staffing", [])
+        if staffs:
+            s_rows = [[i, s.get("dept", ""), s.get("post", ""), s.get("count", ""), "—"]
+                      for i, s in enumerate(staffs, 1)]
+            tables.append({"name": "劳动定员表", "cols": ["序号", "车间/部门", "岗位", "人数", "工作内容"],
+                           "rows": s_rows})
         return tables
 
     if sec == "2":
