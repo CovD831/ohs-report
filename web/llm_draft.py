@@ -14,6 +14,7 @@
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import urllib.request
@@ -29,7 +30,7 @@ MODEL = os.environ.get("LLM_MODEL", "stealth/ox-alpha")
 
 
 def _llm(prompt: str, system: str = "你是职业卫生评价专家, 撰写正式的职业病危害预评价报告文字。") -> str:
-    """调用 LLM (OpenRouter, key 从环境变量)"""
+    """调用 LLM (OpenRouter, key 从环境变量) — DNS/连接 3 次重试"""
     key = os.environ.get("OPENROUTER_API_KEY") or _load_env_key("OPENROUTER_API_KEY")
     if not key:
         raise RuntimeError("OPENROUTER_API_KEY 未配置")
@@ -40,9 +41,18 @@ def _llm(prompt: str, system: str = "你是职业卫生评价专家, 撰写正�
         "temperature": 0.3,
     }).encode(), headers={"Authorization": f"Bearer {key}",
                           "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        d = json.loads(r.read())
-    return d["choices"][0]["message"]["content"]
+    # 域名解析/网络偶发失败: 指数退避重试 (2s/4s/8s)
+    last_err = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                d = json.loads(r.read())
+            return d["choices"][0]["message"]["content"]
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                time.sleep(2 ** (attempt + 1))
+    raise RuntimeError(f"LLM调用失败(3次): {last_err}")
 
 
 def _load_env_key(name: str) -> str:
