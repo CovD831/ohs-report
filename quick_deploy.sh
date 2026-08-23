@@ -17,7 +17,8 @@ scp -q /tmp/ohs_src.tgz $SRV:/tmp/
 ssh $SRV "mkdir -p $REMOTE_DIR && cd $REMOTE_DIR && tar xzf /tmp/ohs_src.tgz && rm /tmp/ohs_src.tgz"
 
 echo "=== 3. 远端构建 (服务器2核, 约5-8分钟) ==="
-ssh $SRV "cd $REMOTE_DIR && docker build -t ohs-report:latest . 2>&1 | tail -4"
+# --network host: 容器build时Docker bridge出网受限, 必须用host网络才能pip install
+ssh $SRV "cd $REMOTE_DIR && docker build --network host -t ohs-report:latest . 2>&1 | tail -4"
 
 echo "=== 4. 重启应用容器 (配置/卷不动) ==="
 ssh $SRV "cd $REMOTE_DIR && docker compose up -d --no-deps --force-recreate ohs-report 2>&1 | tail -1"
