@@ -378,12 +378,16 @@ def draft_section(pid: str, sec: str, _cache: dict | None = None) -> str:
         prompt = build_section_prompt(base_sec, info)
     if not prompt:
         return "暂不支持该章节(可扩展)"
-    # 把 prompt 里的章节号替换为报告编号 (第1章/第2章...)
-    prompt = prompt.replace("10.2.3", f"第{sec}章" if sec == "1" else "本项目工程分析") \
-                   .replace("10.2.5", f"第{sec}章" if sec == "2" else "危害分析") \
-                   .replace("10.2.6", f"第{sec}章" if sec == "3" else "防护措施") \
-                   .replace("10.2.11", f"第{sec}章" if sec == "5" else "补充建议") \
-                   .replace("10.2.12", f"第{sec}章" if sec == "6" else "结论")
+    # 章节号统一: 用 report_struct 权威标题, 只把首行的旧编号去掉
+    from web.report_struct import CHAPTERS
+    sec_title = CHAPTERS.get(sec, "本项目")
+    # 去掉 prompt 首行的旧编号痕迹, 替换正文里零散的 10.2.x
+    import re
+    prompt = re.sub(r"10\.2(\.\d+\.?\d*)?", f"第{sec}章", prompt)
+    # 确保首行是标准标题
+    first = prompt.split("\n")[0].strip()
+    if not first.startswith("#"):
+        prompt = f"# 第{sec}章 {sec_title}\n" + prompt
     return _llm(prompt)
 
 
