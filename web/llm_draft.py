@@ -29,7 +29,18 @@ BASE = os.environ.get("LLM_BASE_URL", "https://openrouter.ai/api/v1/chat/complet
 MODEL = os.environ.get("LLM_MODEL", "stealth/ox-alpha")
 
 
-def _llm(prompt: str, system: str = "你是职业卫生评价专家, 撰写正式的职业病危害预评价报告文字。") -> str:
+# 全局叙述化指令 (system 固定, 所有章节生效)
+_NARR_SYSTEM = (
+    "你是职业病危害预评价报告撰写专家。请按正式评价报告的文体撰写段落。严格遵循："
+    "1) 把给定的项目数据组织成连贯的叙述性段落，使用正式书面语；"
+    "2) 禁止列出原始数据的标签、【】符号、括号标记或表格清单；"
+    "3) 禁止把数据当作检查清单逐条罗列，而要写成完整的陈述句；"
+    "4) 数据缺省的项用'待补充'或'依据标准推断'表达，不编造数值；"
+    "5) 引用标准时写标准号全称（如 GBZ 2.1—2019），不写缩写。"
+)
+
+
+def _llm(prompt: str, system: str = _NARR_SYSTEM) -> str:
     """调用 LLM (OpenRouter, key 从环境变量) — DNS/连接 3 次重试"""
     key = os.environ.get("OPENROUTER_API_KEY") or _load_env_key("OPENROUTER_API_KEY")
     if not key:
@@ -67,17 +78,25 @@ def _load_env_key(name: str) -> str:
 
 
 def _build_info(project: dict, assess: dict) -> str:
-    """动态信息块: 项目数据 + 知识库限值 (通用)"""
+    """动态信息块 — 叙述化 (非占位符), 让 LLM 直接引用事实而非照搬标签
+
+    把 机械数据(危害/设备/工序/检测+限值/原料/风险) 组织成正式叙述句,
+    避免 LLM 照搬【工序】【设备】等标签。
+    """
     conn = connect()
     chain = assess.get("industry_chain") or {}
     risk = assess.get("industry_risk") or {}
     hazards = assess.get("hazards", [])
     eqs = project.get("equipment", [])[:20]
 
-    # 危害因素: 因子+来源
-    hz_str = "; ".join(f"{h['factor']}({'、'.join(h.get('sources', [])[:2])})" for h in hazards[:15]) or "无"
+    # 危害因素 → 叙述
+    hz_parts = []
+    for h in hazards[:15]:
+        src = "、".join((h.get("sources") or [])[:2])
+        hz_parts.append(f"{h['factor']}" + (f"（主要来自{src}）" if src else ""))
+    hz_str = "、".join(hz_parts) if hz_parts else "本项目原料、中间产物及工艺过程中暂无明显职业病危害因素（需待材料补齐后识别）。"
 
-    # 检测数据: 值 + OEL 限值 (系统查询, 不写死)
+    # 检测数据 → 叙述 (含 OEL 限值对照)
     det_parts = []
     for d in project.get("detections", [])[:15]:
         fname = d.get("factor", "")
@@ -86,20 +105,29 @@ def _build_info(project: dict, assess: dict) -> str:
         for r in conn.execute(
                 "SELECT oel_type, value, unit FROM oel_limit WHERE factor_name LIKE ? LIMIT 1",
                 (fname + "%",)):
-            limit = f"{r[0]}={r[1]}{r[2]}"
+            limit = f"{r[0]} {r[1]} {r[2]}"
             break
-        det_parts.append(f"{fname}={val} (限值:{limit or '查GBZ 2.1'})")
-    det_str = "; ".join(det_parts) or "无"
+        val_str = f"{val} mg/m³" if val is not None else "未检出"
+        det_parts.append(f"{fname}检出{val_str}" + (f"，其职业接触限值(PC-TWA)为{limit}" if limit else "，限值待查GBZ 2.1"))
+    det_str = "；".join(det_parts) if det_parts else "本项目暂无类比检测数据，接触水平依据GBZ 2.1—2019推断。 "
+    # 检测部分避免'限值:'标签
+    det_str = det_str.replace("限值:", "")
 
-    # 工序 (从工艺文本)
+    # 工序 → 叙述
     procs = [ln.strip().lstrip("- ") for ln in (project.get("process_text") or "").splitlines()
              if ln.startswith("- 车间")][:12]
-    proc_str = "\n".join(procs) or "无工艺文本"
+    proc_str = "。".join(p.replace(" | 工序 ", "生产工序为").replace(" | 密闭 ", "，密闭方式为")
+                          .replace(" | 危害 ", "，主要危害为") for p in procs)
+    if proc_str:
+        proc_str = "主要生产工序包括：" + proc_str + "。"
+    else:
+        proc_str = "本项目生产工艺流程描述待补充。 "
 
-    # 设备 (推断工艺水平)
+    # 设备 → 叙述
     eq_str = "、".join(str(e).split("|")[0] for e in eqs[:12]) or "无"
+    eq_desc = f"项目主要设备包括：{eq_str}。" if eq_str else "项目设备清单待补充。 "
 
-    # 原料 (A2a)
+    # 原料 → 叙述
     mats = []
     f = Path(__file__).resolve().parent.parent / "data" / "materials" / "A2a_原辅材料清单.csv"
     if f.exists():
@@ -110,16 +138,18 @@ def _build_info(project: dict, assess: dict) -> str:
                 if n:
                     mats.append(n)
     mat_str = "、".join(mats[:15]) or "无"
+    mat_desc = f"主要原辅材料为：{mat_str}。" if mat_str else "原辅材料清单待补充。 "
     conn.close()
 
-    return f"""【项目名称】{project.get('name', '')}
-【行业链】{chain.get('full', '')}
-【危害因素】{hz_str}
-【设备】{eq_str}
-【工序】{proc_str}
-【原辅材料】{mat_str}
-【检测数据(含OEL限值, 系统查询)】{det_str}
-【风险分类】{risk.get('level', '')}({risk.get('name', '')})"""
+    # 汇总成叙述化信息块 (每项独立成段, 无【】标签)
+    return (f"一、项目概况：{project.get('name', '未命名项目')}，所属行业{chain.get('mid', {}).get('name', '—')}（{chain.get('full', '—')}），"
+            f"该项目属于{risk.get('level', '—')}职业病危害风险类别。\n"
+            f"二、主要职业病危害因素：{hz_str}。\n"
+            f"三、检测与接触水平：{det_str}。\n"
+            f"四、{eq_desc}\n"
+            f"五、{proc_str}\n"
+            f"六、{mat_desc}\n"
+            f"以上数据为系统从企业材料中机械提取与判定，部分限值未列出的按GBZ 2.1—2019执行。")
 
 
 # ===== 通用章节 prompt (结构=标准角度, 数据=info动态) =====
