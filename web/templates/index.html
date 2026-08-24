@@ -185,7 +185,7 @@ function bindDrop() {
 async function addFiles(fileList) {
   for (const f of fileList) selFiles.push(f);
   renderFiles();
-  // 立即上传
+  // 上传(自动归类: 内容+文件名 → 12类)
   const fd = new FormData();
   selFiles.forEach(f => fd.append('files', f));
   const r = await fetch('/api/report/upload', {method:'POST', body:fd});
@@ -194,7 +194,23 @@ async function addFiles(fileList) {
     selFiles = [];
     renderFiles(d.detail, d.coverage);
     document.getElementById('genBtn').disabled = false;
+    // 用户零操作: 上传成功即自动触发生成 (不用再点"生成报告")
+    // 弹一次确认, 之后不再打断; 首次拖完自动跳过手动点生成
+    startGenerateAuto();
   }
+}
+// 自动生成: 上传后直接走 generate, 不打断用户
+async function startGenerateAuto() {
+  const btn = document.getElementById('genBtn');
+  if (!btn || btn.disabled) return;
+  try {
+    const r = await fetch('/api/report/generate', {method:'POST'});
+    const d = await r.json();
+    if (d.job_id) {
+      showProgress();
+      pollTask(d.job_id);
+    }
+  } catch (e) { /* 保持手动生成按钮兜底 */ }
 }
 function renderFiles(detail, coverage) {
   const box = document.getElementById('fileList');
