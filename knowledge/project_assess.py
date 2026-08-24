@@ -151,9 +151,16 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
 
 def industry_chain(conn, industry_code: str) -> dict | None:
     """行业链: 4位中类码 → 门类/大类/中类/小类 全层级 (10.2.3.1)
-    industry_code: '261' (中类码) — 注意 GB/T 4754 代码表门类/大类/中类/小类分列"""
+    industry_code: '261' (中类码) / 'C261' / 'C265合成材料制造'(含文字) — 提取纯代码"""
     if not industry_code:
         return None
+    # 提取纯代码: 'C265合成材料制造'→'265', '441电力'→'441', 'C261'→'261'
+    import re
+    m = re.search(r"(\d{3,4})", str(industry_code))
+    if m:
+        industry_code = m.group(1)
+    else:
+        industry_code = str(industry_code).strip()
     # 中类: 直接查 3 位码 (261)
     mid = conn.execute(
         "SELECT code, name FROM industry_class WHERE code=? AND level='中类' LIMIT 1",
