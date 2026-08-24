@@ -108,6 +108,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
       <button class="btn btn-primary" id="genBtn" onclick="generate()">⚡ 生成报告</button>
       <span style="font-size:12.5px;color:var(--text-muted);">上传后点此，自动完成识别、判定与全文生成</span>
     </div>
+    <div id="myReports" style="margin-top:14px;display:none;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px;">
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px;">📁 我生成的报告</div>
+      <div id="myReportsList" style="font-size:12.5px;color:var(--text-muted);max-height:200px;overflow:auto;"></div>
+    </div>
     <div class="progress" id="progress" style="display:none;">
       <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
       <span id="progressText">0%</span>
@@ -159,6 +163,8 @@ async function init() {
   who.textContent = PID ? '身份已就绪' : '—';
   // 初始渲染资料清单(12项, 未传)
   renderMaterialCheck({});
+  // 加载"我生成的报告"列表
+  loadMyReports();
   // admin 链接
   const adm = fetch('/admin', {method:'HEAD'}).then(r=>r.status);
   fetch('/api/admin/audit').then(r=>{ if(r.ok){ document.getElementById('adminDash').style.display='inline'; document.getElementById('adminLink').style.display='none'; }}).catch(()=>{});
@@ -286,6 +292,27 @@ function showUploadProgress(done, total) {
   el.style.display = 'block';
   el.querySelector('.bar').style.width = Math.round(done/total*100) + '%';
   el.querySelector('.txt').textContent = `上传中 ${done}/${total}`;
+}
+// 加载"我生成的报告"列表 (每次上传=新项目, 这里列出该身份所有报告)
+async function loadMyReports() {
+  try {
+    const r = await fetch('/api/reports');
+    const d = await r.json();
+    const box = document.getElementById('myReports');
+    const list = document.getElementById('myReportsList');
+    if (!d.ok || !d.reports || !d.reports.length) { box.style.display='none'; return; }
+    box.style.display = 'block';
+    list.innerHTML = d.reports.map(rep => {
+      const st = rep.status === 'ready' ? '<span style="color:var(--primary);">✅已生成</span>'
+                 : (rep.status === 'generating' ? '<span style="color:orange;">🔄生成中</span>' : '草稿');
+      const ind = rep.industry ? ` · ${rep.industry}` : '';
+      const nm = rep.name && rep.name !== '未命名报告' ? rep.name : '未命名报告';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+        <span>${nm}${ind} <span style="color:var(--text-muted);font-size:11px;">(生成${rep.gen_count}节)</span></span>
+        <span><a href="/report/${rep.id}" style="font-size:12px;color:var(--primary);margin-right:10px;">查看</a>
+        ${st}</span></div>`;
+    }).join('');
+  } catch(e) { document.getElementById('myReports').style.display = 'none'; }
 }
 // 自动生成: 上传后直接走 generate, 不打断用户
 async function startGenerateAuto() {
