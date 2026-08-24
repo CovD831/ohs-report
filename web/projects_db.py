@@ -65,11 +65,28 @@ def get_or_create_report(user: dict | None, name: str = "", industry: str = "") 
                      "WHERE owner_id=? ORDER BY created DESC LIMIT 1", (owner,)).fetchone()
     if r:
         conn.close()
-        return {"id": r["id"], "name": r["name"],
-                "data": json.loads(r["data"]), "status": r["status"],
-                "owner_id": r["owner_id"], "is_new": False}
+        return {"id": r[0], "name": r[1],
+                "data": json.loads(r[2]), "status": r[3],
+                "owner_id": r[4], "is_new": False}
     pid = uuid.uuid4().hex[:10]
     project_data = {"industry": industry}
+    conn.execute("INSERT INTO project (id, name, data, status, owner_id, created, updated) "
+                 "VALUES (?,?,?,?,?,?,?)",
+                 (pid, name or "未命名报告", json.dumps(project_data, ensure_ascii=False),
+                  "draft", owner, time.time(), time.time()))
+    conn.commit()
+    conn.close()
+    return {"id": pid, "name": name or "未命名报告", "data": project_data,
+            "status": "draft", "owner_id": owner, "is_new": True}
+
+
+def create_new_project(user: dict | None, name: str = "", industry: str = "") -> dict:
+    """每次上传自动新建项目 (不再复用旧项目; 不同报告=不同项目, 互不污染).
+    应用场景: 用户每次上传材料 = 新建一个报告项目, 避免长兴材料混进浦发项目. """
+    pid = uuid.uuid4().hex[:10]
+    owner = _owner_key(user)
+    project_data = {"industry": industry}
+    conn = _conn()
     conn.execute("INSERT INTO project (id, name, data, status, owner_id, created, updated) "
                  "VALUES (?,?,?,?,?,?,?)",
                  (pid, name or "未命名报告", json.dumps(project_data, ensure_ascii=False),

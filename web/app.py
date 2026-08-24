@@ -156,9 +156,17 @@ def _assert_owner(request: Request, pid: str) -> bool:
 
 @app.post("/api/report/upload", response_class=JSONResponse)
 async def api_report_upload(request: Request):
-    """一次上传多个文件 → 自动归类 → 存材料目录 → 返回分类结果"""
+    """一次上传多个文件 → 自动归类 → 存材料目录 → 返回分类结果
+    默认自动新建项目(每次上传=新报告, 不污染旧项目); 可用 ?pid= 指定上传到已有项目"""
     from web.uploads import classify_file, save_upload, project_dir
-    pid = _resolve_pid(request)
+    from web.projects_db import create_new_project
+    # 初始身份 (无则创建身份)
+    user = request.state.user if hasattr(request.state, "user") else None
+    # 指定 pid (编辑已有报告) → 用该 pid; 否则自动新建项目
+    pid = request.query_params.get("pid")
+    if not pid:
+        p = create_new_project(user, "未命名报告", "")
+        pid = p["id"]
     form = await request.form()
     files = form.getlist("files")
     if not files:
@@ -201,7 +209,8 @@ async def api_report_upload(request: Request):
 def api_report_generate(request: Request):
     """一键生成: 导入已传材料 → 识别/判定/分级 → 后台生成全部章节"""
     from web.report_struct import count_units
-    pid = _resolve_pid(request)
+    # 优先用前端上传记录的 pid (修复"上传长兴却生成浦发"); 否则用身份最新
+    pid = request.query_params.get("pid") or _resolve_pid(request)
     p = get_project(pid)
     if not p:
         return JSONResponse({"error": "not found"}, status_code=404)
@@ -269,6 +278,25 @@ def api_report_get(request: Request):
         status = p["status"] if p["status"] == "generating" else "draft"
     return {"pid": pid, "report": {"name": p["name"], "status": status,
             "data": d}, "materials": mats}
+
+
+@app.get("/api/reports", response_class=JSONResponse)
+def api_reports_list(request: Request):
+    """当前身份的所有报告列表 (供'已生成报告'查看/切换, 每次上传=新项目)"""
+    from web.projects_db import list_reports
+    user = request.state.user if hasattr(request.state, "user") else None
+    reps = list_reports(user) or []
+    out = []
+    for r in reps:
+        d = r.get("data") or {}
+        ss = d.get("section_states", {})
+        gen = len([k for k, v in ss.items() if v.get("state") == "generated"])
+        out.append({
+            "id": r["id"], "name": r.get("name", "未命名报告"),
+            "status": "ready" if gen > 0 else (r.get("status") or "draft"),
+            "industry": str(d.get("industry", "")), "gen_count": gen,
+            "updated": r.get("updated"), "materials": len((r.get("_mats") or []))})
+    return {"ok": True, "reports": out}
 
 
 @app.get("/login", response_class=HTMLResponse)
