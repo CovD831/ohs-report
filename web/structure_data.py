@@ -14,39 +14,17 @@ def _is_physical(name: str) -> bool:
             "射频", "WBGT", "低气压", "高气压", "局部振动"]
     return any(p in n for p in phys)
 
-# ============ 结构化字段 schema (字段名 → (描述, 类型)) ============
+# ============ 结构化字段 schema (复用 project_schema 的分组定义, 不再重复) ============
+# get_chapter_info 需要 (desc, typ); 从 project_schema.PROJECT_SCHEMA(typ,desc,source,req,subs) 派生
+from web.project_schema import PROJECT_SCHEMA as _PROJ_SCHEMA, FIELD_GROUPS, field_group, group_report_loc  # noqa: E402
+
 PROJECT_INFO_SCHEMA: dict[str, tuple[str, str]] = {
-    # 基本 (data 里现有 + C1/C2 概况)
-    "name": ("项目名称", "str"),
-    "industry": ("所属行业", "str"),
-    "risk_level": ("职业病危害风险类别", "str"),
-    "investment": ("投资总额", "str"),
-    "capacity": ("建设规模/产能", "str"),
-    "area": ("占地面积", "str"),
-    "nature": ("项目性质", "str"),
-    "location": ("建设地点", "str"),
-    # 工程
-    "equipment": ("主要设备清单", "list"),
-    "equipment_detail": ("设备明细(名称/规格/数量)", "list"),
-    "process_text": ("生产工艺流程", "str"),
-    "buildings": ("建构筑物(名称/占地/建面/层数)", "list"),
-    "facilities": ("防护设施配置(岗位/设施/数量)", "list"),
-    "products": ("产品及产量", "list"),
-    "shifts": ("班制定员(工种/各班组/合计)", "list"),
-    "public_works": ("公辅工程", "list"),
-    # 物料/劳动
-    "materials": ("主要原辅材料", "list"),
-    "staffing": ("岗位定员", "list"),
-    # 危害/检测
-    "hazards": ("主要职业病危害因素", "list"),
-    "detections": ("检测数据(含限值)", "list"),
-    # 防护
-    "protection": ("拟采取的职业病防护措施", "str"),
-    "ppe": ("个人防护用品", "list"),
-    "emergency": ("应急救援措施", "str"),
-    # 类比
-    "analogous_test": ("类比检测数据", "list"),
+    # 派生 (desc, typ)
+    f: (_defn[1], _defn[0]) for f, _defn in _PROJ_SCHEMA.items()
 }
+# 补充 hazard/risk_level 等评估字段 (不进 PROJECT_SCHEMA, 由 assess 输出)
+PROJECT_INFO_SCHEMA.setdefault("hazards", ("主要职业病危害因素", "list"))
+PROJECT_INFO_SCHEMA.setdefault("risk_level", ("职业病危害风险类别", "str"))
 
 # ============ 各章节取哪些数据字段 (适配 11 章平铺, 映射到 report_struct 的 key) ============
 # 章级 → 字段; 二级小节 → (章字段 + 该小节侧重的字段)
