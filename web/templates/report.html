@@ -288,7 +288,8 @@ async function loadSupportTables(sec) {
 function renderLLM(sec, st) {
   const title = (st.title || KEYMAP[sec]?.title || sec).replace(/^#+\s*/,'');
   // 一级/二级/三级章节: AI 生成文字需人工审核 (判定/结论段标黄提示)
-  const needsReview = ['6','2','10.4','11','3'].some(p => sec===p || sec.startsWith(p+'.'));
+  // 新11章判定性章节: 5危害程度/6防护评价/7应急/8PPE/9管理/10建议/11结论
+  const needsReview = ['5','6','7','8','9','10','11'].some(p => sec===p || sec.startsWith(p+'.'));
   let h = `<div class="section-title">${title}</div>`;
   if (needsReview) {
     h += `<div class="review-hint">⚠ 本节为 AI 辅助生成，判定性结论需人工审核复核</div>`;

@@ -23,7 +23,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from jinja2 import Environment, FileSystemLoader
 
 from knowledge.evidence_engine import evidence_for_section  # noqa: E402
-from knowledge.report_skeleton import SECTION_SKELETON, sub_sections  # noqa: E402
+from web.report_struct import CHAPTERS, SUBS, SUBS3, SUBS4  # noqa: E402
 from knowledge.project_assess import assess_project  # noqa: E402
 from knowledge.oel import connect  # noqa: E402
 from web.projects_db import get_project, create_project, update_project, seed_demo, get_or_create_report, update_section_state
@@ -400,10 +400,15 @@ def project_page(request: Request, pid: str):
     if not p:
         return HTMLResponse("项目不存在", status_code=404)
     sections = []
-    for sec, sk in SECTION_SKELETON.items():
-        sections.append({"id": sec, "title": sk["title"],
-                         "tables": len(sk["tables"]), "paragraphs": len(sk["paragraphs"]),
-                         "subs": [{"id": s, "title": t} for s, t in sub_sections(sec)]})
+    from web.report_struct import CHAPTERS, SUBS, SUBS3
+    for sec in CHAPTERS:
+        subs = [{"id": sn, "title": st} for sn, st in SUBS.get(sec, [])]
+        for sn, st in SUBS.get(sec, []):
+            for sub3, (parent, t3) in SUBS3.items():
+                if parent == sn:
+                    subs.append({"id": sub3, "title": t3})
+        sections.append({"id": sec, "title": CHAPTERS[sec],
+                         "tables": 0, "paragraphs": 0, "subs": subs})
     return env.get_template("project.html").render(
         project=p, sections=sections, pid=pid)
 
@@ -416,8 +421,9 @@ def report_page(request: Request, pid: str):
     p = get_project(pid)
     if not p:
         return HTMLResponse("报告不存在", status_code=404)
-    # 注入报告整体结构 (1-12章 + 二级 + 三级 + 固定四级), 供前端目录动态渲染
-    from web.report_struct import CHAPTERS, SUBS, SUBS3, SUBS4, _extract_product_units
+    # 注入报告整体结构 (11章 + 二级 + 三级 + 固定四级 + 数据三级/四级), 供前端目录动态渲染
+    from web.report_struct import CHAPTERS, SUBS, SUBS3, SUBS4, DATA3, _extract_product_units
+    prod = _extract_product_units(p["data"] or {})
     tree = []
     for ch in CHAPTERS:
         node = {"key": ch, "title": CHAPTERS[ch], "level": 1, "children": []}
@@ -429,9 +435,14 @@ def report_page(request: Request, pid: str):
                     for num, t4 in SUBS4.get(sub3, []):
                         s3node["children"].append({"key": num, "title": f"{num} {t4}", "level": 4, "children": []})
                     snode["children"].append(s3node)
+            # 数据三级 (产品/工段级, 如 3.5.x 产品工艺): 挂在对应二级下
+            for sub3_key, cfg in DATA3.items():
+                if sub3_key.split(".")[0] == ch and sub3_key == sn:
+                    for num, t4 in prod:
+                        if num.startswith(sub3_key + "."):
+                            snode["children"].append({"key": num, "title": f"{num} {t4}", "level": 3, "children": []})
             node["children"].append(snode)
         tree.append(node)
-    prod = _extract_product_units(p["data"] or {})
     return env.get_template("report.html").render(pid=pid, struct=tree, prod=prod)
 
 
@@ -1083,8 +1094,8 @@ def api_generate_all(pid: str, request: Request):
     user = request.state.user if hasattr(request.state, "user") else {"username": "-"}
     if not get_project(pid):
         return JSONResponse({"error": "not found"}, status_code=404)
-    from knowledge.report_skeleton import SECTION_SKELETON, SUB_SECTIONS
-    total = len(SECTION_SKELETON) + sum(len(v) for v in SUB_SECTIONS.values())
+    from web.report_struct import all_units
+    total = len(all_units())
     jid = _tasks.create_job(user["username"], pid, "generate_all", total)
 
     def _worker():
@@ -1126,11 +1137,11 @@ def sub_section_content(pid: str, sec: str, sub: str, request: Request):
         return JSONResponse({"error": "无权访问"}, status_code=403)
 
     """二级小节内容 (1.1/2.1/3.1...)"""
-    from knowledge.report_skeleton import sub_sections
+    from web.report_struct import SUBS
     if not get_project(pid):
         return JSONResponse({"error": "not found"}, status_code=404)
     result = _get_assess(pid)
-    subs = sub_sections(sec)
+    subs = SUBS.get(sec, [])
     if not any(s == sub for s, _ in subs):
         return JSONResponse({"error": "unknown sub-section"}, status_code=404)
     from web.subsection_gen import build_subsection
@@ -1165,21 +1176,20 @@ def section_content(pid: str, sec: str, request: Request):
     if not _assert_owner(request, pid):
         return JSONResponse({"error": "无权访问"}, status_code=403)
 
-    """章节内容 + 依据 (报告1-9编号; 数据槽填充)"""
+    """章节内容 + 依据 (报告11章编号; 数据槽填充)"""
     if not get_project(pid):
         return JSONResponse({"error": "not found"}, status_code=404)
     result = _get_assess(pid)
-    sk = SECTION_SKELETON.get(sec)
-    if not sk:
-        return JSONResponse({"error": "unknown section"}, status_code=404)
+    from web.report_struct import CHAPTERS
+    sk = {"title": CHAPTERS.get(sec, sec), "paragraphs": []}
     from web.section_filler import fill_section
     from web.paragraph_gen import fill_section_paragraphs
     from web.advice_gen import fill_10211
-    # 证据映射: 2→10.2.5.3+.4, 5→10.2.11, 其余按sec
-    ev_map = {"2": ["10.2.5.3", "10.2.5.4"], "5": ["10.2.11"],
-              "6": ["10.2.12"], "7": ["10.2.1"], "8": ["10.2.3"],
-              "9": ["10.2.4"], "1": ["10.2.3"], "3": ["10.2.6", "10.2.7"],
-              "4": ["10.2.9"]}
+    # 证据映射 (新11章 → 标准10.2.x 条款)
+    ev_map = {"5": ["10.2.5.3", "10.2.5.4"], "10": ["10.2.11"],
+              "11": ["10.2.12"], "1": ["10.2.1"], "2": ["10.2.2"],
+              "3": ["10.2.3"], "4": ["10.2.4"], "6": ["10.2.6", "10.2.7"],
+              "7": ["10.2.7"], "8": ["10.2.8"], "9": ["10.2.9"]}
     ev_secs = ev_map.get(sec, [sec])
     paragraphs = fill_section_paragraphs(connect(), sec, result, sk["paragraphs"])
     tables = fill_section(connect(), sec, result)
@@ -1196,9 +1206,5 @@ def _safe_vars(sec: str) -> dict:
 
 
 def _extract_vars(sec: str) -> list[str]:
-    sk = SECTION_SKELETON.get(sec, {})
-    import re
-    vars_set = set()
-    for p in sk.get("paragraphs", []):
-        vars_set |= set(re.findall(r"\{(\w+)\}", p))
-    return list(vars_set)
+    """新11章结构: 段落模板已由 LLM 生成, 占位变量留空"""
+    return []

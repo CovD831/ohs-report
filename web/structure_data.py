@@ -48,49 +48,95 @@ PROJECT_INFO_SCHEMA: dict[str, tuple[str, str]] = {
     "analogous_test": ("类比检测数据", "list"),
 }
 
-# ============ 各章节取哪些数据字段 (适配 1-12 章, 映射到 report_struct 的 key) ============
+# ============ 各章节取哪些数据字段 (适配 11 章平铺, 映射到 report_struct 的 key) ============
 # 章级 → 字段; 二级小节 → (章字段 + 该小节侧重的字段)
 CHAPTER_INFO_MAPPING: dict[str, list[str]] = {
-    # --- 正文 1-6 章 ---
-    "1": ["name", "industry", "nature", "investment", "capacity", "area", "location",
-          "risk_level", "equipment", "staffing", "buildings", "facilities", "products",
-          "equipment_detail", "shifts", "public_works"],
-    "2": ["hazards", "detections", "materials", "process_text", "equipment", "staffing"],
-    "3": ["protection", "ppe", "emergency", "hazards"],
-    "4": ["equipment", "materials", "staffing", "protection", "area", "location"],
-    "5": ["protection", "ppe", "emergency", "hazards"],
-    "6": ["name", "industry", "risk_level", "nature", "capacity"],
-    # --- 附录 7-12 章 ---
-    "7": ["name", "industry", "risk_level", "nature"],
-    "8": ["equipment", "process_text", "materials", "staffing", "industry", "name",
-          "nature", "capacity", "area", "buildings", "public_works", "products", "shifts"],
-    "9": ["analogous_test", "industry", "ppe", "emergency"],
-    "10": ["hazards", "detections", "materials", "process_text", "equipment", "staffing"],
-    "11": ["protection", "ppe", "emergency"],
-    "12": ["equipment", "materials", "staffing", "protection", "area", "location"],
+    # 1 总论
+    "1": ["name", "industry", "nature", "risk_level", "investment", "capacity", "area",
+          "location", "equipment", "staffing", "materials", "hazards"],
+    # 2 现有企业概况
+    "2": ["name", "industry", "nature", "risk_level", "staffing", "protection", "ppe",
+          "emergency", "hazards", "products", "equipment"],
+    # 3 建设项目工程分析
+    "3": ["name", "industry", "nature", "investment", "capacity", "area", "location",
+          "equipment", "equipment_detail", "process_text", "materials", "staffing",
+          "buildings", "facilities", "products", "shifts", "public_works", "hazards"],
+    # 4 类比企业调查分析
+    "4": ["analogous_test", "industry", "hazards", "detections", "ppe", "emergency",
+          "protection", "staffing", "equipment", "materials"],
+    # 5 危害因素及危害程度分析
+    "5": ["hazards", "detections", "materials", "process_text", "equipment", "staffing",
+          "risk_level"],
+    # 6 职业病危害防护设施分析与评价
+    "6": ["protection", "facilities", "hazards", "detections", "equipment", "process_text"],
+    # 7 应急救援措施的分析与评价
+    "7": ["emergency", "hazards", "protection", "ppe"],
+    # 8 个人使用的职业病防护用品分析与评价
+    "8": ["ppe", "hazards", "detections", "staffing"],
+    # 9 职业卫生管理的分析与评价
+    "9": ["staffing", "protection", "ppe", "emergency", "hazards", "investment"],
+    # 10 职业病防治措施的补充建议
+    "10": ["protection", "ppe", "emergency", "hazards", "detections", "staffing",
+           "investment"],
+    # 11 结论与建议
+    "11": ["name", "industry", "risk_level", "nature", "capacity", "hazards", "detections"],
 }
 
 # 二级小节 → 侧重字段 (在章字段基础上, 该小节再强调这些)
 SUB_EMPHASIS: dict[str, list[str]] = {
-    "1.1": ["name", "industry", "risk_level"],
-    "1.2": ["equipment", "process_text", "materials", "staffing"],
-    "1.3": [],
-    "2.1": ["hazards", "materials", "process_text", "equipment"],
-    "2.2": ["hazards", "detections"],
-    "3.1": ["protection"],
-    "3.2": ["ppe"],
-    "3.3": ["emergency"],
-    "4.1": ["equipment"],
-    "4.4": ["staffing"],
-    "8.1": ["equipment", "staffing", "name", "industry"],
-    "8.4": ["process_text", "equipment"],
-    "8.5": ["materials"],
-    "9.4": ["analogous_test"],
-    "10.1": ["hazards", "materials", "process_text"],
-    "10.2": ["hazards"],
-    "10.3": ["detections"],
-    "11.1": ["protection"],
-    "11.2": ["ppe"],
+    # 1 总论
+    "1.1": ["name", "industry", "nature", "investment"],
+    "1.3": ["name", "industry", "risk_level"],
+    "1.6": ["name", "hazards"],
+    # 2 现有企业概况
+    "2.1": ["name", "industry", "nature", "risk_level", "staffing", "products"],
+    "2.2": ["staffing", "hazards"],
+    "2.3": ["protection", "facilities"],
+    "2.4": ["ppe"],
+    "2.5": ["staffing"],
+    # 3 工程分析
+    "3.1": ["name", "industry", "nature", "investment", "capacity", "area", "location",
+            "equipment", "staffing", "buildings", "public_works"],
+    "3.2": ["location", "area"],
+    "3.3": ["equipment", "buildings", "area"],
+    "3.4": ["materials", "products"],
+    "3.5": ["process_text", "equipment", "products"],
+    "3.6": ["equipment", "equipment_detail"],
+    "3.7": ["buildings", "public_works"],
+    "3.8": ["staffing"],
+    # 4 类比调查
+    "4.1": ["analogous_test", "industry"],
+    "4.2": ["analogous_test", "hazards", "protection", "ppe", "emergency"],
+    "4.3": ["staffing"],
+    "4.4": ["analogous_test", "detections"],
+    "4.5": ["analogous_test"],
+    "4.6": ["analogous_test", "hazards", "detections"],
+    # 5 危害分析
+    "5.1": ["hazards", "materials", "process_text", "equipment"],
+    "5.2": ["hazards"],
+    "5.3": ["detections", "hazards"],
+    "5.4": ["hazards", "detections"],
+    # 6 防护设施
+    "6.1": ["protection", "facilities", "hazards"],
+    "6.2": ["protection", "detections"],
+    # 7 应急救援
+    "7.1": ["emergency", "hazards"],
+    "7.2": ["emergency", "hazards"],
+    # 8 PPE
+    "8.1": ["ppe", "hazards"],
+    "8.2": ["ppe", "hazards", "detections"],
+    # 9 职业卫生管理
+    "9.1": ["staffing", "protection", "hazards"],
+    "9.2": ["investment", "protection", "ppe", "emergency"],
+    # 10 补充建议
+    "10.2": ["hazards", "detections", "protection"],
+    "10.3": ["staffing"],
+    "10.4": ["hazards"],
+    "10.5": ["staffing", "hazards"],
+    "10.6": ["staffing"],
+    "10.7": ["emergency", "hazards"],
+    # 11 结论
+    "11.1": ["name", "industry", "risk_level", "hazards", "detections"],
 }
 
 

@@ -21,7 +21,7 @@ from docx.shared import Cm, Pt  # noqa: E402
 
 from knowledge.project_assess import assess_project  # noqa: E402
 from knowledge.oel import connect  # noqa: E402
-from knowledge.report_skeleton import SECTION_SKELETON  # noqa: E402
+from web.report_struct import CHAPTERS, SUBS, SUBS3, SUBS4  # noqa: E402
 from web.paragraph_gen import gen_paragraphs  # noqa: E402
 from web.section_filler import fill_section  # noqa: E402
 from web.advice_gen import fill_10211  # noqa: E402
@@ -29,29 +29,41 @@ from web.projects_db import get_project  # noqa: E402
 
 # 二级小节 → 内嵌哪些表 (复用 fill_section 各章表格, 按小节筛)
 # 值 = (该小节所属的fill_section章, 要加的表格名列表; 空=全加该章)
+# 2026备案稿11章结构: 表随正文走, 工程分析(3)/类比(4)/危害(5)/防护(6)/应急(7)/PPE(8)/管理(9)
 _SUB_TABLE_MAP = {
-    "1.1": ("1", ["主要设备清单", "项目概况表"]),
-    "1.2": ("1", ["主要设备清单", "劳动定员表", "建构筑物表", "产品产量表", "设备明细表", "班制定员表"]),
-    "2.1": ("2", ["危害因素识别表", "工种危害表"]),
-    "2.2": ("2", ["检测结果表", "判定表", "接触限值表", "关键控制点表"]),
-    "3.1": ("3", ["防尘防毒设施检查表", "防噪声振动检查表", "防暑防寒检查表", "防护设施检查表"]),
-    "3.2": ("3", ["PPE配备表"]),
-    "3.3": ("3", ["应急救援检查表", "设施配置表"]),
-    "6.1": ("6", ["结论要素表"]),
-    "7.2": ("7", ["评价依据表"]),
-    "7.3": ("7", ["评价依据表"]),
-    "8.4": ("8", ["原辅材料表"]),
-    "9.4": ("9", ["类比可比性表"]),
-    "10.2": ("10", ["健康影响表", "接触限值表"]),
-    "10.3": ("10", ["接触限值表"]),
-    "11.1": ("3", ["防尘防毒设施检查表", "防噪声振动检查表"]),
-    "12.4": ("4", ["管理制度检查表"]),
-    "4.1": ("4", ["选址检查表", "总体布局检查表"]),
-    "4.3": ("4", ["建筑卫生学检查表", "照度标准表", "噪声分级表"]),
-    "4.4": ("4", ["辅助用室检查表", "辅助用室设置表"]),
-    "4.5": ("4", ["管理制度检查表", "职业健康监护表"]),
-    "4.6": ("4", ["管理制度检查表"]),
-    "5.8.2.1": ("3", ["防尘防毒设施检查表"]),
+    "1.3": ("1", ["评价依据表"]),
+    "2.1": ("2", ["产品产量表", "建构筑物表"]),
+    "2.3": ("6", ["防尘防毒设施检查表", "防噪声振动检查表", "防暑防寒检查表", "防护设施检查表"]),
+    "2.4": ("8", ["PPE配备表"]),
+    "2.5": ("3", ["辅助用室设置表"]),
+    "3.1": ("3", ["主要设备清单", "劳动定员表", "建构筑物表", "产品产量表", "设备明细表", "班制定员表", "项目概况表"]),
+    "3.2": ("3", ["选址检查表"]),
+    "3.3": ("3", ["总体布局检查表"]),
+    "3.4": ("3", ["原辅材料表", "产品产量表"]),
+    "3.5": ("3", ["主要设备清单"]),
+    "3.6": ("3", ["设备明细表", "主要设备清单"]),
+    "3.7": ("3", ["建筑卫生学检查表", "照度标准表", "噪声分级表"]),
+    "3.8": ("3", ["辅助用室检查表", "辅助用室设置表"]),
+    "4.1": ("4", ["类比可比性表"]),
+    "4.2": ("4", ["类比可比性表"]),
+    "4.4": ("4", ["检测结果表(化学毒物)", "检测结果表(粉尘)", "检测结果表(噪声)", "检测结果表(高温)"]),
+    "4.5": ("4", ["职业健康监护表"]),
+    "4.6": ("4", ["类比可比性表"]),
+    "5.1": ("5", ["危害因素识别表", "工种危害表"]),
+    "5.2": ("5", ["健康影响表"]),
+    "5.3": ("5", ["接触限值表"]),
+    "5.4": ("5", ["判定表", "检测结果表(化学毒物)", "检测结果表(粉尘)", "检测结果表(噪声)", "检测结果表(高温)", "关键控制点表"]),
+    "6.1": ("6", ["防尘防毒设施检查表", "防噪声振动检查表", "防暑防寒检查表", "防护设施检查表", "设施配置表"]),
+    "6.2": ("6", ["防尘防毒设施检查表", "防噪声振动检查表"]),
+    "7.1": ("7", ["应急救援检查表"]),
+    "7.2": ("7", ["应急救援检查表"]),
+    "8.1": ("8", ["PPE配备表"]),
+    "8.2": ("8", ["PPE配备表"]),
+    "9.1": ("9", ["管理制度检查表"]),
+    "9.2": ("9", ["管理制度检查表"]),
+    "10.2": ("10", ["问题与建议表"]),
+    "10.4": ("10", ["管理制度检查表"]),
+    "11.1": ("11", ["结论要素表"]),
 }
 
 
@@ -118,13 +130,16 @@ def _add_field(doc, instr: str):
 
 def add_toc(doc: Document):
     """目录: Word TOC 域 (自动目录, 1-3级带页码, 打开后更新域生成)"""
-    from knowledge.report_skeleton import sub_sections
+    from web.report_struct import CHAPTERS, SUBS, SUBS3
     _para(doc, "目  录", HEI, 16, True, WD_ALIGN_PARAGRAPH.CENTER)
     # 两级标题手动列出 (打开可见) + TOC域 (F9后带页码)
-    for sec, sk in SECTION_SKELETON.items():
-        _para(doc, f"{sec}  {sk['title']}", FANGSONG, 13, True)
-        for sub, st in sub_sections(sec):
-            _para(doc, f"{sub}  {st}", FANGSONG, 12, False, indent=0.74)
+    for sec, title in CHAPTERS.items():
+        _para(doc, f"{sec}  {title}", FANGSONG, 13, True)
+        for sn, st in SUBS.get(sec, []):
+            _para(doc, f"{sn}  {st}", FANGSONG, 12, False, indent=0.74)
+            for sub3, (parent, t3) in SUBS3.items():
+                if parent == sn:
+                    _para(doc, f"{sub3}  {t3}", FANGSONG, 11, False, indent=1.5)
     _para(doc, "（自动目录：文档中 引用→插入目录 或 全选按F9，页码自动生成）", FANGSONG, 10.5,
           False, WD_ALIGN_PARAGRAPH.CENTER)
     doc.add_page_break()
@@ -194,11 +209,10 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
     # 目录
     add_toc(doc)
 
-    # 各章节 (按 report_struct 新结构: 1-12章 + 二级 + 三级 + 四级)
-    from web.report_struct import CHAPTERS, SUBS, SUBS3, SUBS4, _extract_product_units
-    from knowledge.report_skeleton import SUB_SECTIONS
+    # 各章节 (按 report_struct 新结构: 11章 + 二级 + 三级 + 数据四级)
+    from web.report_struct import _extract_product_units
     ss = section_states or {}
-    # 数据四级 (产品/工段级) 从项目数据提取
+    # 数据三级(3.5.x产品工艺)/数据四级(5.1.1.x产品) 从项目数据提取
     prod4 = _extract_product_units(project or {})
     prod4_by_parent = {}
     for k, t in prod4:
@@ -252,15 +266,24 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                             line = line.strip()
                             if line and not line.startswith("#"):
                                 _para(doc, line, FANGSONG, 14, indent=0.74)
-            # 数据四级 (产品/工段级): 挂在 8.4.1 / 10.1.1 下的 sub3
-            for sub3_name, items in prod4_by_parent.items():
-                # sub3_name 形如 8.4.1, 找对应 SUBS3 的 key
-                for sub3, (parent, t3) in SUBS3.items():
-                    if sub3 != sub3_name:
-                        continue
-                    _heading(doc, f"{sub3}  {t3}", 3)
-                    for num, t4 in items:
-                        _heading(doc, f"{num}  {t4}", 4)
+                # 数据四级 (产品/工段级): 挂在 5.1.1 三级下
+                for num, t4 in prod4_by_parent.get(sub3, []):
+                    _heading(doc, f"{num}  {t4}", 4)
+                    m = ss.get(num, {})
+                    if m.get("state") == "generated":
+                        for line in (m.get("text", "") or "").split("\n"):
+                            line = line.strip()
+                            if line and not line.startswith("#"):
+                                _para(doc, line, FANGSONG, 14, indent=0.74)
+            # 数据三级 (产品/工段级): 挂在 3.5 二级下 (3.5.1 产品工艺...3.5.n 生产工艺评价)
+            for num, t4 in prod4_by_parent.get(sn, []):
+                _heading(doc, f"{num}  {t4}", 3)
+                m = ss.get(num, {})
+                if m.get("state") == "generated":
+                    for line in (m.get("text", "") or "").split("\n"):
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            _para(doc, line, FANGSONG, 14, indent=0.74)
     conn.close()
     doc.save(str(out_path))
 
