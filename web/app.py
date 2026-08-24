@@ -599,6 +599,7 @@ def import_materials_from_dir(pid: str) -> dict:
     eq, dets = [], []
     proc = ""
     mats, staffs, ppe = [], [], []
+    health_checks = []  # 职业健康检查(现状/体检)
     eq_detail, shifts = [], []
     seen_mat, seen_st, seen_eq, seen_det = set(), set(), set(), set()
     prot, emergency = "", ""
@@ -710,6 +711,33 @@ def import_materials_from_dir(pid: str) -> dict:
                     for p in rp["products"]:
                         if p not in products and p not in (pr.get("name") for pr in products):
                             products.append({"name": p})
+                # 额外字段合并: 定员/班制/检测/建构筑物/防护设施/PPE/体检 (从复合报告提取)
+                if rp.get("staffing"):
+                    for s in rp["staffing"]:
+                        if s.get("post") not in [x.get("post") for x in staffs]:
+                            staffs.append(s)
+                if rp.get("shifts"):
+                    for s in rp["shifts"]:
+                        if s not in shifts:
+                            shifts.append(s)
+                if rp.get("detections"):
+                    for dt in rp["detections"]:
+                        if dt.get("factor") and dt.get("factor") not in [x.get("factor") for x in dets if x.get("factor")]:
+                            dets.append({"factor": dt.get("factor"), "ctwa": dt.get("result", "")})
+                if rp.get("buildings"):
+                    for b in rp["buildings"]:
+                        if b.get("name") and b.get("name") not in [x.get("name") for x in buildings]:
+                            buildings.append(b)
+                if rp.get("facilities"):
+                    for fa in rp["facilities"]:
+                        if fa.get("facility") not in [x.get("facility") for x in facilities]:
+                            facilities.append(fa)
+                if rp.get("ppe"):
+                    for p in rp["ppe"]:
+                        if p.get("item") not in [x.get("item") for x in ppe]:
+                            ppe.append(p)
+                if rp.get("health_check") and not health_checks:
+                    health_checks = rp["health_check"]
             except Exception:
                 pass
         try:
@@ -869,7 +897,8 @@ def import_materials_from_dir(pid: str) -> dict:
             "products": products, "public_works": public_works,
             "investment": investment, "area": area, "capacity": capacity, "nature": nature,
             "location": location,
-            "equipment_detail": eq_detail, "shifts": shifts}
+            "equipment_detail": eq_detail, "shifts": shifts,
+            "health_check": health_checks}
 
 
 @app.get("/api/projects/{pid}/export", response_class=JSONResponse)

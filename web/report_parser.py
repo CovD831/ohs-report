@@ -232,4 +232,81 @@ def parse_report_file(path) -> dict:
             break
     out["products"] = prods[:20]
 
+    # ===== 额外字段: 定员/班制/检测/建构筑物/防护设施/PPE/体检 (现状报告表格) =====
+    # 这些表格在 现状评价报告 docx 里 (定员表/检测表/建构筑物表/防护/PPE/体检)
+    staffing, shifts = [], []
+    buildings, facilities = [], []
+    detections, health_check, ppe = [], [], []
+    protection = out.get("protection", "")
+    for tb in tables:
+        if not tb:
+            continue
+        head0 = " ".join(str(c).replace("\n", "").strip() for c in tb[0])
+        flat = " | ".join(str(c).replace("\n", " ") for r in tb for c in r)
+        # 定员表 (部门|岗位|总人数|班制)
+        if "岗位" in head0 and ("总人数" in flat or "人数" in flat):
+            for row in tb[1:]:
+                cells = [str(c).replace("\n", " ").strip() for c in row]
+                if len(cells) >= 3 and cells[1] and cells[2].isdigit():
+                    nh = {"post": cells[1], "count": cells[2], "dept": cells[0]}
+                    if nh["post"] not in [s.get("post") for s in staffing]:
+                        staffing.append(nh)
+        # 班制 (工作班制列)
+        if "工作班制" in flat:
+            for row in tb[1:]:
+                cells = [str(c).replace("\n", " ").strip() for c in row]
+                if len(cells) >= 5 and any("班" in c for c in cells):
+                    shifts.append({"system": cells[4] if len(cells) > 4 else "", "post": cells[1] if len(cells) > 1 else ""})
+        # 检测表 (采样车间|采样点|粉尘/毒物|检测结果)
+        if ("采样" in head0 or "检测结果" in flat) and "mg" in flat:
+            for row in tb[1:]:
+                cells = [str(c).replace("\n", " ").strip() for c in row]
+                # 跳过表头/空行
+                if not cells or any(c in ("采样点", "接触时间", "检测结果", "检测项目", "采样车间/岗位") for c in cells):
+                    continue
+                # 取 采样点/检测项目/结果 列(跳过表头词)
+                vals = [c for c in cells if c and c not in ("采样点", "采样车间/岗位", "接触时间(h/d)", "接触时间")]
+                if len(vals) >= 2:
+                    detections.append({"factory": vals[0], "point": vals[0], "factor": vals[1],
+                                       "result": vals[2] if len(vals) > 2 else ""})
+        # 建构筑物表 (建筑物名称|占地|建面|层数)
+        if "建构筑" in flat or ("建筑面积" in flat and "占地" in flat):
+            for row in tb[1:]:
+                cells = [str(c).replace("\n", " ").strip() for c in row]
+                if len(cells) >= 2 and cells[0] and cells[0] != "建构筑物名称":
+                    buildings.append({"name": cells[0], "area": cells[3] if len(cells) > 3 else "",
+                                      "floor_area": cells[4] if len(cells) > 4 else ""})
+        # 防护设施 (岗位|防护设施|数量)
+        if "防护" in head0 or "设施" in flat and "数量" in flat:
+            for row in tb[1:]:
+                cells = [str(c).replace("\n", " ").strip() for c in row]
+                if len(cells) >= 3 and cells[1]:
+                    facilities.append({"post": cells[0], "facility": cells[1], "count": cells[2]})
+        # PPE (岗位|防护用品|周期)
+        if "防护用品" in flat or "个人防护" in flat:
+            for row in tb[1:]:
+                cells = [str(c).replace("\n", " ").strip() for c in row]
+                if len(cells) >= 2 and cells[1]:
+                    ppe.append({"item": cells[1], "post": cells[0]})
+        # 体检表 (岗位|体检项目|周期)
+        if "体检" in flat or "健康检查" in flat:
+            for row in tb[1:]:
+                cells = [str(c).replace("\n", " ").strip() for c in row]
+                if len(cells) >= 2 and cells[1]:
+                    health_check.append({"factor": cells[0], "category": cells[1]})
+    if staffing:
+        out["staffing"] = staffing[:50]
+    if shifts:
+        out["shifts"] = shifts[:30]
+    if detections:
+        out["detections"] = detections[:50]
+    if buildings:
+        out["buildings"] = buildings[:50]
+    if facilities:
+        out["facilities"] = facilities[:50]
+    if ppe:
+        out["ppe"] = ppe[:50]
+    if health_check:
+        out["health_check"] = health_check[:50]
+
     return out
