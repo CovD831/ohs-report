@@ -200,11 +200,17 @@ def _extract_product_units(proj_data: dict) -> list[tuple]:
             items.append(name)
             seen.add(name)
     # 2) 从设备名提取产品/工段 (设备名常含产品线, 如'氯化钙生产线')
-    if len(items) < 4:
+    #    注意: 排除 仓库/车间/机房/办公/辅助 等非生产工段
+    _NON_PRODUCT = ("仓库", "车间", "机房", "办公室", "化验室", "实验室", "配电", "辅助",
+                    "预处理", "公辅", "污水处理", "废气", "废水", "储运", "包装", "公用")
+    if len(items) < 8:
         eqs = proj_data.get("equipment", []) or []
         for e in eqs:
             name = str(e).split("|")[0].strip()
-            m = re.match(r"^(.{2,20}?)(?:生产线|装置|系统|车间|单元|机组)", name)
+            # 跳过明显的非生产设备 (仓库/车间等不含产品特征)
+            if any(np in name for np in _NON_PRODUCT):
+                continue
+            m = re.match(r"^(.{2,20}?)(?:生产线|装置|系统|工段|机组)", name)
             if m:
                 prod = m.group(1).strip()
                 # 排除与已有产品名包含重复 (如已有'液体氯化钙', 设备名'氯化钙生产线'不再加)

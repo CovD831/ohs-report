@@ -965,6 +965,10 @@ _tasks.init_tasks()
 def _gen_one(pid: str, sec: str, sub: str | None, title: str | None = None, cache: dict | None = None) -> str:
     """统一生成单元: 按 key 层级分发 (一级 draft_section / 二级 draft_sub / 三级四级 draft_detail)"""
     from web.llm_draft import draft_section, draft_sub, draft_detail
+    # 条件章节 (sub 是非数字 key, 如'受限空间作业措施'/'防电离辐射设施'/'现有企业概况')
+    # → 按标题用 draft_detail 生成 (用标题而非编号)
+    if sub and not sub.split(".")[0].isdigit():
+        return draft_detail(pid, sec, title or sub, cache)
     # 三级/四级 (key 点数 >= 2 且非纯二级)
     if sub and sub.count(".") >= 2:
         return draft_detail(pid, sub, title or "", cache)
@@ -1004,6 +1008,14 @@ def _run_generate_all(pid: str, jid: str):
     prod_units = _extract_product_units(proj_data or {})
     for sub4, title4 in prod_units:
         units.append((sub4.split(".")[0], sub4, f"{sub4} {title4}"))
+    # 条件章节 (按项目字段判断是否生成: 受限空间/电离辐射/现有企业概况)
+    # 判断标准: 设备/工艺/性质 字段命中关键词 (来自 conditional_sections.py, 标准库+联网验证)
+    try:
+        from web.conditional_sections import conditional_units as _cond_units
+        for cch, ckey, ctitle in _cond_units(proj_data or {}):
+            units.append((cch, ckey, ctitle))
+    except Exception:
+        pass
     total = len(units)
     conn.execute("UPDATE task_job SET total=? WHERE id=?", (total, jid))
     conn.commit()
