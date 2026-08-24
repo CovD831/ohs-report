@@ -666,6 +666,36 @@ def import_materials_from_dir(pid: str) -> dict:
         if not f.is_file():
             continue
         name = f.name
+        # ---- 复合报告解析 (申请报告/可研/现状评价/初步设计 → PDF/docx) ----
+        # 从成套报告文档里抽取 概况/工艺/设备/物料/产品 (真实场景企业给的是报告不是拆好的表格)
+        if any(k in name for k in ("申请报告", "可研", "现状评价", "现状", "初步设计", "项目申请", "报告书")) \
+                and f.suffix.lower() in (".pdf", ".docx", ".doc"):
+            try:
+                from web.report_parser import parse_report_file
+                rp = parse_report_file(f)
+                proj_name = proj_name or rp.get("name", "")
+                industry = industry or rp.get("industry", "")
+                nature = nature or rp.get("nature", "")
+                location = location or rp.get("location", "")
+                investment = investment or rp.get("investment", "")
+                capacity = capacity or rp.get("capacity", "")
+                area = area or rp.get("area", "")
+                if rp.get("process_text") and not proc:
+                    proc = rp["process_text"] if len(rp["process_text"]) > len(proc) else proc
+                if rp.get("equipment"):
+                    for e in rp["equipment"]:
+                        if e not in seen_eq:
+                            eq.append(e); seen_eq.add(e)
+                if rp.get("materials"):
+                    for m in rp["materials"]:
+                        if m not in seen_mat and m not in (nm for nm in seen_mat):
+                            mats.append({"name": m, "msds": "报告内"}); seen_mat.add(m)
+                if rp.get("products"):
+                    for p in rp["products"]:
+                        if p not in products and p not in (pr.get("name") for pr in products):
+                            products.append({"name": p})
+            except Exception:
+                pass
         try:
             # C1/C2 项目概况/批文: 提取项目名/行业 + 概况细节
             if ("概况" in name or "批文" in name or "立项" in name or "可研" in name):
