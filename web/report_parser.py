@@ -104,14 +104,21 @@ def parse_report_file(path) -> dict:
     if proc_lines:
         out["process_text"] = "\n".join(proc_lines)
 
-    # 设备 (从"主要设备/设备一览"提取 设备名)
+    # 设备 (全文扫设备特征词: 反应釜/稀释槽/储罐/泵/风机/塔/线等)
     eq = []
-    m = re.search(r"主要设备.{0,20}[:：]?\s*([^\n]{10,500})", text)
-    if m:
-        for w in re.findall(r"[\u4e00-\u9fff]{2,12}(?:机|泵|炉|塔|釜|槽|罐|器|线|系统)", m.group(1)):
-            if w not in eq:
-                eq.append(w)
-    out["equipment"] = eq[:30]
+    # 优先"设备清单/主要设备"表段
+    m = re.search(r"(?:主要设备|设备一览|主要生产设备)[^\n]{0,30}[:：]?\s*([^\n]{10,500})", text)
+    seg = m.group(1) if m else text
+    for w in re.findall(r"[\u4e00-\u9fff]{2,14}(?:反应釜|稀释槽|稀释釜|储罐|中间槽|调整槽|混合槽|冷却塔|水洗塔|洗涤塔|通风机|循环泵|水泵|风机|输送泵|配料釜|聚合釜|酯化釜|包装线|生产线)", seg):
+        if w not in eq:
+            eq.append(w)
+    # 兜底: 全文扫 (设备清单段不足才补)
+    if len(eq) < 5:
+        for w in re.findall(r"([\u4e00-\u9fff]{2,10})(?:反应釜|稀释槽|稀释釜|储罐|槽|塔|泵|风机|包装线)", text):
+            w2 = w.strip()
+            if w2 and len(w2) >= 2 and w2 not in eq and not any(k in w2 for k in ("工艺", "流程", "生产", "车间", "仓库")):
+                eq.append(w2)
+    out["equipment"] = eq[:40]
 
     # 原辅材料 (从"原辅材料"表段落)
     mats = []
@@ -132,4 +139,53 @@ def parse_report_file(path) -> dict:
                 prods.append(w)
     out["products"] = prods[:20]
 
+    # LLM 精化: 规则抽不准/抽不到的概况/设备/工序 用 LLM 语义抽取补充 (规则+LLM结合)
+    # LLM只做语义抽取, 不碰危害判定(法规仍规则查表). 规则噪音大(投资抽成'万元'/设备碎片)时LLM更准
+    try:
+        if len(text) > 2000:  # 文本太长才值得调用LLM
+            llm = llm_extract(text)
+            # LLM 值优先(更准): name/investment/capacity/industry/area 等概况用LLM结果
+            for f in ["name", "industry", "nature", "location", "investment", "capacity", "area"]:
+                if llm.get(f) and str(llm[f]).strip() and str(llm[f]).strip() not in ("待补充", "未知"):
+                    out[f] = str(llm[f]).strip()
+            if llm.get("equipment") and isinstance(llm["equipment"], list):
+                out["equipment"] = [str(e).strip() for e in llm["equipment"] if str(e).strip()][:40]
+            if llm.get("materials") and isinstance(llm["materials"], list):
+                out["materials"] = [str(m).strip() for m in llm["materials"] if str(m).strip()][:40]
+            if llm.get("products") and isinstance(llm["products"], list):
+                out["products"] = [str(p).strip() for p in llm["products"] if str(p).strip()][:20]
+            if llm.get("process") and str(llm["process"]).strip() not in ("待补充",):
+                out["process_text"] = str(llm["process"]).strip()
+    except Exception:
+        pass
+
     return out
+
+
+def llm_extract(text: str) -> dict:
+    """LLM语义抽取: 从复合报告文本抽结构化 概况/设备/工序/原辅料/产品 (规则噪音大时LLM补充).
+    LLM只做语义抽取(工艺/报告文本→结构化字段), 不碰危害判定(法规部分仍规则查表)."""
+    try:
+        from web.llm_draft import _llm
+        prompt = f"""从下面这份建设项目职业病危害预评价/现状评价相关报告文本中，抽取结构化字段，严格按JSON输出（不要多余文字）：
+
+{{
+  "name": "项目名称", "industry": "所属行业(含代码)", "nature": "项目性质(新建/改建/扩建/技改)",
+  "location": "建设地点", "investment": "总投资(万元)", "capacity": "生产规模/产能",
+  "area": "占地面积(㎡)", "equipment": ["主要设备名(反应釜/储罐/泵/风机/生产线等, 只列名称不含描述)"],
+  "process": "生产工艺流程简述(一段话)", "materials": ["主要原辅料名(苯乙烯/丙二醇等, 只列名称)"],
+  "products": ["产品名"], "staffing": "岗位定员(如'反应班X人/包装班X人')"
+}}
+
+要求：只输出JSON，字段没有的用空字符串/空数组；equipment/materials/products 只列名称，不要带"台/套/个"和描述；名称从报告实际内容提取。
+
+报告文本（截选）：
+{text[:6000]}"""
+        raw = _llm(prompt)
+        # 提取 JSON
+        import re, json
+        m = re.search(r"\{[\s\S]*\}", raw)
+        d = json.loads(m.group(0)) if m else {}
+        return d
+    except Exception:
+        return {}
