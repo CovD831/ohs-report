@@ -178,7 +178,8 @@ async def api_report_upload(request: Request):
         name = f.filename or "unnamed"
         cat = classify_file(name, content)
         try:
-            save_upload(pid, cat if cat in cats else "C2", name, content)
+            # unknown 进待定区(uncat), 不兜底到 C2 (避免SDS/无法识别文件挤占项目概况)
+            save_upload(pid, cat if cat in cats else "uncat", name, content)
             result.setdefault(cat if cat in cats else "uncat", []).append({
                 "name": name, "cat": cat if cat in cats else "uncat", "ok": True})
         except Exception as e:
