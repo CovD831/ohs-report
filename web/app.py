@@ -1026,8 +1026,11 @@ def project_overview(pid: str, request: Request):
     dets = proj.get("detections", [])
     has_data = bool(hazards) or bool(dets) or bool((proj.get("process_text") or "").strip())
     # 资料覆盖度 (缺料兜底: 缺什么类别 → 影响哪些章节)
+    # 用 _project_data(提取数据) 判断: 提取某字段→对应类别视为覆盖(复合报告只归一类不再误判)
     from web.uploads import coverage_report
-    coverage = coverage_report(pid) if has_data else {"covered": [], "missing": [], "completeness": 0, "core_missing": []}
+    coverage = coverage_report(pid, project=proj) if has_data and proj else \
+        (coverage_report(pid) if has_data else
+         {"covered": [], "missing": [], "completeness": 0, "core_missing": []})
     return {
         "hazard_count": len(hazards),
         "judgement_count": len(judgements),
