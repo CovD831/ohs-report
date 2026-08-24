@@ -37,7 +37,7 @@ def get_oel(conn, factor_name: str, oel_type: str | None = None) -> list[dict]:
     return [dict(zip(("oel_type", "value", "unit", "conditions", "source"), r)) for r in rows]
 
 
-def to_float(v: str | None) -> float | None:
+def to_float(v) -> float | None:
     if v is None:
         return None
     try:
@@ -66,6 +66,8 @@ def level_of(ratio: float) -> dict:
 def judge_chemical(conn, factor_name: str, ctwa: float | None, cste: float | None,
                    cme: float | None, peak: float | None = None) -> dict:
     """化学有害因素判定 (6.3.1/6.3.2/6.3.3) — 返回合规结论+分级"""
+    # 数值参数统一转 float (提取的检测数据可能是字符串, 避免 str/float 运算报错)
+    ctwa = to_float(ctwa); cste = to_float(cste); cme = to_float(cme); peak = to_float(peak)
     oels = get_oel(conn, factor_name)
     by_type = {r["oel_type"]: r for r in oels}
     result = {"factor": factor_name, "checks": [], "pass": True, "level": None}

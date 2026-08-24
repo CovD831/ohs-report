@@ -347,9 +347,13 @@ def assess_project(conn, project: dict) -> dict:
             # 化学物默认: 用检出浓度/限值 比例 + 中度危害
             b = None
             if d.get("ctwa") is not None:
+                try:
+                    ctwa = float(d["ctwa"])  # ctwa可能是字符串(提取数据), 转float
+                except (TypeError, ValueError):
+                    ctwa = None
                 oel = get_oel(conn, f)
-                if oel:
-                    b = d["ctwa"] / float(oel[0]["value"]) if float(oel[0]["value"]) > 0 else None
+                if oel and ctwa is not None:
+                    b = ctwa / float(oel[0]["value"]) if float(oel[0]["value"]) > 0 else None
             if b is not None:
                 g = grade_chemical(d.get("wd", "中度危害"), b, labor)
             else:
