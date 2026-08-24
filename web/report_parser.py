@@ -321,18 +321,21 @@ def parse_report_file(path) -> dict:
         out["public_works"] = pw[:6]
 
     # ===== 应急/管理 (应急救援设施段 / 职业卫生管理措施段) =====
+    # 排除"评价内容主要包括"这类描述段(不是真正的措施/管理), 找实质措施段
+    def _real_seg(seg):
+        return seg and len(seg) > 50 and "评价内容主要包括" not in seg
     emg = ""
-    for m in re.finditer(r"([^\n。]{25,200}(?:应急喷淋|洗眼|急救药箱|应急救援设施|应急预案|呼吸器|救护)[^\n。]{15,250}[。])", text):
+    for m in re.finditer(r"([^\n。]{25,220}(?:应急喷淋|洗眼器|急救药箱|应急救援设施|应急救援预案|正压式空气呼吸器|应急器材|化学事故应急)[^\n。]{15,280}[。])", text):
         seg = m.group(1).strip()
-        if len(seg) > 50:
+        if _real_seg(seg):
             emg = seg
             break
     if emg:
         out["emergency"] = emg
     mang = ""
-    for m in re.finditer(r"([^\n。]{25,200}(?:职业卫生管理|管理制度|管理机构|管理组织|职业病防治责任)[^\n。]{15,250}[。])", text):
+    for m in re.finditer(r"([^\n。]{25,220}(?:职业健康监护档案|管理档案|管理制度|专(?:兼)?职|职业卫生专项经费|职业病危害防治责任|职业卫生管理机构|制定有《)[^\n。]{15,300}[。])", text):
         seg = m.group(1).strip()
-        if len(seg) > 50:
+        if _real_seg(seg):
             mang = seg
             break
     if mang:

@@ -107,6 +107,7 @@ def coverage_report(pid: str, check_categories: list[str] | None = None, project
             "C13": ("protection", "facilities"), "C14": ("ppe",),
             "C15": ("emergency",), "C17": ("detections",),
             "C4": ("public_works",), "C11": ("health_check",),
+            "C16": ("management",),
         }
         for c in cats:
             for f in _ext_cat.get(c, ()):

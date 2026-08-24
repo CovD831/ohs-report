@@ -913,7 +913,7 @@ def import_materials_from_dir(pid: str) -> dict:
             "investment": investment, "area": area, "capacity": capacity, "nature": nature,
             "location": location,
             "equipment_detail": eq_detail, "shifts": shifts,
-            "health_check": health_checks}
+            "health_check": health_checks, "management": management}
 
 
 @app.get("/api/projects/{pid}/export", response_class=JSONResponse)
