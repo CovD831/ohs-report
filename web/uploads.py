@@ -89,8 +89,30 @@ def coverage_report(pid: str, check_categories: list[str] | None = None, project
     返回: {covered, missing, completeness, core_missing, field_missing, filed_completeness}
     """
     if check_categories is None:
-        check_categories = {m.get("category") for m in list_materials(pid)} - {"uncat"}
+        check_categories = set(m.get("category") for m in list_materials(pid)) - {"uncat"}
+    else:
+        check_categories = set(check_categories)
     cats = [c["key"] for c in CATEGORIES]
+    # 用提取结果补足类别覆盖: 复合报告(申请报告/现状报告)含多类数据但只归一类,
+    # 提取出某字段 → 对应类别视为"已覆盖"(类别覆盖缺≠数据缺, 数据在报告里已提取)
+    if project:
+        _ext_cat = {
+            "C1": ("name",),  # 项目批文/可研(名称)
+            "C2": ("name", "industry", "nature", "investment"),  # 概况
+            "C3": ("nature",),  # 原有项目(改扩建有nature)
+            "C5": ("buildings",),  # 图纸/建构筑物
+            "C6": ("equipment",), "C7": ("process_text",),
+            "C8": ("materials",), "C9": ("products",),  # 原辅/产品
+            "C10": ("staffing", "shifts"), "C12": ("buildings",),
+            "C13": ("protection", "facilities"), "C14": ("ppe",),
+            "C15": ("emergency",), "C17": ("detections",),
+            "C4": ("public_works",), "C11": ("health_check",),
+        }
+        for c in cats:
+            for f in _ext_cat.get(c, ()):
+                if project.get(f):
+                    check_categories.add(c)
+                    break
     covered = [c for c in cats if c in check_categories]
     missing = []
     for c in cats:

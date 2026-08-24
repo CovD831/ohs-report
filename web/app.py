@@ -217,6 +217,12 @@ async def api_report_upload(request: Request):
             _import_cache[pid] = extracted
     except Exception:
         pass
+    # 完整度用提取字段计算(类别覆盖缺≠数据缺): extracted有字段→对应类别视为已覆盖
+    if extracted:
+        try:
+            coverage = coverage_report(pid, project=extracted)
+        except Exception:
+            pass
     return {"ok": True, "pid": pid, "counts": counts, "detail": result,
             "coverage": coverage, "extracted": extracted}
 
@@ -603,6 +609,7 @@ def import_materials_from_dir(pid: str) -> dict:
     eq_detail, shifts = [], []
     seen_mat, seen_st, seen_eq, seen_det = set(), set(), set(), set()
     prot, emergency = "", ""
+    management = ""  # 职业卫生管理措施
     proj_name, industry = "", ""
     buildings, facilities, products, public_works = [], [], [], []
     investment, area, capacity, nature, location = "", "", "", "", ""
@@ -742,6 +749,10 @@ def import_materials_from_dir(pid: str) -> dict:
                     for pw in rp["public_works"]:
                         if pw not in public_works:
                             public_works.append(pw)
+                if rp.get("emergency") and not emergency:
+                    emergency = rp["emergency"]
+                if rp.get("management") and not management:
+                    management = rp["management"]
             except Exception:
                 pass
         try:
