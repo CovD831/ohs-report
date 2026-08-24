@@ -172,8 +172,8 @@ async def api_report_upload(request: Request):
     for f in files:
         if not hasattr(f, "read") or not hasattr(f, "filename"):
             continue
-        content = await f.read(20 * 1024 * 1024 + 1)
-        if len(content) > 20 * 1024 * 1024:
+        content = await f.read(200 * 1024 * 1024 + 1)   # 200MB(覆盖大PDF图纸/检测报告) — 原20MB太小致静默丢弃
+        if len(content) > 200 * 1024 * 1024:
             continue
         name = f.filename or "unnamed"
         cat = classify_file(name, content)

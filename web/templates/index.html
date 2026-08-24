@@ -178,9 +178,52 @@ function bindDrop() {
   drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
   drop.addEventListener('drop', e => {
     e.preventDefault(); drop.classList.remove('drag');
-    addFiles(e.dataTransfer.files);
+    handleDrop(e);
   });
   input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });
+}
+// 支持文件夹拖拽: 递归读出文件夹内所有文件
+async function handleDrop(e) {
+  const items = e.dataTransfer.items;
+  const files = [];
+  if (items && items.length && items[0].webkitGetAsEntry) {
+    // 遍历所有item(文件或文件夹), 文件夹递归展开
+    const all = [];
+    for (const it of items) {
+      const entry = it.webkitGetAsEntry && it.webkitGetAsEntry();
+      if (!entry) continue;
+      all.push(...await readEntry(entry));
+    }
+    // 去掉重复(同一文件夹递归可能重复), 保序
+    const seen = new Set(); const uniq = [];
+    for (const f of all) {
+      const key = f.name + f.size;
+      if (!seen.has(key)) { seen.add(key); uniq.push(f); }
+    }
+    files.push(...uniq);
+  } else {
+    for (const f of e.dataTransfer.files) files.push(f);
+  }
+  addFiles(files);
+}
+async function readEntry(entry) {
+  if (entry.isFile) {
+    return new Promise(res => entry.file(f => res([f]), () => res([])));
+  }
+  if (entry.isDirectory) {
+    const reader = entry.createReader();
+    return new Promise(res => {
+      const all = [];
+      (function readBatch() {
+        reader.readEntries(async entries => {
+          if (!entries.length) return res(all);
+          for (const en of entries) all.push(...await readEntry(en));
+          readBatch();  // 目录可能分批返回, 循环读完
+        }, () => res(all));
+      })();
+    });
+  }
+  return [];
 }
 async function addFiles(fileList) {
   for (const f of fileList) selFiles.push(f);
