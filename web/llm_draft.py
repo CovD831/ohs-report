@@ -154,6 +154,19 @@ def _build_info(project: dict, assess: dict) -> str:
 
 
 # ===== 通用章节 prompt (结构=标准角度, 数据=info动态) =====
+# 质量导向的通用写作指令 (替代裸字数限制: 不靠"写多少字", 靠信息密度标准)
+_WRITING_GUIDE = """
+【写作标准】(硬性)
+1. 信息密度优先: 每句落实一个数据/事实, 只写信息块里有的, 不空泛铺垫
+2. 直接引用数据: 用具体名称/数值(如"氩弧焊机""矽尘""GBZ 2.1"), 不写"多种""某类"等模糊词
+3. 去套话: 禁用"随着…发展""综上所述""本报告认为""近年来"等空话
+4. 不重复: 信息块已列出的内容(设备清单/危害因素表)不逐条复述, 只提炼"该环节的风险特征"
+5. 数据缺失=明确标注: 信息块没有的值(如投资/规模)写"待补充(需企业提供)", 不编造不展开
+6. 结构紧凑: 短句, 一段一个主题, 同一信息不换个说法重说
+7. 每节一屏读完: 正文不超过信息块的1.5倍长, 信息块短则正文短, 不为凑篇幅铺垫
+"""
+
+
 def _design_base() -> str:
     """标准措施条款摘要 (系统查询, 供建议类prompt)"""
     conn = connect()
@@ -404,6 +417,7 @@ def draft_sub(pid: str, sec: str, sub: str, _cache: dict | None = None) -> str:
     prompt = build_sub_prompt(sub, info)
     if not prompt:
         return "暂不支持该小节(可扩展)"
+    prompt = prompt.rstrip() + "\n" + _WRITING_GUIDE
     return _llm(prompt)
 
 
@@ -428,6 +442,8 @@ def draft_section(pid: str, sec: str, _cache: dict | None = None) -> str:
         prompt = build_section_prompt(base_sec, info)
     if not prompt:
         return "暂不支持该章节(可扩展)"
+    # 附上质量导向写作标准 (替代裸字数限制: 靠信息密度而非字数控制篇幅)
+    prompt = prompt.rstrip() + "\n" + _WRITING_GUIDE
     # 章节号统一: 用 report_struct 权威标题, 只把首行的旧编号去掉
     from web.report_struct import CHAPTERS
     sec_title = CHAPTERS.get(sec, "本项目")
@@ -466,9 +482,10 @@ def draft_detail(pid: str, key: str, title: str, _cache: dict | None = None) -> 
 
 要求:
 1. 围绕「{canon}」展开, 结合本项目实际数据 (设备/工艺/危害/检测/防护)
-2. 正式报告语言, 120-300字
+2. 正式报告语言, 信息密度优先(见【写作标准】)
 3. 无数据可引用的项, 用'依据标准推断'或'待补充', 不编造数值
-4. 不引用【】/标签/表格格式"""
+4. 不引用【】/标签/表格格式
+{_WRITING_GUIDE}"""
     return _llm(prompt)
 
 
