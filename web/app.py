@@ -194,13 +194,13 @@ async def api_report_upload(request: Request):
             result.setdefault("uncat", []).append({"name": name, "cat": cat, "ok": False, "error": str(e)})
     _upload_cache[pid] = result
     counts = {k: len(v) for k, v in result.items() if v}
-    # 资料覆盖度兜底: ①缺什么文件(类别) ②缺什么文件的什么字段 (双层兜底)
+    # 资料覆盖度(轻量): 只按已收集类别判断, 不触发 import/LLM (性能: 上传时别反复调LLM抽取)
     from web.uploads import coverage_report
     try:
-        imported = import_materials_from_dir(pid)  # 提取后做字段级校验
+        coverage = coverage_report(pid)  # 只按类别判断缺失, 不做字段级(字段级需import含LLM)
+        # 字段级校验留给 generate 时做, 上传阶段避免 LLM 调用
     except Exception:
-        imported = None
-    coverage = coverage_report(pid, project=imported)
+        coverage = {"covered": [], "missing": [], "completeness": 0}
     return {"ok": True, "pid": pid, "counts": counts, "detail": result,
             "coverage": coverage}
 

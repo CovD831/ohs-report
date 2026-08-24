@@ -162,9 +162,18 @@ def parse_report_file(path) -> dict:
     return out
 
 
+_LLM_EXTRACT_CACHE: dict = {}  # 文本hash → LLM抽取结果 (避免重复调用)
+
+
 def llm_extract(text: str) -> dict:
     """LLM语义抽取: 从复合报告文本抽结构化 概况/设备/工序/原辅料/产品 (规则噪音大时LLM补充).
-    LLM只做语义抽取(工艺/报告文本→结构化字段), 不碰危害判定(法规部分仍规则查表)."""
+    LLM只做语义抽取(工艺/报告文本→结构化字段), 不碰危害判定(法规部分仍规则查表).
+    【缓存】同一段文本只调一次LLM (避免上传/import时反复触发)."""
+    # 文本哈希缓存: 同文本不重复调 LLM
+    import hashlib, json as _json
+    h = hashlib.md5(text[:2000].encode("utf-8", "ignore")).hexdigest()
+    if h in _LLM_EXTRACT_CACHE:
+        return _LLM_EXTRACT_CACHE[h]
     try:
         from web.llm_draft import _llm
         prompt = f"""从下面这份建设项目职业病危害预评价/现状评价相关报告文本中，抽取结构化字段，严格按JSON输出（不要多余文字）：
@@ -183,9 +192,11 @@ def llm_extract(text: str) -> dict:
 {text[:6000]}"""
         raw = _llm(prompt)
         # 提取 JSON
-        import re, json
+        import re
         m = re.search(r"\{[\s\S]*\}", raw)
-        d = json.loads(m.group(0)) if m else {}
+        d = _json.loads(m.group(0)) if m else {}
+        _LLM_EXTRACT_CACHE[h] = d
         return d
     except Exception:
+        _LLM_EXTRACT_CACHE[h] = {}
         return {}
