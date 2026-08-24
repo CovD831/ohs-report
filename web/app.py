@@ -135,6 +135,7 @@ def _get_assess(pid: str) -> dict:
 
 # ============ 报告工作台 (上传→一键生成→顺读报告) ============
 _upload_cache: dict[str, dict] = {}  # pid -> 上传列表
+_import_cache: dict[str, dict] = {}  # pid -> import提取结果 (上传中缓存, 避免每文件重复提取)
 
 
 def _resolve_pid(request: Request) -> str:
@@ -160,6 +161,7 @@ async def api_report_upload(request: Request):
     默认自动新建项目(每次上传=新报告, 不污染旧项目); 可用 ?pid= 指定上传到已有项目"""
     from web.uploads import classify_file, save_upload, project_dir
     from web.projects_db import create_new_project
+    global _import_cache
     # 初始身份 (无则创建身份)
     user = request.state.user if hasattr(request.state, "user") else None
     # 指定 pid (编辑已有报告) → 用该 pid; 否则自动新建项目
@@ -194,15 +196,29 @@ async def api_report_upload(request: Request):
             result.setdefault("uncat", []).append({"name": name, "cat": cat, "ok": False, "error": str(e)})
     _upload_cache[pid] = result
     counts = {k: len(v) for k, v in result.items() if v}
-    # 资料覆盖度(轻量): 只按已收集类别判断, 不触发 import/LLM (性能: 上传时别反复调LLM抽取)
+    # 资料覆盖度(轻量): 只按已收集类别判断, 不触发 LLM抽取 (性能: 上传时别反复调LLM)
     from web.uploads import coverage_report
     try:
-        coverage = coverage_report(pid)  # 只按类别判断缺失, 不做字段级(字段级需import含LLM)
-        # 字段级校验留给 generate 时做, 上传阶段避免 LLM 调用
+        coverage = coverage_report(pid)  # 只按类别判断缺失
     except Exception:
         coverage = {"covered": [], "missing": [], "completeness": 0}
+    # 上传完成后提取一次(单次, 缓存pid): 用提取字段判断12项资料覆盖
+    # 复合报告(申请报告/现状报告)含概况/设备/工艺/定员/防护, 提取出字段=该资料项有值
+    # (修复: 复合报告只归一类 → 其他类别被误判'缺失'; default缓存避免每文件重复提取)
+    extracted = None
+    finalize = request.query_params.get("finalize")  # 最后一文件传完 → 强刷完整提取
+    try:
+        if finalize:  # finalize=1: 清缓存强制完整提取(此时所有文件已传完)
+            _import_cache.pop(pid, None)
+        if pid in _import_cache:
+            extracted = _import_cache[pid]
+        else:
+            extracted = import_materials_from_dir(pid)
+            _import_cache[pid] = extracted
+    except Exception:
+        pass
     return {"ok": True, "pid": pid, "counts": counts, "detail": result,
-            "coverage": coverage}
+            "coverage": coverage, "extracted": extracted}
 
 
 @app.post("/api/report/generate", response_class=JSONResponse)

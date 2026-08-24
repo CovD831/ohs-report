@@ -273,9 +273,47 @@ async function addFiles(fileList) {
   }
   // 记录本批项目id, 供后续"生成报告"使用
   if (newPid) window.__reportPid = newPid;
+  // 最后一文件传完 → finalize=1 触发后端完整提取(此时所有文件已传), 用提取字段判断12项覆盖
+  let finalData = null;
+  try {
+    const fr = await fetch(newPid ? `/api/report/upload?pid=${newPid}&finalize=1` : '/api/report/upload?finalize=1', {method:'POST'});
+    finalData = await fr.json();
+  } catch(e) {}
   selFiles = [];
-  renderFiles(groupDetail(all), {total: files.length});
+  renderFiles(groupDetail(all), (finalData && finalData.coverage) || {});
+  if (finalData && finalData.extracted) renderMaterialCheckFromExtracted(finalData.extracted);
   document.getElementById('genBtn').disabled = false;
+}
+// 用提取字段判断12项资料覆盖(替代只按文件类别判断, 复合报告含多类数据)
+function renderMaterialCheckFromExtracted(ext) {
+  const box = document.getElementById('matItems');
+  if (!box) return;
+  const has = ext || {};
+  // 12项 → 是否有提取字段
+  const itemHas = {
+    1: !!(has.name),                                   // 项目批文/可研(名称)
+    2: !!(has.name || has.industry || has.nature || has.investment || has.capacity),  // 项目概况
+    3: !!(has.name && (has.nature||'').includes('扩')),// 原有项目(改扩建) — 改扩建才需
+    4: !!(has.public_works && has.public_works.length),// 公辅工程
+    5: !!(has.equipment && has.equipment.length || has.process_text),   // 工艺/设备
+    6: !!(has.materials && has.materials.length || has.products && has.products.length),  // 原辅/产品
+    7: !!(has.staffing && has.staffing.length),        // 劳动组织
+    8: !!(has.protection || has.facilities && has.facilities.length),   // 防护
+    9: !!(has.ppe && has.ppe.length || has.emergency), // PPE/应急
+    10: !!(has.buildings && has.buildings.length),     // 设计图纸/建构筑物
+    11: !!(has.detections && has.detections.length),   // 类比检测
+    12: !!(has.health_check && has.health_check.length),// 类比体检
+  };
+  const catToItem = {'C1':[1],'C2':[2,5],'C3':[3],'C4':[4],'C5':[10],'C6':[5],'C7':[5],'C8':[6],'C9':[6],'C10':[7],'C11':[12],'C12':[8],'C13':[8],'C14':[9],'C15':[9],'C16':[4],'C17':[11]};
+  let html=''; let done=0;
+  const MAT_ITEMS = [{n:1,t:'项目批文/可研/营业执照'},{n:2,t:'项目概况(名称/投资/面积/性质/行业/产能)'},{n:3,t:'原有项目情况(改扩建)'},{n:4,t:'公辅工程(水电气/给排水/三废)'},{n:5,t:'生产工艺、生产设备'},{n:6,t:'原料/辅料/中间品/产品+MSDS'},{n:7,t:'劳动组织/工种/岗位/作业内容'},{n:8,t:'防护措施(含技术参数/设施配置)'},{n:9,t:'个人防护用品/应急救援设施'},{n:10,t:'设计图纸(区域位置/总平面/设备布置)'},{n:11,t:'类比检测报告/职业卫生现场检测'},{n:12,t:'类比体检报告/职业健康检查'}];
+  MAT_ITEMS.forEach(it => {
+    const ok = !!itemHas[it.n]; if (ok) done++;
+    html += `<div style="display:flex;gap:6px;align-items:center;margin:2px 0;"><span style="width:14px;text-align:center;">${ok?'✅':'⬜'}</span><span style="${ok?'color:var(--text);':'color:var(--text-muted);'}">${it.n}. ${it.t}</span></div>`;
+  });
+  box.innerHTML = html;
+  const cov = document.getElementById('matCoverage');
+  if (cov) cov.textContent = `已传 ${done} 项/${MAT_ITEMS.length}`;
 }
 // 把逐文件上传的扁平结果 → 按类别分组的 detail
 function groupDetail(flat) {
