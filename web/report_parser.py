@@ -134,6 +134,16 @@ def parse_report_file(path) -> dict:
         return ""
     out["name"] = _field("项目名称", "建设项目名称", "工程名称", "单位名称")
     out["industry"] = _field("所属行业", "行业类别", "行业分类", "国民经济行业")
+    if not out.get("industry"):
+        # 从叙述提取行业代码+名: "属于'26 化学原料和化学制品制造业'...'265 合成材料制造''C2651 初级形态塑料及合成树脂制造'"
+        m = re.search(r"([A-Z]?\d{3,4})\s*([\u4e00-\u9fff]{2,12})(?:制造|业)", text)
+        if m:
+            out["industry"] = m.group(1) + m.group(2) + "制造"
+        else:
+            # 兜底: "XX 制造业" + 代码
+            m = re.search(r"([A-Z]?\d{3})\s*([\u4e00-\u9fff]{2,12})", text)
+            if m:
+                out["industry"] = m.group(1) + m.group(2)
     out["nature"] = _field("项目性质", "建设性质", "项目类别")
     out["location"] = _field("建设地点", "项目地点", "建设地址", "拟建地点", "项目地址")
     # 投资/产能/面积: 正文键值(带单位) + 表格数字
@@ -148,12 +158,13 @@ def parse_report_file(path) -> dict:
     if cap and len(cap) <= 40:
         out["capacity"] = cap
     if not out.get("capacity"):
-        # 兜底: "新增X吨/年" / "X吨/年" / "年新增X吨" 数字 (长兴正文"年新增12000吨"/表格"12000 吨/年")
-        m = re.search(r"(?:年新增|新增|设计产能|生产规模|产量)[^\d。；]{0,12}(\d+\.?\d*)\s*(?:吨|万)?(?:吨|t)", text)
+        # 优先"新增X吨"(本项目新增产能) — "年新增 X 吨" 紧跟, 数字马上出现
+        m = re.search(r"(?:年新增|新增|设计产能|本项目建成后|扩建新增)\s*(\d+\.?\d*)\s*(?:万吨|吨)?(?:\s*t)?", text)
         if m:
             out["capacity"] = m.group(1) + "吨/年"
         if not out.get("capacity"):
-            m = re.search(r"(\d+\.?\d*)\s*吨/年", text)
+            # 兜底: "新增 X 吨/年"(可跨少量字)
+            m = re.search(r"(?:年新增|新增|设计产能)\D{0,6}(\d+\.?\d*)\s*吨/年", text)
             if m:
                 out["capacity"] = m.group(1) + "吨/年"
     # 面积: 正文键值(带单位) + 表格(建设用地/占地面积 行的数字)

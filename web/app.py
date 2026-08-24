@@ -698,11 +698,20 @@ def import_materials_from_dir(pid: str) -> dict:
                 from web.report_parser import parse_report_file
                 rp = parse_report_file(f)
                 proj_name = proj_name or rp.get("name", "")
-                industry = industry or rp.get("industry", "")
+                # 项目基本信息(industry/capacity)以"可研/申请报告"为准(本项目), 现状报告是现有企业(存量)不覆盖
+                _is_proj_report = any(k in name for k in ("可研", "申请报告", "项目申请", "初步设计"))
+                if _is_proj_report:
+                    # 申请报告优先: 覆盖现状报告的行业/产能(本项目新增)
+                    if rp.get("industry"):
+                        industry = rp["industry"]
+                    if rp.get("capacity"):
+                        capacity = rp["capacity"]
+                else:
+                    industry = industry or rp.get("industry", "")
+                    capacity = capacity or rp.get("capacity", "")
                 nature = nature or rp.get("nature", "")
                 location = location or rp.get("location", "")
                 investment = investment or rp.get("investment", "")
-                capacity = capacity or rp.get("capacity", "")
                 area = area or rp.get("area", "")
                 if rp.get("process_text") and not proc:
                     proc = rp["process_text"] if len(rp["process_text"]) > len(proc) else proc
