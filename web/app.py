@@ -738,6 +738,10 @@ def import_materials_from_dir(pid: str) -> dict:
                             ppe.append(p)
                 if rp.get("health_check") and not health_checks:
                     health_checks = rp["health_check"]
+                if rp.get("public_works"):
+                    for pw in rp["public_works"]:
+                        if pw not in public_works:
+                            public_works.append(pw)
             except Exception:
                 pass
         try:

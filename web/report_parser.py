@@ -309,4 +309,15 @@ def parse_report_file(path) -> dict:
     if health_check:
         out["health_check"] = health_check[:50]
 
+    # ===== 公辅工程 (给水/排水/循环水/供配电/供热/压缩空气 段落) =====
+    pw = []
+    for m in re.finditer(r"([^\n。]{20,200}(?:给水|排水|循环冷却水|供配电|供电|供热|蒸汽|压缩空气|新鲜水|软水)[^\n。]{15,200}[。])", text):
+        seg = m.group(1).strip()
+        if len(seg) > 40 and seg not in pw:
+            pw.append(seg)
+        if len(pw) >= 6:
+            break
+    if pw:
+        out["public_works"] = pw[:6]
+
     return out
