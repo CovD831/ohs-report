@@ -59,6 +59,29 @@ def _tables_pdf(path):
         pass
 
 
+def _tables_docx(path):
+    """提取docx所有表格 (现状评价报告的设备/原辅/产品表在docx表格里)"""
+    try:
+        from docx import Document
+        doc = Document(str(path))
+        for tb in doc.tables:
+            rows = []
+            for row in tb.rows:
+                rows.append([c.text.strip() for c in row.cells])
+            if rows and any(any(c for c in r) for r in rows):
+                yield rows
+    except Exception:
+        pass
+
+
+def _all_tables(path):
+    suf = str(path).lower()
+    if suf.endswith(".pdf"):
+        yield from _tables_pdf(path)
+    elif suf.endswith((".docx", ".doc")):
+        yield from _tables_docx(path)
+
+
 def _kv(text, key, maxlen=60):
     """'关键：值' 提取 (兼容 中文/英文冒号, 排除单位词误配)"""
     m = re.search(re.escape(key) + r"[\s]*[：:]\s*([^\n。；]{1,%d})" % maxlen, text)
@@ -100,7 +123,7 @@ def parse_report_file(path) -> dict:
     if not text or len(text) < 200:
         return {}
     out = {}
-    tables = list(_tables_pdf(path)) if str(path).lower().endswith(".pdf") else []
+    tables = list(_all_tables(path))
 
     # ===== 概况 (正文键值 + 表格数字) =====
     def _field(*keys):
@@ -122,9 +145,23 @@ def parse_report_file(path) -> dict:
         if n:
             out["investment"] = n
     cap = _kv(text, "生产规模", 40) or _kv(text, "建设规模", 40) or _kv(text, "年产量", 40)
-    if cap:
-        out["capacity"] = cap if len(cap) <= 40 else ""
+    if cap and len(cap) <= 40:
+        out["capacity"] = cap
+    if not out.get("capacity"):
+        # 兜底: "新增X吨/年" / "X吨/年" / "年新增X吨" 数字 (长兴正文"年新增12000吨"/表格"12000 吨/年")
+        m = re.search(r"(?:年新增|新增|设计产能|生产规模|产量)[^\d。；]{0,12}(\d+\.?\d*)\s*(?:吨|万)?(?:吨|t)", text)
+        if m:
+            out["capacity"] = m.group(1) + "吨/年"
+        if not out.get("capacity"):
+            m = re.search(r"(\d+\.?\d*)\s*吨/年", text)
+            if m:
+                out["capacity"] = m.group(1) + "吨/年"
+    # 面积: 正文键值(带单位) + 表格(建设用地/占地面积 行的数字)
     out["area"] = _field("占地面积", "用地面积", "总用地面积", "建筑面积")
+    if not out.get("area"):
+        m = re.search(r"(?:占地面积|用地面积|建设用地)[^\d。；]{0,12}(\d+\.?\d*)\s*(?:㎡|m2|平方米|亩)", text)
+        if m:
+            out["area"] = m.group(1) + "㎡"
 
     # ===== 工艺文本 (含 工艺/流程/工序 的关键段) =====
     proc = []
@@ -177,6 +214,7 @@ def parse_report_file(path) -> dict:
 
     # ===== 产品 (产品表: 含'产品'或'产量'列) =====
     prods = []
+    _NOISE = ("产品", "中间产品", "新增不饱和树脂", "新增产品", "主要产品", "副产品", "产品方案")
     for tb in tables:
         flat = " | ".join(str(c).replace("\n", "") for r in tb for c in r)
         if "吨/年" not in flat and "年产量" not in flat and "产品方案" not in flat:
@@ -184,8 +222,11 @@ def parse_report_file(path) -> dict:
         for row in tb:
             cells = [str(c).replace("\n", " ").strip() for c in row]
             for c in cells:
-                c2 = c.split("（")[0].strip()
-                if c2 and len(c2) <= 16 and (c2.endswith("树脂") or "树脂" in c2 or c2.endswith("产品")) and c2 not in prods:
+                c2 = re.sub(r"[（(].*?[)）]", "", c).strip()
+                c2 = re.sub(r"^\d+(\.\d+)?", "", c2).strip()  # 去前缀序号/数量
+                c2 = c2.replace("吨/年", "").replace("产品", "").strip()
+                if c2 and len(c2) <= 16 and (c2.endswith("树脂") or "树脂" in c2) \
+                        and c2 not in prods and c2 not in _NOISE:
                     prods.append(c2)
         if len(prods) >= 20:
             break
