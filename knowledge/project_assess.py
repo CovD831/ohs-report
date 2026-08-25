@@ -50,22 +50,74 @@ def merge_process_materials(conn, hazards: dict, process_text: str) -> dict:
     return hazards
 
 
+def _auto_factor(conn, w: str) -> str:
+    """物料名→危害因素: 通用管线, 直接查 oel_limit/hazard_factor (精确/包含), fallback material_dictionary别名.
+
+    不依赖手工映射表 — 任何物料名词走这个自动管线:
+      1. oel_limit.factor_name 精确 (邻苯二甲酸酐→邻苯二甲酸酐)
+      2. oel_limit 包含 (物料名是因子子串)
+      3. hazard_factor.name 精确
+      4. material_dictionary 别名 (50%乙二醇→乙二醇)
+    顺酐/苯酐等物料名直接命中 oel_limit(马来酸酐/邻苯二甲酸酐), 无需人工补词典。
+    """
+    if not w:
+        return ""
+    w = str(w).strip().replace(" ", "")
+    if not w:
+        return ""
+    # 1. oel_limit 精确
+    r = conn.execute("SELECT factor_name FROM oel_limit WHERE factor_name=? LIMIT 1", (w,)).fetchone()
+    if r:
+        return r[0]
+    # 2. oel_limit 包含 (物料名是因子子串)
+    r = conn.execute("SELECT factor_name FROM oel_limit WHERE factor_name LIKE ? LIMIT 1", ("%" + w + "%",)).fetchone()
+    if r:
+        return r[0]
+    # 3. hazard_factor 精确
+    r = conn.execute("SELECT name FROM hazard_factor WHERE name=? LIMIT 1", (w,)).fetchone()
+    if r:
+        return r[0]
+    # 4. material_dictionary 别名
+    r = conn.execute("SELECT oel_factor FROM material_dictionary WHERE material=? LIMIT 1", (w,)).fetchone()
+    if r and r[0]:
+        return r[0]
+    return ""
+
+
 def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = None,
-                     process_text: str = "") -> list[dict]:
-    """识别引擎: 设备→物料→OEL物质 + 工序→规则危害 (来源链保留)"""
+                     process_text: str = "", materials: list | None = None) -> list[dict]:
+    """识别引擎: 项目物料→危害主源 + 设备→物料→OEL + 工序→规则危害 (来源链保留)
+
+    修复: 物料→危害判定改用 _auto_factor 通用管线 (物料名词直接查 oel_limit/hazard_factor),
+    不依赖手工 material_dictionary 映射, 任何行业/项目物料自动匹配。
+    """
     hazards = {}   # factor_name -> {sources:set, via:set}
-    # 1) 设备→物料→OEL
+    # 0) 项目物料归一化 (原辅料表, 本项目权威物料清单)
+    proj_mats = []
+    for m in (materials or []):
+        if isinstance(m, dict):
+            nm = str(m.get("name") or m.get("物料名称") or "").strip()
+        else:
+            nm = str(m).split("|")[0].strip()
+        nm = nm.replace(" ", "")
+        if nm and nm not in proj_mats:
+            proj_mats.append(nm)
+    # 0.5) 项目物料→危害 (主源, _auto_factor 通用管线: 苯乙烯/邻苯二甲酸酐/马来酸酐/乙二醇自动命中)
+    for w in proj_mats:
+        f = _auto_factor(conn, w)
+        if f:
+            h = hazards.setdefault(f, {"sources": set(), "via": set()})
+            h["sources"].add("原辅料")
+            h["via"].add(w)
+    # 1) 设备→物料→危害 (equipment_material 设备查物料, _auto_factor 自动匹配; 补充源)
     for eq in equipment:
         mats = conn.execute(
             "SELECT DISTINCT material FROM equipment_material WHERE equipment LIKE ?",
             (f"%{eq}%",)).fetchall()
         for (m,) in mats:
             for word in split_materials(m):
-                hit = conn.execute(
-                    "SELECT oel_factor, fuzzy FROM material_dictionary WHERE material=?",
-                    (word,)).fetchone()
-                if hit:
-                    f = hit[0]
+                f = _auto_factor(conn, word)
+                if f:
                     h = hazards.setdefault(f, {"sources": set(), "via": set()})
                     h["sources"].add(f"设备[{eq}]")
                     h["via"].add(word)
@@ -325,7 +377,8 @@ def assess_project(conn, project: dict) -> dict:
     # 2) 危害识别
     hazards = identify_hazards(conn, project.get("equipment", []),
                                project.get("processes"),
-                               project.get("process_text", ""))
+                               project.get("process_text", ""),
+                               project.get("materials", []))
     # 3) 判定 (检测数据)
     judgements = []
     for d in project.get("detections", []):
