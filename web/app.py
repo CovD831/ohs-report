@@ -125,7 +125,11 @@ def _get_assess(pid: str) -> dict:
     key = f"assess:{pid}"
     if key not in _cache:
         conn = connect()
-        _cache[key] = assess_project(conn, _get_project_data(pid))
+        proj = _get_project_data(pid)
+        assess = assess_project(conn, proj)
+        # 把完整项目数据(含hazard_grid)塞进 _project_data, 供 fill_section/build_grid 内嵌表格取数
+        assess["_project_data"] = dict(proj)
+        _cache[key] = assess
         conn.close()
     return _cache[key]
 
@@ -962,7 +966,10 @@ def api_export(pid: str, request: Request):
                "capacity": data.get("capacity", ""),
                "nature": data.get("nature", ""),
                "equipment_detail": data.get("equipment_detail", []),
-               "shifts": data.get("shifts", [])}
+               "shifts": data.get("shifts", []),
+               "health_check": data.get("health_check", []),
+               "management": data.get("management", ""),
+               "hazard_grid": data.get("hazard_grid", [])}
     assess = assess_project(conn, project)
     # 把完整项目数据塞进 assess._project_data, 供 fill_section 内嵌表格取数
     assess["_project_data"] = dict(project)
