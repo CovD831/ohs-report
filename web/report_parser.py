@@ -207,34 +207,56 @@ def parse_report_file(path) -> dict:
             break
     out["equipment"] = eq_detail[:40]
 
-    # ===== 原辅材料 (通用: 只从"原辅料表"的"物料名称"列取, 不扫全文关键词) =====
-    # 任何行业的产品表/原辅表表头都有"物料名称/原辅材料名称", 按列名定位取列 → 不混入叙述词(废树脂/工艺清洁)
+    # ===== 原辅材料 (通用: 只从"原辅料表"取完整列: 名称/规格/年用量/最大储量/物态/储存地点) =====
+    # 表4: 序号 物料名称 目录序号 规格 年用量t/a 最大储量t 物态 包装 储存地点 储存条件 → 按表头定位各列
     mats = []
+    seen_m = set()
     for tb in tables:
         if not tb or not tb[0]:
             continue
         head = [str(c).replace("\n", " ").strip() for c in tb[0]]
-        # 找"物料名称"列 index (物料名称/原辅材料名称/原料名称/物料)
-        mic = -1
-        for i, h in enumerate(head):
-            if "原辅材料名称" in h or "物料名称" in h or "原料名称" in h or h == "物料":
-                mic = i
-                break
+        # 通用列定位 (任何行业原辅料表有物料名称+年用量+储存地点等列)
+        def _col(kws):
+            for i, h in enumerate(head):
+                for kw in kws:
+                    if kw in h:
+                        return i
+            return -1
+        mic = _col(["原辅材料名称", "物料名称", "原料名称"])
         if mic < 0:
             continue
+        c_spec = _col(["规格", "型号"])
+        c_year = _col(["年用量", "年耗量", "年消耗", "年用量t", "年耗量t"])
+        c_stk = _col(["最大储量", "最大储存量", "最大贮"])
+        c_state = _col(["物态", "形态"])
+        c_loc = _col(["储存地点", "存放地点", "存储地点", "存于"])
+        c_cas = _col(["CAS"])
         for row in tb[1:]:
             if mic >= len(row):
                 continue
             v = str(row[mic]).replace("\n", " ").strip()
             if not v or v == "None":
                 continue
-            # 跳过表头词/序号/合计
             if re.match(r"^(序号|物料名称|原辅材料名称|原料名称|合计|小计|备注)", v):
                 continue
-            # 去内部空格/中文逗号(化学名"邻苯二甲酸 酐"→"邻苯二甲酸酐"; 保留英文逗号"2-甲基-1,3-丙二醇")
             v = re.sub(r"[\s，]", "", v)
-            if v and len(v) <= 30 and v not in mats:
-                mats.append(v)
+            if not v or len(v) > 30 or v in seen_m:
+                continue
+            m = {"name": v}
+            if c_spec >= 0 and c_spec < len(row):
+                m["规格"] = str(row[c_spec]).replace("\n", " ").strip()
+            if c_year >= 0 and c_year < len(row):
+                m["年用量"] = str(row[c_year]).replace("\n", " ").strip()
+            if c_stk >= 0 and c_stk < len(row):
+                m["最大储量"] = str(row[c_stk]).replace("\n", " ").strip()
+            if c_state >= 0 and c_state < len(row):
+                m["物态"] = str(row[c_state]).replace("\n", " ").strip()
+            if c_loc >= 0 and c_loc < len(row):
+                m["储存地点"] = str(row[c_loc]).replace("\n", " ").strip()
+            if c_cas >= 0 and c_cas < len(row):
+                m["cas"] = str(row[c_cas]).replace("\n", " ").strip()
+            seen_m.add(v)
+            mats.append(m)
         if len(mats) >= 45:
             break
     out["materials"] = mats[:45]

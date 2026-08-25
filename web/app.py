@@ -723,9 +723,16 @@ def import_materials_from_dir(pid: str) -> dict:
                         if e not in seen_eq:
                             eq.append(e); seen_eq.add(e)
                 if rp.get("materials"):
+                    # materials 现为 dict 列表(带完整列: name/规格/年用量/最大储量/物态/储存地点), 取name去重, 保留完整列
                     for m in rp["materials"]:
-                        if m not in seen_mat and m not in (nm for nm in seen_mat):
-                            mats.append({"name": m, "msds": "报告内"}); seen_mat.add(m)
+                        nm = m.get("name") if isinstance(m, dict) else m
+                        if isinstance(m, dict):
+                            nm = (m.get("name") or "").strip()
+                            if nm and nm not in seen_mat:
+                                mats.append(m); seen_mat.add(nm)
+                        else:
+                            if m and m not in seen_mat:
+                                mats.append({"name": m, "msds": "报告内"}); seen_mat.add(m)
                 if rp.get("products"):
                     for p in rp["products"]:
                         if p not in products and p not in (pr.get("name") for pr in products):

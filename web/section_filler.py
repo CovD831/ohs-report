@@ -79,6 +79,18 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                        b.get("floors", ""), b.get("height", "")] for i, b in enumerate(blds, 1)]
             tables.append({"name": "建构筑物表", "cols": ["序号", "名称", "占地面积(㎡)", "建筑面积(㎡)", "层数", "高度(m)"],
                            "rows": b_rows})
+        # 原辅材料表 (materials dict 完整列: name/规格/年用量/最大储量/物态/储存地点)
+        mats2 = pd_.get("materials", [])
+        if mats2:
+            m_rows = []
+            for i, m in enumerate(mats2, 1):
+                if isinstance(m, dict):
+                    m_rows.append([i, m.get("name", ""), m.get("规格", ""), m.get("年用量", ""),
+                                   m.get("最大储量", ""), m.get("物态", ""), m.get("储存地点", "")])
+                else:
+                    m_rows.append([i, str(m), "—", "—", "—", "—", "—"])
+            tables.append({"name": "原辅材料表", "cols": ["序号", "原辅材料名称", "规格", "年用量(t/a)", "最大储量(t)", "物态", "储存地点"],
+                           "rows": m_rows})
         # 产品产量表
         prods = pd_.get("products", [])
         if prods:
