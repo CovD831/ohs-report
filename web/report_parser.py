@@ -207,45 +207,74 @@ def parse_report_file(path) -> dict:
             break
     out["equipment"] = eq_detail[:40]
 
-    # ===== 原辅材料 (原辅表: 含'物料名称'列) =====
+    # ===== 原辅材料 (通用: 只从"原辅料表"的"物料名称"列取, 不扫全文关键词) =====
+    # 任何行业的产品表/原辅表表头都有"物料名称/原辅材料名称", 按列名定位取列 → 不混入叙述词(废树脂/工艺清洁)
     mats = []
     for tb in tables:
-        flat = " | ".join(str(c).replace("\n", "") for r in tb for c in r)
-        if not ("物料名称" in flat or "原辅" in flat or "原料名称" in flat):
+        if not tb or not tb[0]:
             continue
-        for row in tb:
-            cells = [str(c).replace("\n", " ").strip() for c in row]
-            for c in cells:
-                c2 = c.split(" ")[0].split("（")[0].strip()
-                if c2 and len(c2) <= 16 and re.search(r"(苯乙烯|乙二醇|丙二醇|二乙二醇|酸|醇|树脂|甲醛|苯酐|酐|酮|胺|酯|酚|剂|油)", c2) and c2 not in mats:
-                    mats.append(c2)
-        if len(mats) >= 40:
+        head = [str(c).replace("\n", " ").strip() for c in tb[0]]
+        # 找"物料名称"列 index (物料名称/原辅材料名称/原料名称/物料)
+        mic = -1
+        for i, h in enumerate(head):
+            if "原辅材料名称" in h or "物料名称" in h or "原料名称" in h or h == "物料":
+                mic = i
+                break
+        if mic < 0:
+            continue
+        for row in tb[1:]:
+            if mic >= len(row):
+                continue
+            v = str(row[mic]).replace("\n", " ").strip()
+            if not v or v == "None":
+                continue
+            # 跳过表头词/序号/合计
+            if re.match(r"^(序号|物料名称|原辅材料名称|原料名称|合计|小计|备注)", v):
+                continue
+            # 去内部空格/中文逗号(化学名"邻苯二甲酸 酐"→"邻苯二甲酸酐"; 保留英文逗号"2-甲基-1,3-丙二醇")
+            v = re.sub(r"[\s，]", "", v)
+            if v and len(v) <= 30 and v not in mats:
+                mats.append(v)
+        if len(mats) >= 45:
             break
-    out["materials"] = mats[:40]
+    out["materials"] = mats[:45]
 
-    # ===== 产品 (产品表: 含'产品'或'产量'列) =====
+    # ===== 产品 (通用: 只从"产品表"的"产品名称"列取, 不扫全文"含树脂") =====
     prods = []
     _NOISE = ("产品", "中间产品", "新增不饱和树脂", "新增产品", "主要产品", "副产品", "产品方案")
     for tb in tables:
-        flat = " | ".join(str(c).replace("\n", "") for r in tb for c in r)
-        if "吨/年" not in flat and "年产量" not in flat and "产品方案" not in flat:
+        if not tb or not tb[0]:
             continue
-        for row in tb:
-            cells = [str(c).replace("\n", " ").strip() for c in row]
-            for c in cells:
-                c2 = re.sub(r"[（(].*?[)）]", "", c).strip()
-                c2 = re.sub(r"^\d+(\.\d+)?", "", c2).strip()  # 去前缀序号/数量
-                c2 = c2.replace("吨/年", "").replace("产品", "").strip()
-                # 去空格/数字/逗号/吨 残留(如"不 饱和聚酯树脂"/"乙烯 基树脂、5000")
-                c2 = re.sub(r"[\s、,，/]", "", c2)
-                c2 = re.sub(r"\d+(\.\d+)?", "", c2)
-                c2 = c2.strip()
-                # 过滤: 含"工艺/生产/工序/方案"的不是产品名(如"新增不饱和树脂生产工艺")
-                if re.search(r"(工艺|生产工序|生产方案|方案|生产线)", c2) or len(c2) > 16:
-                    continue
-                if c2 and (c2.endswith("树脂") or "树脂" in c2) \
-                        and c2 not in prods and c2 not in _NOISE:
-                    prods.append(c2)
+        head = [str(c).replace("\n", " ").strip() for c in tb[0]]
+        # 找"产品名称"列 index (产品名称/产品方案/年产量所在表的产品名列)
+        pic = -1
+        for i, h in enumerate(head):
+            if "产品名称" in h or h == "产品" or "产品方案" in h:
+                pic = i
+                break
+        if pic < 0:
+            # 兜底: 表头含"年产量"的表, 产品名常在序号后第1列
+            if any("年产量" in h or "吨/年" in h for h in head):
+                pic = 1 if len(head) > 1 else -1
+        if pic < 0:
+            continue
+        for row in tb[1:]:
+            if pic >= len(row):
+                continue
+            c = str(row[pic]).replace("\n", " ").strip()
+            if not c:
+                continue
+            c2 = re.sub(r"[（(].*?[)）]", "", c).strip()
+            c2 = re.sub(r"^\d+(\.\d+)?", "", c2).strip()
+            c2 = c2.replace("吨/年", "").replace("产品", "").strip()
+            c2 = re.sub(r"[\s、,，/]", "", c2)
+            c2 = re.sub(r"\d+(\.\d+)?", "", c2).strip()
+            # 过滤: 含"工艺/生产/工序/方案"的不是产品名(如"新增不饱和树脂生产工艺")
+            if re.search(r"(工艺|生产工序|生产方案|方案|生产线)", c2) or len(c2) > 16:
+                continue
+            if c2 and (c2.endswith("树脂") or "树脂" in c2) \
+                    and c2 not in prods and c2 not in _NOISE:
+                prods.append(c2)
         if len(prods) >= 20:
             break
     out["products"] = prods[:20]
