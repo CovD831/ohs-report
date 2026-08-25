@@ -255,6 +255,7 @@ def parse_report_file(path) -> dict:
     staffing, shifts = [], []
     buildings, facilities = [], []
     detections, health_check, ppe = [], [], []
+    hazard_grid_list = []  # 危害识别网格 (评价单元|岗位|产品|工段|危害因素)
     protection = out.get("protection", "")
     for tb in tables:
         if not tb:
@@ -314,6 +315,50 @@ def parse_report_file(path) -> dict:
                 if len(cells) >= 2 and cells[0] and cells[0] != "建构筑物名称":
                     buildings.append({"name": cells[0], "area": cells[3] if len(cells) > 3 else "",
                                       "floor_area": cells[4] if len(cells) > 4 else ""})
+        # 危害识别网格表 (评价单元|岗位|产品|工段|危害因素 或 岗位|产品类型|工艺/设备|涉及物料|危害因素)
+        # 现状报告表20(18行)/表17/18/19 — 长兴真实危害网格, 直接提取
+        hd0 = " ".join(str(c).replace("\n", "").strip() for c in tb[0])
+        is_unit_grid = ("评价单元" in hd0 or "评价单元" in head0) and ("岗位" in hd0) and ("危害" in flat)
+        is_post_grid = ("岗位" in hd0) and ("产品类型" in hd0) and ("职业病危害因素" in flat)
+        if is_unit_grid or is_post_grid:
+            for row in tb[1:]:
+                cells = [str(c).replace("\n", " ").strip() for c in row]
+                if not cells or not any(cells):
+                    continue
+                # 找单元列(评价单元)/岗位/产品/工段/危害因素
+                # 表20: 序号|评价单元|岗位|产品|工段|危害因素 → unit=cells[1], post=cells[2], product=cells[3], stage=cells[4]
+                # 表17/18/19: 岗位|产品类型|工艺/设备|涉及物料|作业方式|危害因素 → post=cells[0], product=cells[1], stage=cells[2]
+                unit = ""
+                post = ""
+                product = ""
+                stage = ""
+                materials = ""
+                if "评价单元" in (head0 or ""):
+                    # 表头首行含"评价单元": 列序 = 序号/评价单元/岗位/产品/工段/...
+                    actual = cells[1:] if (cells[0] == "序号" or cells[0].strip() in ("序号", "")) else cells
+                    if len(actual) >= 1: unit = actual[0] if "评价单元" in head0 else ""
+                    if len(actual) >= 2: post = actual[1]
+                    if len(actual) >= 3: product = actual[2]
+                    if len(actual) >= 4: stage = actual[3]
+                elif "产品类型" in (head0 or ""):
+                    post = cells[0]
+                    product = cells[1] if len(cells) > 1 else ""
+                    stage = cells[2] if len(cells) > 2 else ""
+                    materials = cells[3] if len(cells) > 3 else ""
+                # 危害因素列 (找含"危害"的最后一列/含 ; 、 , 的因素串)
+                factors = ""
+                for c in reversed(cells):
+                    if c and re.search(r"(粉尘|苯|噪声|高温|酸|醇|酮|胺|树脂|烟尘|剂|微波|射线|工频)", c) and len(c) < 120 and c != (product or ""):
+                        factors = c
+                        break
+                if not unit and not post and not product:
+                    continue
+                if factors or materials:
+                    grid_row = {"unit": unit, "post": post, "product": product,
+                                "stage": stage, "materials": materials, "factors": factors}
+                    # 去重(unit+post+stage)
+                    if grid_row not in hazard_grid_list:
+                        hazard_grid_list.append(grid_row)
         # 防护设施 (岗位|防护设施|数量)
         if "防护" in head0 or "设施" in flat and "数量" in flat:
             for row in tb[1:]:
@@ -346,6 +391,8 @@ def parse_report_file(path) -> dict:
         out["ppe"] = ppe[:50]
     if health_check:
         out["health_check"] = health_check[:50]
+    if hazard_grid_list:
+        out["hazard_grid"] = hazard_grid_list[:80]
 
     # ===== 公辅工程 (给水/排水/循环水/供配电/供热/压缩空气 段落) =====
     pw = []

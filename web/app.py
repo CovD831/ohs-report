@@ -243,7 +243,8 @@ def api_report_generate(request: Request):
     for k in ("materials", "staffing", "protection", "ppe", "emergency",
               "buildings", "facilities", "products", "public_works",
               "investment", "area", "capacity", "nature", "location",
-              "equipment_detail", "shifts", "health_check", "management"):
+              "equipment_detail", "shifts", "health_check", "management",
+              "hazard_grid"):
         if imported.get(k):
             data[k] = imported[k]
     # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
@@ -609,6 +610,7 @@ def import_materials_from_dir(pid: str) -> dict:
     management = ""  # 职业卫生管理措施
     proj_name, industry = "", ""
     buildings, facilities, products, public_works = [], [], [], []
+    hazard_grids = []  # 危害识别网格 (评价单元|岗位|产品|工段|危害因素)
     investment, area, capacity, nature, location = "", "", "", "", ""
 
     def _read_rows(f):
@@ -752,6 +754,10 @@ def import_materials_from_dir(pid: str) -> dict:
                             ppe.append(p)
                 if rp.get("health_check") and not health_checks:
                     health_checks = rp["health_check"]
+                if rp.get("hazard_grid"):
+                    for g in rp["hazard_grid"]:
+                        if g not in hazard_grids:
+                            hazard_grids.append(g)
                 if rp.get("public_works"):
                     for pw in rp["public_works"]:
                         if pw not in public_works:
@@ -920,7 +926,8 @@ def import_materials_from_dir(pid: str) -> dict:
             "investment": investment, "area": area, "capacity": capacity, "nature": nature,
             "location": location,
             "equipment_detail": eq_detail, "shifts": shifts,
-            "health_check": health_checks, "management": management}
+            "health_check": health_checks, "management": management,
+            "hazard_grid": hazard_grids}
 
 
 @app.get("/api/projects/{pid}/export", response_class=JSONResponse)

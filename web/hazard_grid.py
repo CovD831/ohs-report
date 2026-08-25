@@ -147,6 +147,26 @@ def build_grid(conn, project: dict) -> list[dict]:
     评价单元/工序 维度: 优先从工艺文本结构提取, 无则设备归类
     """
     import re
+    # 优先用已提取的危害识别网格 (现状报告表20/17/18/19 真实数据, 规则提取)
+    # 不再从叙述式工艺文本 extract_units_from_text 猜(会产出"划分评价单元"空壳)
+    hg = project.get("hazard_grid") or []
+    if hg:
+        grid = []
+        for g in hg:
+            gf = g.get("factors") or ""
+            fl = [x.strip() for x in re.split(r"[、;；]", str(gf)) if x.strip()] if isinstance(gf, str) else [str(x) for x in (gf or []) if str(x).strip()]
+            mg = g.get("materials") or ""
+            ml = [x.strip() for x in re.split(r"[、;；/]", str(mg)) if x.strip() and len(x.strip()) < 20] if isinstance(mg, str) else [str(x) for x in (mg or []) if str(x).strip()]
+            grid.append({
+                "unit": g.get("unit") or g.get("post") or "",
+                "process": g.get("stage") or g.get("post") or "",
+                "posts": [g.get("post")] if g.get("post") else [],
+                "materials": ml,
+                "factors": fl,
+                "enclosed": "",
+            })
+        if grid:
+            return grid
     eqs = project.get("equipment", []) or []
     mats = project.get("materials", []) or []
     staffs = project.get("staffing", []) or []
