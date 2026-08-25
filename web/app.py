@@ -248,7 +248,7 @@ def api_report_generate(request: Request):
               "buildings", "facilities", "products", "public_works",
               "investment", "area", "capacity", "nature", "location",
               "equipment_detail", "shifts", "health_check", "management",
-              "hazard_grid"):
+              "hazard_grid", "emergency_supplies"):
         if imported.get(k):
             data[k] = imported[k]
     # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
@@ -615,6 +615,7 @@ def import_materials_from_dir(pid: str) -> dict:
     proj_name, industry = "", ""
     buildings, facilities, products, public_works = [], [], [], []
     hazard_grids = []  # 危害识别网格 (评价单元|岗位|产品|工段|危害因素)
+    emergency_supplies = []  # 应急物资 (类别|名称|数量|放置点位)
     investment, area, capacity, nature, location = "", "", "", "", ""
 
     def _read_rows(f):
@@ -785,6 +786,14 @@ def import_materials_from_dir(pid: str) -> dict:
                     emergency = rp["emergency"]
                 if rp.get("management") and not management:
                     management = rp["management"]
+                if rp.get("equipment_detail"):
+                    # rp.equipment_detail = 完整列dict(位号/规格/数量/材质), 合并进 eq_detail
+                    for e in rp["equipment_detail"]:
+                        if isinstance(e, dict) and e.get("name") and not any(
+                                x.get("name") == e.get("name") and x.get("spec") == e.get("spec") for x in eq_detail):
+                            eq_detail.append(e)
+                if rp.get("emergency_supplies") and not emergency_supplies:
+                    emergency_supplies = rp["emergency_supplies"]
             except Exception:
                 pass
         try:
@@ -946,7 +955,7 @@ def import_materials_from_dir(pid: str) -> dict:
             "location": location,
             "equipment_detail": eq_detail, "shifts": shifts,
             "health_check": health_checks, "management": management,
-            "hazard_grid": hazard_grids}
+            "hazard_grid": hazard_grids, "emergency_supplies": emergency_supplies}
 
 
 @app.get("/api/projects/{pid}/export", response_class=JSONResponse)

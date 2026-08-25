@@ -112,12 +112,17 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 ["项目性质", pd_.get("nature", "—")],
             ]
             tables.append({"name": "项目概况表", "cols": ["项目", "内容"], "rows": info_rows})
-        # 设备细表 (名称+规格+数量)
+        # 设备细表 (名称+位号+规格+数量+材质+车间)
         eq_d = pd_.get("equipment_detail", [])
         if eq_d:
-            ed_rows = [[i, d.get("name", ""), d.get("spec", ""), d.get("qty", "")]
+            ed_rows = [[i, d.get("name", "") if isinstance(d, dict) else d,
+                        d.get("位号", "") if isinstance(d, dict) else "",
+                        d.get("spec", "") if isinstance(d, dict) else "",
+                        d.get("qty", "") if isinstance(d, dict) else "",
+                        d.get("材质", "") if isinstance(d, dict) else "",
+                        d.get("车间", "") if isinstance(d, dict) else ""]
                        for i, d in enumerate(eq_d, 1)]
-            tables.append({"name": "设备明细表", "cols": ["序号", "设备名称", "规格型号", "数量"], "rows": ed_rows})
+            tables.append({"name": "设备明细表", "cols": ["序号", "设备名称", "位号", "规格型号", "数量", "材质", "车间"], "rows": ed_rows})
         # 班制定员表 (工种×一班..合计)
         sf = pd_.get("shifts", [])
         if sf:
@@ -304,10 +309,23 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         return tables
 
     if sec == "7":
-        # 应急救援: 应急救援检查表
+        # 应急救援: 应急救援检查表 + 应急物资清单 (表56 类别|名称|数量|放置点位)
+        pd_ = assess.get("_project_data", {})
+        tables = []
         rows = _rows_of(conn, "SELECT scenario, require, std_code, clause FROM emergency_rule")
-        return [{"name": "应急救援检查表", "cols": ["序号", "场景", "要求", "依据"],
-                 "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]}]
+        if rows:
+            tables.append({"name": "应急救援检查表", "cols": ["序号", "场景", "要求", "依据"],
+                           "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]})
+        emgs = pd_.get("emergency_supplies", [])
+        if emgs:
+            try:
+                tables.append({"name": "应急物资清单",
+                               "cols": ["序号", "类别", "名称", "数量", "放置点位"],
+                               "rows": [[i, e.get("类别", ""), e.get("名称", ""), e.get("数量", ""), e.get("点位", "")]
+                                        for i, e in enumerate(emgs, 1)]})
+            except Exception:
+                pass
+        return tables
 
     if sec == "8":
         # 个人防护用品: PPE配备表

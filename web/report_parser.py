@@ -185,15 +185,28 @@ def parse_report_file(path) -> dict:
     if proc:
         out["process_text"] = "\n".join(proc)
 
-    # ===== 设备 (设备表: 含'设备名称'列 → 设备名 + 反应介质) =====
+    # ===== 设备 (设备表: 车间|序号|位号|设备名称|规格型号|数量|材质 → 设备名 + 完整列) =====
     eq, eq_detail = [], []
+    eq_dict = []  # equipment_detail: {name/位号/规格/数量/材质/车间}
     for tb in tables:
         flat = " | ".join(str(c).replace("\n", "") for r in tb for c in r)
-        if not ("设备名称" in flat or "设备" in flat and "名称" in flat):
+        if not ("设备名称" in flat and "位号" in flat):
             continue
-        for row in tb:
+        head = [str(c).replace("\n", " ").strip() for c in tb[0]]
+        def _ec(kws):
+            for i, h in enumerate(head):
+                for kw in kws:
+                    if kw in h:
+                        return i
+            return -1
+        c_pos = _ec(["位号"])
+        c_spec = _ec(["规格", "型号"])
+        c_qty = _ec(["数量"])
+        c_mat = _ec(["材质"])
+        c_dept = _ec(["车间"])
+        for row in tb[1:]:
             cells = [str(c).replace("\n", " ").strip() for c in row]
-            if not cells:
+            if not cells or any("设备名称" == c for c in cells):
                 continue
             # 设备名称列 (找含"釜/槽/罐/泵/塔/机/炉/器/线"的单元格)
             eqname = ""
@@ -201,11 +214,24 @@ def parse_report_file(path) -> dict:
                 if re.search(r"(反应釜|稀释槽|稀释釜|调整槽|中间槽|储罐|储槽|泵|冷凝器|冷凝|塔|风机|锅炉|搅拌|砂磨|分散|包装线|生产线|热媒)", c) and len(c) <= 20:
                     eqname = c
                     break
+            if not eqname:
+                continue
             if eqname and eqname not in eq_detail:
                 eq_detail.append(eqname)
+            ed = {"name": eqname}
+            def _g(idx):
+                return cells[idx] if (idx >= 0 and idx < len(cells)) else ""
+            ed["位号"] = _g(c_pos)
+            ed["spec"] = _g(c_spec)
+            ed["qty"] = _g(c_qty)
+            ed["材质"] = _g(c_mat)
+            ed["车间"] = _g(c_dept)
+            if not any(x.get("name") == eqname and x.get("spec") == ed["spec"] for x in eq_dict):
+                eq_dict.append(ed)
         if len(eq_detail) >= 40:
             break
     out["equipment"] = eq_detail[:40]
+    out["equipment_detail"] = eq_dict[:40]
 
     # ===== 原辅材料 (通用: 只从"原辅料表"取完整列: 名称/规格/年用量/最大储量/物态/储存地点) =====
     # 表4: 序号 物料名称 目录序号 规格 年用量t/a 最大储量t 物态 包装 储存地点 储存条件 → 按表头定位各列
@@ -549,5 +575,23 @@ def parse_report_file(path) -> dict:
             break
     if mang:
         out["management"] = mang
+
+    # ===== 应急物资表 (类别|名称|数量|放置点位 — 表56) 通用: 表头含(放置点位+类别+名称) =====
+    emg_s = []
+    for tb in tables:
+        if not tb or not tb[0]:
+            continue
+        head = [str(c).replace("\n", " ").strip() for c in tb[0]]
+        hjoins = " ".join(head)
+        if "放置点位" in hjoins and "类别" in hjoins and "名称" in hjoins:
+            for row in tb[1:]:
+                cells = [str(c).replace("\n", " ").strip() for c in row]
+                if len(cells) >= 2 and cells[1] and cells[1] not in ("名称", "类别"):
+                    emg_s.append({"类别": cells[0], "名称": cells[1],
+                                  "数量": cells[2] if len(cells) > 2 else "",
+                                  "点位": cells[3] if len(cells) > 3 else ""})
+            break
+    if emg_s:
+        out["emergency_supplies"] = emg_s[:60]
 
     return out
