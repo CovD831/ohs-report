@@ -44,7 +44,7 @@ CHAPTER_INFO_MAPPING: dict[str, list[str]] = {
           "protection", "staffing", "equipment", "materials"],
     # 5 危害因素及危害程度分析
     "5": ["hazards", "detections", "materials", "process_text", "equipment", "staffing",
-          "risk_level"],
+          "risk_level", "hazard_grid"],
     # 6 职业病危害防护设施分析与评价
     "6": ["protection", "facilities", "hazards", "detections", "equipment", "process_text"],
     # 7 应急救援措施的分析与评价
