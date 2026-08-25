@@ -788,9 +788,22 @@ def import_materials_from_dir(pid: str) -> dict:
                     management = rp["management"]
                 if rp.get("equipment_detail"):
                     # rp.equipment_detail = 完整列dict(位号/规格/数量/材质), 合并进 eq_detail
+                    # 清洗 x/None → 空; 丢弃无位号且无数量的不完整记录(申请报告PDF设备表), 保留现状报告表13完整设备
                     for e in rp["equipment_detail"]:
-                        if isinstance(e, dict) and e.get("name") and not any(
-                                x.get("name") == e.get("name") and x.get("spec") == e.get("spec") for x in eq_detail):
+                        if not (isinstance(e, dict) and e.get("name")):
+                            continue
+                        for f in ("qty", "位号", "材质", "车间", "spec"):
+                            if e.get(f) in ("x", "None", "x/None"):
+                                e[f] = ""
+                        if not (e.get("位号") or e.get("qty")):
+                            continue
+                        key = (e.get("name"), e.get("位号", ""))
+                        ex = next((x for x in eq_detail if (x.get("name"), x.get("位号", "")) == key), None)
+                        if ex:
+                            for f in ("qty", "材质", "车间", "spec"):
+                                if (not ex.get(f)) and e.get(f):
+                                    ex[f] = e[f]
+                        else:
                             eq_detail.append(e)
                 if rp.get("emergency_supplies") and not emergency_supplies:
                     emergency_supplies = rp["emergency_supplies"]
@@ -913,10 +926,8 @@ def import_materials_from_dir(pid: str) -> dict:
                         item = str(n).split("|")[0].strip()
                         if item and item not in seen_eq:
                             eq.append(item); seen_eq.add(item)
-                            # 设备细表: 名称+规格+数量 (保留, 供设备明细表)
-                            eq_detail.append({"name": item,
-                                              "spec": _get(r, "规格型号", "规格", "型号"),
-                                              "qty": _get(r, "数量", "台数", "套数")})
+                            # 注: eq_detail 由 parse_report_file 的 equipment_detail(完整列dict) 合并提供,
+                            #     不在此处 append (csv 缺位号/材质/车间, qty 可能取到 x → 污染设备明细表)
             # 班制 (C10_班制: 工种/系统×一班..合计)
             if "班制" in name or ("班" in name and "定员" not in name):
                 rows = _dict_rows(_read_rows(f))
