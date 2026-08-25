@@ -267,7 +267,7 @@ async function loadSupportTables(sec) {
     let h = '';
     tables.forEach(t => {
       h += `<div class="table-card" style="margin-top:18px;"><div class="table-title">${t.name}</div><table><thead><tr>`;
-      (t.headers || []).forEach(hd => { h += `<th>${hd}</th>`; });
+      (t.headers || t.cols || []).forEach(hd => { h += `<th>${hd}</th>`; });
       h += '</tr></thead><tbody>';
       (t.rows || []).forEach(row => {
         const rowStr = row.join(',');
@@ -327,7 +327,7 @@ function renderSection(sec, d) {
   }
   (d.tables || []).forEach(t => {
     h += `<div class="table-card"><div class="table-title">${t.name}</div><table><thead><tr>`;
-    (t.headers || []).forEach(hd => { h += `<th>${hd}</th>`; });
+    (t.headers || t.cols || []).forEach(hd => { h += `<th>${hd}</th>`; });
     h += `</tr></thead><tbody>`;
     (t.rows || []).forEach(row => {
       h += `<tr>` + row.map(c => `<td>${c ?? ''}</td>`).join('') + `</tr>`;
