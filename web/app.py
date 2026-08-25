@@ -736,7 +736,8 @@ def import_materials_from_dir(pid: str) -> dict:
                 if rp.get("detections"):
                     for dt in rp["detections"]:
                         if dt.get("factor") and dt.get("factor") not in [x.get("factor") for x in dets if x.get("factor")]:
-                            dets.append({"factor": dt.get("factor"), "ctwa": dt.get("result", "")})
+                            # dt 键: factor/ctwa/cste/cme (parse_report_file 检测表提取)
+                            dets.append({"factor": dt.get("factor"), "ctwa": dt.get("ctwa", ""), "factory": dt.get("factory", "")})
                 if rp.get("buildings"):
                     for b in rp["buildings"]:
                         if b.get("name") and b.get("name") not in [x.get("name") for x in buildings]:

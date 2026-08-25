@@ -236,7 +236,14 @@ def parse_report_file(path) -> dict:
                 c2 = re.sub(r"[（(].*?[)）]", "", c).strip()
                 c2 = re.sub(r"^\d+(\.\d+)?", "", c2).strip()  # 去前缀序号/数量
                 c2 = c2.replace("吨/年", "").replace("产品", "").strip()
-                if c2 and len(c2) <= 16 and (c2.endswith("树脂") or "树脂" in c2) \
+                # 去空格/数字/逗号/吨 残留(如"不 饱和聚酯树脂"/"乙烯 基树脂、5000")
+                c2 = re.sub(r"[\s、,，/]", "", c2)
+                c2 = re.sub(r"\d+(\.\d+)?", "", c2)
+                c2 = c2.strip()
+                # 过滤: 含"工艺/生产/工序/方案"的不是产品名(如"新增不饱和树脂生产工艺")
+                if re.search(r"(工艺|生产工序|生产方案|方案|生产线)", c2) or len(c2) > 16:
+                    continue
+                if c2 and (c2.endswith("树脂") or "树脂" in c2) \
                         and c2 not in prods and c2 not in _NOISE:
                     prods.append(c2)
         if len(prods) >= 20:
@@ -268,18 +275,38 @@ def parse_report_file(path) -> dict:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
                 if len(cells) >= 5 and any("班" in c for c in cells):
                     shifts.append({"system": cells[4] if len(cells) > 4 else "", "post": cells[1] if len(cells) > 1 else ""})
-        # 检测表 (采样车间|采样点|粉尘/毒物|检测结果)
-        if ("采样" in head0 or "检测结果" in flat) and "mg" in flat:
+        # 检测表 (采样车间|采样点|粉尘/毒物|检测结果) — 需跳过"采样时间"说明行+表头重复行
+        if "采样" in head0 and ("mg" in flat or "CTWA" in flat or "检测结果" in flat):
             for row in tb[1:]:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
-                # 跳过表头/空行
-                if not cells or any(c in ("采样点", "接触时间", "检测结果", "检测项目", "采样车间/岗位") for c in cells):
+                if not cells or not any(cells):
                     continue
-                # 取 采样点/检测项目/结果 列(跳过表头词)
-                vals = [c for c in cells if c and c not in ("采样点", "采样车间/岗位", "接触时间(h/d)", "接触时间")]
-                if len(vals) >= 2:
-                    detections.append({"factory": vals[0], "point": vals[0], "factor": vals[1],
-                                       "result": vals[2] if len(vals) > 2 else ""})
+                # 跳过"采样时间"跨列说明行
+                if any("采样时间" in c for c in cells):
+                    continue
+                # 跳过表头重复行(首列表头词 / 含CTWA/判定等表头)
+                if cells[0] in ("采样车间/岗位", "采样点", "接触时间", "检测结果", "检测项目") \
+                        or any(c in ("CTWA", "CSTEL", "CME", "判定结果", "PE/PC-TWA", "接触时间(h/d)") for c in cells):
+                    continue
+                # 跳过纯数字/短表头行
+                if len(cells[0]) < 2 or re.fullmatch(r"\d+(\.\d+)?", cells[0]):
+                    continue
+                # factor: 危害因子词启发式(非数字单元格)
+                factor = ""
+                for c in cells:
+                    if c and len(c) <= 22 and re.search(r"(苯乙烯|苯|粉尘|滑石|甲苯|二甲苯|乙二醇|丙二醇|甲醇|丙醇|丁酮|丙酮|乙酸|乙酯|氢氧化|矽|游离|锰|臭氧|氮氧化物|硫酸|镍|铬|锑|炭黑|白炭黑|电焊烟尘|矽尘|树脂|铅|汞|噪声|高温|振动)", c) and not re.match(r"^\d", c):
+                        factor = c
+                        break
+                if not factor:
+                    continue
+                # result: 检测结果/CTWA 数字(取第一个数值单元格, 兼容 <0.33 这种检出限值)
+                ctwa = ""
+                for c in cells[2:]:
+                    if re.fullmatch(r"([<>≤≥]?\s*)?\d+(\.\d+)?", c):
+                        ctwa = c
+                        break
+                detections.append({"factory": cells[0], "point": (cells[1] if len(cells) > 1 else ""),
+                                   "factor": factor, "ctwa": ctwa, "cste": "", "cme": ""})
         # 建构筑物表 (建筑物名称|占地|建面|层数)
         if "建构筑" in flat or ("建筑面积" in flat and "占地" in flat):
             for row in tb[1:]:
