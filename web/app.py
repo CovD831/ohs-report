@@ -95,19 +95,16 @@ _cache = {}
 
 
 def _get_project_data(pid: str) -> dict:
-    """从数据库读项目输入 (评估管线输入格式)"""
+    """从数据库读项目输入 (评估管线输入格式) — 返回全部提取字段, 供 coverage/assess/生成取数"""
     p = get_project(pid)
     if not p:
         return {}
     d = p["data"]
-    return {
-        "name": p["name"],
-        "industry": d.get("industry", ""),
-        "equipment": d.get("equipment", []),
-        "detections": d.get("detections", []),
-        "processes": d.get("processes", []),
-        "process_text": d.get("process_text", ""),
-    }
+    # 返回项目 data 的全部字段 (materials/staffing/protection/ppe/emergency/management/public_works/buildings/products/health_check/detections/equipment/process_text...)
+    # 关键: coverage_report(project=...) 依赖这些字段匹配类别(_ext_cat), 只返回部分字段会导致类别缺失误判
+    data = dict(d)
+    data["name"] = p["name"]
+    return data
 
 
 def _save_project_data(pid: str, data: dict) -> bool:
@@ -246,7 +243,7 @@ def api_report_generate(request: Request):
     for k in ("materials", "staffing", "protection", "ppe", "emergency",
               "buildings", "facilities", "products", "public_works",
               "investment", "area", "capacity", "nature", "location",
-              "equipment_detail", "shifts"):
+              "equipment_detail", "shifts", "health_check", "management"):
         if imported.get(k):
             data[k] = imported[k]
     # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
