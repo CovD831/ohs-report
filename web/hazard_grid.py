@@ -172,6 +172,12 @@ def build_grid(conn, project: dict) -> list[dict]:
     staffs = project.get("staffing", []) or []
     proc_text = project.get("process_text", "") or ""
 
+    # 设备驱动兜底 (生产单元聚合 + 辅助单元查aux_unit_hazard) — 跨行业通用, 不靠叙述工艺文本猜
+    if eqs:
+        g_eq = _grid_from_equipment(conn, eqs, mats)
+        if g_eq:
+            return g_eq
+
     # 1. 评价单元/工序: 从工艺文本提取, 或从设备归类
     units = extract_units_from_text(proc_text)
     if not units:
@@ -299,3 +305,82 @@ def _detect_enclosed(eqs: list) -> str:
     if "敞开" in s or "敞口" in s or "开放" in s:
         return "敞开式"
     return ""
+
+
+def _grid_from_equipment(conn, eqs: list, mats: list) -> list[dict]:
+    """设备驱动兜底: 生产单元(=设备聚合成'XX生产单元') + 辅助单元(查aux_unit_hazard补危害)
+
+    无提取的hazard_grid(无现状报告表的新项目/其他行业)时用。
+    判定: 设备名命中 aux_unit_hazard.keywords → 辅助单元(查表得危害);
+          否则 process_from_equipment 得生产工序(非'公辅') → 生产单元"工序+生产单元"。
+    跨行业通用: 反应釜→生产/反应, 注塑机→生产/注塑, 配电室→辅助/工频电场(任何行业一致)。"""
+    # 读 aux_unit_hazard (辅助单元关键词→危害)
+    aux = []  # [(unit, keywords_list, factors_list)]
+    try:
+        for r in conn.execute("SELECT unit, keywords, factors FROM aux_unit_hazard"):
+            kws = [k.strip() for k in str(r[1] or "").split(",") if k.strip()]
+            facs = [f.strip() for f in str(r[2] or "").split(",") if f.strip()]
+            aux.append((r[0], kws, facs))
+    except Exception:
+        aux = []
+    # 设备→物料 (equipment_material) 供物料列
+    eq_mat = {}
+    try:
+        for r in conn.execute("SELECT equipment, material FROM equipment_material"):
+            eq_mat[str(r[0]).strip()] = str(r[1] or "")
+    except Exception:
+        eq_mat = {}
+
+    prod = {}  # 工序 → 设备列表
+    auxu = {}  # 辅助单元名 → factors集合
+    for e in str(eqs) if isinstance(eqs, (set, tuple)) else eqs:
+        es = str(e)
+        if not es:
+            continue
+        # 判定辅助单元
+        hit = None
+        for uname, kws, facs in aux:
+            if any(kw in es for kw in kws):
+                hit = (uname, facs)
+                break
+        if hit:
+            auxu.setdefault(hit[0], [])
+            for f in hit[1]:
+                if f not in auxu[hit[0]]:
+                    auxu[hit[0]].append(f)
+            continue
+        # 生产设备 → 工序
+        p = process_from_equipment(es)
+        if p and p != "公辅":
+            prod.setdefault(p, []).append(es)
+
+    grid = []
+    # 生产单元: 每工序一个 "XX生产单元"
+    for p, eqlist in prod.items():
+        facs = []
+        for e in eqlist:
+            for pf in physical_factors(e):
+                if pf not in facs:
+                    facs.append(pf)
+        mats_u = []
+        for e in eqlist:
+            m = eq_mat.get(e, "")
+            if m:
+                parts = [x.strip() for x in str(m).replace("物料：", "").replace("槽内：", "").replace("管程：", "").split("/") if x.strip() and len(x.strip()) < 20]
+                for pa in parts:
+                    if pa not in mats_u:
+                        mats_u.append(pa)
+        # 物料→化学危害 (factors_from_material: 苯乙烯/乙二醇...查hazard_factor)
+        for mn in mats_u + [str(m.get("name", "")) if isinstance(m, dict) else str(m) for m in (mats or [])]:
+            if not mn:
+                continue
+            for fm in factors_from_material(conn, mn):
+                if fm not in facs:
+                    facs.append(fm)
+        grid.append({"unit": p + "生产单元", "process": p, "posts": [],
+                     "materials": mats_u[:4], "factors": facs, "enclosed": _detect_enclosed(eqlist)})
+    # 辅助单元: 查 aux_unit_hazard 得危害
+    for uname, facs in auxu.items():
+        grid.append({"unit": uname, "process": "辅助", "posts": [],
+                     "materials": [], "factors": list(facs), "enclosed": ""})
+    return grid
