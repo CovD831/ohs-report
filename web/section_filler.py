@@ -46,9 +46,10 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             tables.append({"name": "产品产量表", "cols": ["序号", "产品名称", "年产量"], "rows": p_rows})
         blds = pd_.get("buildings", [])
         if blds:
-            b_rows = [[i, b.get("name", ""), b.get("area", ""), b.get("floor_area", ""),
-                       b.get("floors", ""), b.get("height", "")] for i, b in enumerate(blds, 1)]
-            tables.append({"name": "建构筑物表", "cols": ["序号", "名称", "占地面积(㎡)", "建筑面积(㎡)", "层数", "高度(m)"],
+            b_rows = [[i, b.get("name", ""), b.get("功能区", ""), b.get("火灾危险类别", ""),
+                       b.get("耐火等级", ""), b.get("floors", ""), b.get("area", ""),
+                       b.get("floor_area", ""), b.get("height", "")] for i, b in enumerate(blds, 1)]
+            tables.append({"name": "建构筑物表", "cols": ["序号", "名称", "功能区", "火灾危险类别", "耐火等级", "层数", "占地面积(㎡)", "建筑面积(㎡)", "高度(m)"],
                            "rows": b_rows})
         staffs = pd_.get("staffing", [])
         if staffs:
@@ -75,9 +76,10 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                            "rows": s_rows})
         blds = pd_.get("buildings", [])
         if blds:
-            b_rows = [[i, b.get("name", ""), b.get("area", ""), b.get("floor_area", ""),
-                       b.get("floors", ""), b.get("height", "")] for i, b in enumerate(blds, 1)]
-            tables.append({"name": "建构筑物表", "cols": ["序号", "名称", "占地面积(㎡)", "建筑面积(㎡)", "层数", "高度(m)"],
+            b_rows = [[i, b.get("name", ""), b.get("功能区", ""), b.get("火灾危险类别", ""),
+                       b.get("耐火等级", ""), b.get("floors", ""), b.get("area", ""),
+                       b.get("floor_area", ""), b.get("height", "")] for i, b in enumerate(blds, 1)]
+            tables.append({"name": "建构筑物表", "cols": ["序号", "名称", "功能区", "火灾危险类别", "耐火等级", "层数", "占地面积(㎡)", "建筑面积(㎡)", "高度(m)"],
                            "rows": b_rows})
         # 原辅材料表 (materials dict 完整列: name/规格/年用量/最大储量/物态/储存地点)
         mats2 = pd_.get("materials", [])
@@ -91,12 +93,14 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                     m_rows.append([i, str(m), "—", "—", "—", "—", "—"])
             tables.append({"name": "原辅材料表", "cols": ["序号", "原辅材料名称", "规格", "年用量(t/a)", "最大储量(t)", "物态", "储存地点"],
                            "rows": m_rows})
-        # 产品产量表
+        # 产品产量表 (含变化量)
         prods = pd_.get("products", [])
         if prods:
-            p_rows = [[i, p.get("name", ""), p.get("output", "") or pd_.get("capacity", "—")]
+            p_rows = [[i, p.get("name", "") if isinstance(p, dict) else p,
+                       p.get("output", "") or pd_.get("capacity", "—"),
+                       p.get("变化量", "") if isinstance(p, dict) else ""]
                       for i, p in enumerate(prods, 1)]
-            tables.append({"name": "产品产量表", "cols": ["序号", "产品名称", "年产量"], "rows": p_rows})
+            tables.append({"name": "产品产量表", "cols": ["序号", "产品名称", "年产量", "变化量"], "rows": p_rows})
         # 项目概况/投资 (从固定字段)
         invest = (pd_.get("investment") or "")
         cap = (pd_.get("capacity") or "")
@@ -122,12 +126,12 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                       for i, s in enumerate(sf, 1)]
             tables.append({"name": "班制定员表", "cols": ["序号", "工种/系统", "一班", "二班", "三班", "四班", "合计"],
                            "rows": s_rows})
-        # 原辅材料表 (危害→来源→类别)
+        # 主要职业病危害因素表 (危害→来源→类别; 改名避免与'原辅材料表'冲突, 该表用 hazards)
         mats = assess.get("hazards", [])
         if mats:
             rows = [[i, h["factor"], "; ".join(h.get("sources", [])[:2]),
                      h.get("hazard_element", "化学毒物")] for i, h in enumerate(mats, 1)]
-            tables.append({"name": "原辅材料表", "cols": ["序号", "名称", "来源", "危害类别"], "rows": rows})
+            tables.append({"name": "主要职业病危害因素表", "cols": ["序号", "名称", "来源", "危害类别"], "rows": rows})
         # 检查表: 选址/总体布局/建筑卫生学/辅助用室 (依据GBZ1标准库)
         for theme, tname in [("选址", "选址检查表"), ("总体布局", "总体布局检查表"),
                              ("建筑卫生学", "建筑卫生学检查表"), ("辅助用室", "辅助用室检查表")]:

@@ -261,25 +261,47 @@ def parse_report_file(path) -> dict:
             break
     out["materials"] = mats[:45]
 
-    # ===== 产品 (通用: 只从"产品表"的"产品名称"列取, 不扫全文"含树脂") =====
+    # ===== 产品 (通用: 只匹配真产品表: 表头含'名称'+'主要成分/年产量', 排除'物料名称'表/技术指标表) =====
+    # 产品表(如表5): 名称|名称|主要成分|年产量|最大储量|物态 → 产品名=第一名称列, 类型=第二名称列, 年产量=产量列
+    # 关键: 排除 单位/万吨/物料名称 等非产品 (之前pic兜底误取技术指标表/物料表)
     prods = []
-    _NOISE = ("产品", "中间产品", "新增不饱和树脂", "新增产品", "主要产品", "副产品", "产品方案")
+    _NOISE = ("产品", "中间产品", "新增不饱和树脂", "新增产品", "主要产品", "副产品", "产品方案", "小计", "合计", "产品名称",
+              "废气", "废水", "废渣", "三废", "污染物", "None", "扩产前", "扩产", "未命名", "原有", "改建",
+              "单位", "万吨", "万千瓦时", "万立方米", "吨", "物料名称", "原料名称")
     for tb in tables:
         if not tb or not tb[0]:
             continue
         head = [str(c).replace("\n", " ").strip() for c in tb[0]]
-        # 找"产品名称"列 index (产品名称/产品方案/年产量所在表的产品名列)
+        flat_head = " ".join(head)
+        # 产品表特征: 有'名称' + (产品名称/主要成分/年产量 任一), 且 非物料名称表
+        if "物料名称" in flat_head or "原料名称" in flat_head:
+            continue  # 原辅料表, 不是产品表
+        is_prod_tbl = ("产品名称" in flat_head or "产品" in flat_head) and ("年产量" in flat_head or "产量" in flat_head or "变化量" in flat_head)
+        is_mixed_tbl = ("名称" in flat_head and "主要成分" in flat_head and ("年产量" in flat_head or "最大储量" in flat_head))
+        if not (is_prod_tbl or is_mixed_tbl):
+            continue
+        # 产品名列: 优先'产品名称', 否则第一'名称'列(混合表 cells[1])
         pic = -1
         for i, h in enumerate(head):
-            if "产品名称" in h or h == "产品" or "产品方案" in h:
+            if "产品名称" in h:
                 pic = i
                 break
         if pic < 0:
-            # 兜底: 表头含"年产量"的表, 产品名常在序号后第1列
-            if any("年产量" in h or "吨/年" in h for h in head):
-                pic = 1 if len(head) > 1 else -1
+            for i, h in enumerate(head):
+                if h.replace(" ", "") == "名称":
+                    pic = i
+                    break
         if pic < 0:
             continue
+        # 类型列(混合表第二'名称'), 年产量列
+        c_type = -1
+        c_out = -1
+        for i, h in enumerate(head):
+            hs = h.replace(" ", "")
+            if hs == "名称" and i > pic and c_type < 0:
+                c_type = i
+            if "年产量" in h or "产量" in h or "吨/年" in h:
+                c_out = i
         for row in tb[1:]:
             if pic >= len(row):
                 continue
@@ -291,12 +313,29 @@ def parse_report_file(path) -> dict:
             c2 = c2.replace("吨/年", "").replace("产品", "").strip()
             c2 = re.sub(r"[\s、,，/]", "", c2)
             c2 = re.sub(r"\d+(\.\d+)?", "", c2).strip()
-            # 过滤: 含"工艺/生产/工序/方案"的不是产品名(如"新增不饱和树脂生产工艺")
-            if re.search(r"(工艺|生产工序|生产方案|方案|生产线)", c2) or len(c2) > 16:
+            # 类型拼进产品名 (通用型/复合材料型 → 不饱和聚酯树脂(通用型)); 类型==产品名则不加
+            if c_type >= 0 and c_type < len(row):
+                typ = str(row[c_type]).replace("\n", " ").strip()
+                base0 = re.sub(r"[（(].*?[)）]", "", c).strip()
+                if typ and typ not in _NOISE and len(typ) <= 12 and typ != base0 and typ not in c2:
+                    c2 = c2 + "（" + typ + "）"
+            if re.search(r"(工艺|生产工序|生产方案|方案|生产线)", c2) or len(c2) > 20:
                 continue
-            if c2 and (c2.endswith("树脂") or "树脂" in c2) \
-                    and c2 not in prods and c2 not in _NOISE:
-                prods.append(c2)
+            if not c2 or c2 in _NOISE or any(n in c2 for n in ("废气", "废水", "废渣", "污染物", "单位", "万吨")):
+                continue
+            if c2 in [p.get("name") for p in prods]:
+                continue
+            # base/带类型 去重: 若已有"产品(类型)", 删纯base; 若纯base已有带类型, 跳过
+            b = c2.split("（")[0]
+            if "（" in c2:
+                if b in [p.get("name") for p in prods]:
+                    prods[:] = [p for p in prods if p.get("name") != b]
+            elif any(p.get("name", "").split("（")[0] == c2 for p in prods):
+                continue
+            p = {"name": c2}
+            if c_out >= 0 and c_out < len(row):
+                p["output"] = str(row[c_out]).replace("\n", " ").strip()
+            prods.append(p)
         if len(prods) >= 20:
             break
     out["products"] = prods[:20]
@@ -359,13 +398,47 @@ def parse_report_file(path) -> dict:
                         break
                 detections.append({"factory": cells[0], "point": (cells[1] if len(cells) > 1 else ""),
                                    "factor": factor, "ctwa": ctwa, "cste": "", "cme": ""})
-        # 建构筑物表 (建筑物名称|占地|建面|层数)
+        # 建构筑物表 (按表头定位列: 功能区/名称/火灾危险/耐火等级/层数/占地/建面)
         if "建构筑" in flat or ("建筑面积" in flat and "占地" in flat):
+            head = [str(c).replace("\n", " ").strip() for c in tb[0]]
+            def _bc(kws):
+                for i, h in enumerate(head):
+                    for kw in kws:
+                        if kw in h:
+                            return i
+                return -1
+            c_fun = _bc(["功能区", "区域"])
+            c_name = _bc(["建构筑物名称"])  # 只精确建构筑物名称, 不用宽松'名称'(避免申请报告表头不同把功能区当name)
+            if c_name < 0:
+                continue  # 表头无"建构筑物名称"列 → 非标准建构筑物表, 不提取(避免污染)
+            c_fire = _bc(["火灾危险", "火灾危险性"])
+            c_arch = _bc(["耐火等级", "耐火"])
+            c_floor = _bc(["层数"])
+            c_area = _bc(["占地面积", "占地"])
+            c_barea = _bc(["建筑面积", "建面"])
+            c_ht = _bc(["高度"])
             for row in tb[1:]:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
-                if len(cells) >= 2 and cells[0] and cells[0] != "建构筑物名称":
-                    buildings.append({"name": cells[0], "area": cells[3] if len(cells) > 3 else "",
-                                      "floor_area": cells[4] if len(cells) > 4 else ""})
+                name = cells[c_name] if (c_name >= 0 and c_name < len(cells)) else (cells[0] if cells else "")
+                if not name or name == "建构筑物名称":
+                    continue
+                b = {"name": name}
+                if c_fun >= 0 and c_fun < len(cells):
+                    b["功能区"] = cells[c_fun]
+                if c_fire >= 0 and c_fire < len(cells):
+                    b["火灾危险类别"] = cells[c_fire]
+                if c_arch >= 0 and c_arch < len(cells):
+                    b["耐火等级"] = cells[c_arch]
+                if c_floor >= 0 and c_floor < len(cells):
+                    b["floors"] = cells[c_floor]
+                if c_area >= 0 and c_area < len(cells):
+                    b["area"] = cells[c_area]
+                if c_barea >= 0 and c_barea < len(cells):
+                    b["floor_area"] = cells[c_barea]
+                if c_ht >= 0 and c_ht < len(cells):
+                    b["height"] = cells[c_ht]
+                if b["name"] not in [x.get("name") for x in buildings]:
+                    buildings.append(b)
         # 危害识别网格表 (评价单元|岗位|产品|工段|危害因素 或 岗位|产品类型|工艺/设备|涉及物料|危害因素)
         # 现状报告表20(18行)/表17/18/19 — 长兴真实危害网格, 直接提取
         hd0 = " ".join(str(c).replace("\n", "").strip() for c in tb[0])

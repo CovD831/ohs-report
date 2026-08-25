@@ -734,9 +734,15 @@ def import_materials_from_dir(pid: str) -> dict:
                             if m and m not in seen_mat:
                                 mats.append({"name": m, "msds": "报告内"}); seen_mat.add(m)
                 if rp.get("products"):
+                    # products 现为 dict 列表({name/output/变化量}), 按name去重
                     for p in rp["products"]:
-                        if p not in products and p not in (pr.get("name") for pr in products):
-                            products.append({"name": p})
+                        if isinstance(p, dict):
+                            pn = (p.get("name") or "").strip()
+                            if pn and pn not in [x.get("name") for x in products]:
+                                products.append(p)
+                        else:
+                            if p and p not in products:
+                                products.append({"name": p})
                 # 额外字段合并: 定员/班制/检测/建构筑物/防护设施/PPE/体检 (从复合报告提取)
                 if rp.get("staffing"):
                     for s in rp["staffing"]:
@@ -752,8 +758,10 @@ def import_materials_from_dir(pid: str) -> dict:
                             # dt 键: factor/ctwa/cste/cme (parse_report_file 检测表提取)
                             dets.append({"factor": dt.get("factor"), "ctwa": dt.get("ctwa", ""), "factory": dt.get("factory", "")})
                 if rp.get("buildings"):
+                    _BADB = ("功能区", "建构筑物名称", "名称", "None", "序号")
                     for b in rp["buildings"]:
-                        if b.get("name") and b.get("name") not in [x.get("name") for x in buildings]:
+                        nm = (b.get("name") or "").strip() if isinstance(b, dict) else ""
+                        if nm and nm not in _BADB and nm not in [x.get("name") for x in buildings]:
                             buildings.append(b)
                 if rp.get("facilities"):
                     for fa in rp["facilities"]:
