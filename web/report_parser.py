@@ -326,7 +326,7 @@ def parse_report_file(path) -> dict:
             hs = h.replace(" ", "")
             if hs == "名称" and i > pic and c_type < 0:
                 c_type = i
-            if "年产量" in h or "产量" in h or "吨/年" in h:
+            if "年产量" in h or "产量" in h or "吨/年" in h or "产能" in h:
                 c_out = i
         for row in tb[1:]:
             if pic >= len(row):
