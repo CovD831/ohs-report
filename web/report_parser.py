@@ -532,18 +532,45 @@ def parse_report_file(path) -> dict:
                                 "stage": stage, "materials": materials, "factors": factors}
                     if grid_row not in hazard_grid_list:
                         hazard_grid_list.append(grid_row)
-        # 防护设施 (岗位|防护设施|数量)
-        if "防护" in head0 or "设施" in flat and "数量" in flat:
+        # 防护设施 (按表头定位: 岗位|工序|生产单元 | 设施|措施 | 数量) — 兼容新泰T130(工序|危害|防护措施|类别)
+        if "防护" in head0 or ("设施" in flat and "数量" in flat):
+            hc = [str(c).replace("\n", " ").strip() for c in tb[0]]
+            def _fc(kws):
+                for i, h in enumerate(hc):
+                    for kw in kws:
+                        if kw in h:
+                            return i
+                return -1
+            i_post = _fc(["岗位", "工序", "生产单元"])
+            i_fac = _fc(["设施", "措施", "防护"])
+            i_cnt = _fc(["数量"])
             for row in tb[1:]:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
-                if len(cells) >= 3 and cells[1]:
-                    facilities.append({"post": cells[0], "facility": cells[1], "count": cells[2]})
-        # PPE (岗位|防护用品|周期)
+                def _fg(i):
+                    return cells[i] if (i >= 0 and i < len(cells)) else ""
+                fac = _fg(i_fac)
+                if fac:
+                    facilities.append({"post": _fg(i_post), "facility": fac, "count": _fg(i_cnt)})
+        # PPE (按表头定位: 生产单元|生产岗位|防护用品|数量|更换周期) — 兼容新泰T161
         if "防护用品" in flat or "个人防护" in flat:
+            hc = [str(c).replace("\n", " ").strip() for c in tb[0]]
+            def _pc(kws):
+                for i, h in enumerate(hc):
+                    for kw in kws:
+                        if kw in h:
+                            return i
+                return -1
+            i_item = _pc(["防护用品", "个人防护"])
+            i_post = _pc(["岗位", "工种"])
+            i_freq = _pc(["周期", "更换"])
+            i_cnt = _pc(["数量"])
             for row in tb[1:]:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
-                if len(cells) >= 2 and cells[1]:
-                    ppe.append({"item": cells[1], "post": cells[0]})
+                def _pg(i):
+                    return cells[i] if (i >= 0 and i < len(cells)) else ""
+                item = _pg(i_item)
+                if item:
+                    ppe.append({"item": item, "post": _pg(i_post), "frequency": _pg(i_freq), "count": _pg(i_cnt)})
         # 体检表 (岗位|体检项目|周期)
         if "体检" in flat or "健康检查" in flat:
             for row in tb[1:]:
