@@ -41,9 +41,11 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         pd_ = assess.get("_project_data", {})
         prods = pd_.get("products", [])
         if prods:
-            p_rows = [[i, p.get("name", ""), p.get("output", "") or pd_.get("capacity", "—")]
+            p_rows = [[i, p.get("name", "") if isinstance(p, dict) else p,
+                       p.get("output", "") or pd_.get("capacity", "—"),
+                       p.get("变化量", "") if isinstance(p, dict) else ""]
                       for i, p in enumerate(prods, 1)]
-            tables.append({"name": "产品产量表", "cols": ["序号", "产品名称", "年产量"], "rows": p_rows})
+            tables.append({"name": "产品产量表", "cols": ["序号", "产品名称", "年产量", "变化量"], "rows": p_rows})
         blds = pd_.get("buildings", [])
         if blds:
             b_rows = [[i, b.get("name", ""), b.get("功能区", ""), b.get("火灾危险类别", ""),
