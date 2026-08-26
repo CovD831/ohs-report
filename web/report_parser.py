@@ -302,7 +302,7 @@ def parse_report_file(path) -> dict:
         # 产品表特征: 有'名称' + (产品名称/主要成分/年产量 任一), 且 非物料名称表
         if "物料名称" in flat_head or "原料名称" in flat_head:
             continue  # 原辅料表, 不是产品表
-        is_prod_tbl = ("产品名称" in flat_head or "产品" in flat_head) and ("年产量" in flat_head or "产量" in flat_head or "变化量" in flat_head)
+        is_prod_tbl = ("产品名称" in flat_head or "产品" in flat_head) and ("年产量" in flat_head or "产量" in flat_head or "变化量" in flat_head or "产能" in flat_head)
         is_mixed_tbl = ("名称" in flat_head and "主要成分" in flat_head and ("年产量" in flat_head or "最大储量" in flat_head))
         if not (is_prod_tbl or is_mixed_tbl):
             continue
@@ -378,12 +378,31 @@ def parse_report_file(path) -> dict:
             continue
         head0 = " ".join(str(c).replace("\n", "").strip() for c in tb[0])
         flat = " | ".join(str(c).replace("\n", " ") for r in tb for c in r)
-        # 定员表 (部门|岗位|总人数|班制)
-        if "岗位" in head0 and ("总人数" in flat or "人数" in flat):
+        # 定员表 (部门|岗位|总人数|班制) — 兼容表头变体: 岗位/工种, 按表头定位列
+        if ("岗位" in head0 or "工种" in head0) and ("总人数" in flat or "人数" in flat):
+            hcells2 = [str(c).replace("\n", " ").strip() for c in tb[0]]
+            def _lc(kws):
+                for i, h in enumerate(hcells2):
+                    for kw in kws:
+                        if kw in h:
+                            return i
+                return -1
+            i_post = _lc(["岗位", "工种"])
+            i_cnt = _lc(["总人数", "人数"])
+            i_dept = _lc(["车间", "部门", "工作区域", "工段"])
             for row in tb[1:]:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
-                if len(cells) >= 3 and cells[1] and cells[2].isdigit():
-                    nh = {"post": cells[1], "count": cells[2], "dept": cells[0]}
+                def _gg(idx):
+                    return cells[idx] if (idx >= 0 and idx < len(cells)) else ""
+                post = _gg(i_post)
+                cnt = _gg(i_cnt)
+                dept = _gg(i_dept)
+                if not post and not cnt:
+                    continue
+                if not cnt:
+                    cnt = next((c for c in reversed(cells) if re.fullmatch(r"\d+", c)), "")
+                if post and cnt:
+                    nh = {"post": post, "count": cnt, "dept": dept}
                     if nh["post"] not in [s.get("post") for s in staffing]:
                         staffing.append(nh)
         # 班制 (工作班制列)
@@ -392,8 +411,10 @@ def parse_report_file(path) -> dict:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
                 if len(cells) >= 5 and any("班" in c for c in cells):
                     shifts.append({"system": cells[4] if len(cells) > 4 else "", "post": cells[1] if len(cells) > 1 else ""})
-        # 检测表 (采样车间|采样点|粉尘/毒物|检测结果) — 需跳过"采样时间"说明行+表头重复行
-        if "采样" in head0 and ("mg" in flat or "CTWA" in flat or "检测结果" in flat):
+        # 检测表 (采样车间|采样点|粉尘/毒物|检测结果 或 工种|检测地点|...|检测结果mg/m3)
+        # 兼容表头变体: 采样/检测地点/工种 + 检测结果/mg
+        if (("采样" in head0) or ("检测地点" in head0) or ("工作场所" in head0) or ("工种" in head0)) \
+                and ("检测结果" in flat or "mg/m3" in flat or "mg" in flat or "CTWA" in flat):
             for row in tb[1:]:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
                 if not cells or not any(cells):
@@ -411,7 +432,7 @@ def parse_report_file(path) -> dict:
                 # factor: 危害因子词启发式(非数字单元格)
                 factor = ""
                 for c in cells:
-                    if c and len(c) <= 22 and re.search(r"(苯乙烯|苯|粉尘|滑石|甲苯|二甲苯|乙二醇|丙二醇|甲醇|丙醇|丁酮|丙酮|乙酸|乙酯|氢氧化|矽|游离|锰|臭氧|氮氧化物|硫酸|镍|铬|锑|炭黑|白炭黑|电焊烟尘|矽尘|树脂|铅|汞|噪声|高温|振动)", c) and not re.match(r"^\d", c):
+                    if c and len(c) <= 22 and re.search(r"(苯乙烯|苯|粉尘|滑石|甲苯|二甲苯|乙二醇|丙二醇|甲醇|丙醇|丁酮|丙酮|乙酸|乙酯|氢氧化|矽|游离|锰|臭氧|氮氧化物|硫酸|镍|铬|锑|炭黑|白炭黑|电焊烟尘|矽尘|树脂|铅|汞|噪声|高温|振动|氟|氟化物|氯|氯化|锂|氢氟酸|盐酸|碱|氨|碳酸钠|纯碱|氢氟酸|氟化氢|六氟磷酸锂)", c) and not re.match(r"^\d", c):
                         factor = c
                         break
                 if not factor:
@@ -468,45 +489,47 @@ def parse_report_file(path) -> dict:
         # 危害识别网格表 (评价单元|岗位|产品|工段|危害因素 或 岗位|产品类型|工艺/设备|涉及物料|危害因素)
         # 现状报告表20(18行)/表17/18/19 — 长兴真实危害网格, 直接提取
         hd0 = " ".join(str(c).replace("\n", "").strip() for c in tb[0])
-        is_unit_grid = ("评价单元" in hd0 or "评价单元" in head0) and ("岗位" in hd0) and ("危害" in flat)
-        is_post_grid = ("岗位" in hd0) and ("产品类型" in hd0) and ("职业病危害因素" in flat)
+        is_unit_grid = (("评价单元" in hd0) or ("评价单元" in head0)) and ("危害" in flat)
+        is_post_grid = (("岗位" in hd0) or ("工种" in hd0)) and (("工序" in hd0) or ("产品类型" in hd0) or ("工艺" in hd0) or ("工段" in hd0)) and (("职业病危害因素" in flat) or ("危害" in flat))
         if is_unit_grid or is_post_grid:
             for row in tb[1:]:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
                 if not cells or not any(cells):
                     continue
-                # 找单元列(评价单元)/岗位/产品/工段/危害因素
-                # 表20: 序号|评价单元|岗位|产品|工段|危害因素 → unit=cells[1], post=cells[2], product=cells[3], stage=cells[4]
-                # 表17/18/19: 岗位|产品类型|工艺/设备|涉及物料|作业方式|危害因素 → post=cells[0], product=cells[1], stage=cells[2]
-                unit = ""
-                post = ""
-                product = ""
-                stage = ""
-                materials = ""
-                if "评价单元" in (head0 or ""):
-                    # 表头首行含"评价单元": 列序 = 序号/评价单元/岗位/产品/工段/...
-                    actual = cells[1:] if (cells[0] == "序号" or cells[0].strip() in ("序号", "")) else cells
-                    if len(actual) >= 1: unit = actual[0] if "评价单元" in head0 else ""
-                    if len(actual) >= 2: post = actual[1]
-                    if len(actual) >= 3: product = actual[2]
-                    if len(actual) >= 4: stage = actual[3]
-                elif "产品类型" in (head0 or ""):
-                    post = cells[0]
-                    product = cells[1] if len(cells) > 1 else ""
-                    stage = cells[2] if len(cells) > 2 else ""
-                    materials = cells[3] if len(cells) > 3 else ""
-                # 危害因素列 (找含"危害"的最后一列/含 ; 、 , 的因素串)
-                factors = ""
-                for c in reversed(cells):
-                    if c and re.search(r"(粉尘|苯|噪声|高温|酸|醇|酮|胺|树脂|烟尘|剂|微波|射线|工频)", c) and len(c) < 120 and c != (product or ""):
-                        factors = c
-                        break
-                if not unit and not post and not product:
+                # 按表头定位列 (通用): 评价单元/岗位|工种/工序|工段/产品/危害因素/物料|介质
+                # 兼容 长兴表20(序号|评价单元|岗位|产品|工段|危害) + 新泰T71(序号|评价单元|工序|危害) + 新泰T75(序号|工种|工序|人数|危害)
+                hcells = [str(c).replace("\n", " ").strip() for c in tb[0]]
+                def _gc(kws):
+                    for i, h in enumerate(hcells):
+                        for kw in kws:
+                            if kw in h:
+                                return i
+                    return -1
+                i_unit = _gc(["评价单元"])
+                i_post = _gc(["岗位", "工种"])
+                i_stage = _gc(["工序", "工段"])
+                i_prod = _gc(["产品"])
+                i_mat = _gc(["物料", "介质", "中间产物"])
+                i_fac = _gc(["接触职业病危害", "职业病危害因素", "危害因素", "危害"])
+                def _g(idx):
+                    return cells[idx] if (idx >= 0 and idx < len(cells)) else ""
+                unit = _g(i_unit)
+                post = _g(i_post)
+                stage = _g(i_stage)
+                product = _g(i_prod)
+                materials = _g(i_mat)
+                factors = _g(i_fac)
+                # 危害因素兜底: 倒序找含危害特征词的最后列
+                if not factors:
+                    for c in reversed(cells):
+                        if c and re.search(r"(粉尘|苯|噪声|高温|酸|醇|酮|胺|树脂|烟尘|剂|微波|射线|工频|氟|氯|锂|碱|氨|矽)", c) and len(c) < 120 and c != (product or ""):
+                            factors = c
+                            break
+                if not (unit or post or product):
                     continue
                 if factors or materials:
                     grid_row = {"unit": unit, "post": post, "product": product,
                                 "stage": stage, "materials": materials, "factors": factors}
-                    # 去重(unit+post+stage)
                     if grid_row not in hazard_grid_list:
                         hazard_grid_list.append(grid_row)
         # 防护设施 (岗位|防护设施|数量)
