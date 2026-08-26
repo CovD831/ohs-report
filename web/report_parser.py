@@ -432,7 +432,9 @@ def parse_report_file(path) -> dict:
                 # factor: 危害因子词启发式(非数字单元格)
                 factor = ""
                 for c in cells:
-                    if c and len(c) <= 22 and re.search(r"(苯乙烯|苯|粉尘|滑石|甲苯|二甲苯|乙二醇|丙二醇|甲醇|丙醇|丁酮|丙酮|乙酸|乙酯|氢氧化|矽|游离|锰|臭氧|氮氧化物|硫酸|镍|铬|锑|炭黑|白炭黑|电焊烟尘|矽尘|树脂|铅|汞|噪声|高温|振动|氟|氟化物|氯|氯化|锂|氢氟酸|盐酸|碱|氨|碳酸钠|纯碱|氢氟酸|氟化氢|六氟磷酸锂)", c) and not re.match(r"^\d", c):
+                    if c and len(c) <= 22 and re.search(r"(苯乙烯|苯|粉尘|滑石|甲苯|二甲苯|乙二醇|丙二醇|甲醇|丙醇|丁酮|丙酮|乙酸|乙酯|氢氧化|矽|游离|锰|臭氧|氮氧化物|硫酸|硫酸雾|镍|铬|锑|炭黑|白炭黑|电焊烟尘|矽尘|树脂|铅|汞|噪声|高温|振动|氟化物|氟化氢|氯化氢|氢氟酸|盐酸|氨|纯碱|碳酸钠|磷酸|二氯甲烷)", c) \
+                            and not re.match(r"^\d", c) \
+                            and not re.search(r"(车间|单元|生产|工序|装置|工段|班组|区域)", c):
                         factor = c
                         break
                 if not factor:
@@ -526,6 +528,10 @@ def parse_report_file(path) -> dict:
                             factors = c
                             break
                 if not (unit or post or product):
+                    continue
+                # 过滤污染行: unit==factors 或 unit==stage 全同(合并单元格/车间名当危害) → 非真实网格数据
+                # (不放宽到"unit含车间/单元", 会误杀长兴"生产装置/生产车间"真实单元行)
+                if unit and (unit == factors or unit == stage):
                     continue
                 if factors or materials:
                     grid_row = {"unit": unit, "post": post, "product": product,
