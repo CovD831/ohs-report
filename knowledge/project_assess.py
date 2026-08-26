@@ -110,12 +110,17 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
             h["sources"].add("原辅料")
             h["via"].add(w)
     # 1) 设备→物料→危害 (equipment_material 设备查物料, _auto_factor 自动匹配; 补充源)
+    # 通用性: equipment_material 是行业知识库(长兴表17/压克力线), 设备关联的物料必须属于本项目材料清单
+    # (proj_mats), 否则是其他行业知识库噪声 —— 如长兴"乙二醇/环己烷/甲苯/甲醇"污染新泰无机盐项目。
+    # 任何项目设备碰到的物料, 只有在本项目原辅料清单里才算真实危害 (准确优先, 宁缺失勿污染)。
     for eq in equipment:
         mats = conn.execute(
             "SELECT DISTINCT material FROM equipment_material WHERE equipment LIKE ?",
             (f"%{eq}%",)).fetchall()
         for (m,) in mats:
             for word in split_materials(m):
+                if word not in proj_mats:
+                    continue
                 f = _auto_factor(conn, word)
                 if f:
                     h = hazards.setdefault(f, {"sources": set(), "via": set()})
