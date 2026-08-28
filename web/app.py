@@ -259,13 +259,26 @@ def api_report_generate(request: Request):
     def _job():
         try:
             # ---- 阶段0: 材料解析 (后台, 不阻塞 HTTP 响应) ----
+            # 内存保护: 复合报告 PDF 解析峰值 ~800MB(20MB可研/33MB检测), 1.8G 小内存服务器
+            # 上与其他进程叠加会触发全局 OOM-kill 把整个 worker 杀死 → 任务永远 0%。
+            # 对策: ① 解析前 gc 清当前堆 ② 解析后立即 gc 归还峰值 ③ 失败不拖垮任务(跳过解析
+            #   用已有 data 继续 LLM 生成, 材料沿用上次 import 结果)
+            import gc as _gc
+            _gc.collect()
             _tasks.set_progress(jid, 0)
-            imported = import_materials_from_dir(pid)
+            try:
+                imported = import_materials_from_dir(pid)
+            except MemoryError:
+                imported = {}          # OOM: 跳过解析, 沿用项目已有 data
+            except Exception:
+                imported = {}
+            _gc.collect()
             p2 = get_project(pid)
             data = dict(p2["data"]) if p2 else {}
-            data["equipment"] = imported["equipment"]
-            data["detections"] = imported["detections"]
-            data["process_text"] = imported["process_text"]
+            # imported 为空(OOM/解析失败) → 沿用项目已有字段, 不覆盖
+            data["equipment"] = imported.get("equipment") or data.get("equipment") or []
+            data["detections"] = imported.get("detections") or data.get("detections") or []
+            data["process_text"] = imported.get("process_text") or data.get("process_text") or ""
             # 结构化字段: 物料/定员/防护/PPE/应急/建构筑物/设施配置/产品/公辅/概况细节
             for k in ("materials", "staffing", "protection", "ppe", "emergency",
                       "buildings", "facilities", "products", "public_works",
