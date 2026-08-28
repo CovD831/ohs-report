@@ -249,12 +249,15 @@ def _extract_product_units(proj_data: dict) -> list[tuple]:
     for i, name in enumerate(items, 1):
         out.append((f"3.5.{i}", f"{name}{DATA3['3.5']['suffix']}"))
     # 固定尾三级: 生产辅助工序(原报告通用规律: 长兴3.5.2/新泰无但5.1.1有) + 生产工艺评价
-    # 辅助工序只在设备/工艺含辅助系统时生成(条件单元, 不写死行业)
+    # 辅助工序=条件单元: hazard_grid 评价单元或设备/工艺含辅助系统时生成 (不写死行业)
     tail_idx = len(items) + 1
-    _AUX_KWS = ("公用", "辅助", "污水", "废水", "废气", "储运", "锅炉", "制冷", "供热",
-                "供气", "配电", "化验", "检维修", "压缩", "冷却", "空压")
+    _AUX_KWS = ("公用", "辅助", "污水", "废水", "废气", "储运", "储罐区", "锅炉", "制冷", "供热",
+                "供气", "配电", "化验", "检维修", "压缩", "冷却", "空压", "固废")
     aux_txt = " ".join(str(x) for x in (proj_data.get("equipment") or [])) + \
               (proj_data.get("process_text") or "")
+    for g in (proj_data.get("hazard_grid") or []):
+        if isinstance(g, dict):
+            aux_txt += " " + str(g.get("unit") or "")
     if any(k in aux_txt for k in _AUX_KWS):
         out.append((f"3.5.{tail_idx}", "生产辅助工序"))
         tail_idx += 1
