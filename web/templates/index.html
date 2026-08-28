@@ -348,9 +348,19 @@ async function loadMyReports() {
       return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
         <span>${nm}${ind} <span style="color:var(--text-muted);font-size:11px;">(生成${rep.gen_count}节)</span></span>
         <span><a href="/report/${rep.id}" style="font-size:12px;color:var(--primary);margin-right:10px;">查看</a>
+        <button onclick="deleteReport('${rep.id}', '${nm.replace(/'/g, "\\'")}')" title="删除报告及上传材料"
+          style="font-size:11px;color:var(--danger);background:none;border:none;cursor:pointer;margin-right:10px;">删除</button>
         ${st}</span></div>`;
     }).join('');
   } catch(e) { document.getElementById('myReports').style.display = 'none'; }
+}
+// 删除报告 (级联: db + 材料目录 + 缓存) — 生命周期B档
+async function deleteReport(pid, name) {
+  if (!confirm('确定删除「' + name + '」？\n\n将同时删除该报告的全部上传材料和生成内容，不可恢复。')) return;
+  const r = await fetch('/api/projects/' + pid, {method: 'DELETE'});
+  const d = await r.json();
+  if (d.ok) { loadMyReports(); }
+  else alert('删除失败' + (d.error ? '：' + d.error : ''));
 }
 // 自动生成: 上传后直接走 generate, 不打断用户
 async function startGenerateAuto() {

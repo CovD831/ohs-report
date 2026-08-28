@@ -45,6 +45,54 @@ def _owner_key(user: dict | None) -> str:
     return user.get("username") or "anon"
 
 
+# ============ 生命周期 (C档: 自动过期规则, 通用不针对个案) ============
+MATERIALS_DIR = DB.parent / "materials"
+EMPTY_PROJECT_TTL = 30 * 86400        # 空项目(未命名+无材料+无生成) 30天回收
+
+
+def _project_used(pid: str, data: dict, name: str) -> bool:
+    """项目是否被真实使用过: 生成过 / 用户命名 / 有提取数据 / 上传过材料"""
+    if name and name != "未命名报告":
+        return True
+    if any(bool(data.get(k)) for k in ("materials", "hazard_grid", "staffing",
+                                       "equipment", "detections", "section_states")):
+        return True
+    return (MATERIALS_DIR / pid).exists()
+
+
+def cleanup_expired() -> dict:
+    """生命周期自动回收 (启动时调用, 幂等):
+    1. 空项目: 未命名+无提取数据+无生成+无材料目录, 超TTL → 删 db 行
+       (游客访问首页自动建项目, 大量从未使用的行会堆积)
+    2. 孤儿材料目录: 目录在但 db 无此项目 → 删目录
+    有生成内容/用户命名的项目一律不动。"""
+    now = time.time()
+    conn = _conn()
+    dropped_rows = 0
+    ids = set()
+    for r in conn.execute("SELECT id, name, data, updated FROM project").fetchall():
+        ids.add(r["id"])
+        try:
+            data = json.loads(r["data"]) if r["data"] else {}
+        except Exception:
+            data = {}
+        if not _project_used(r["id"], data, r["name"]) and (now - (r["updated"] or now)) > EMPTY_PROJECT_TTL:
+            conn.execute("DELETE FROM project WHERE id=?", (r["id"],))
+            conn.execute("DELETE FROM task_job WHERE pid=?", (r["id"],))
+            dropped_rows += 1
+    conn.commit()
+    conn.close()
+    # 孤儿材料目录 (db 行已不存在)
+    dropped_dirs = 0
+    if MATERIALS_DIR.exists():
+        for d in MATERIALS_DIR.iterdir():
+            if d.is_dir() and d.name not in ids:
+                import shutil
+                shutil.rmtree(d, ignore_errors=True)
+                dropped_dirs += 1
+    return {"dropped_rows": dropped_rows, "dropped_dirs": dropped_dirs}
+
+
 def get_project(pid: str) -> dict | None:
     conn = _conn()
     r = conn.execute("SELECT id, name, data, status, owner_id FROM project WHERE id=?",

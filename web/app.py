@@ -348,6 +348,27 @@ def api_reports_list(request: Request):
     return {"ok": True, "reports": out}
 
 
+@app.delete("/api/projects/{pid}", response_class=JSONResponse)
+def api_delete_project(pid: str, request: Request):
+    """删除项目 (级联: db行 + 材料目录 + assess缓存 + 关联任务)
+    生命周期B档: 用户自主管理生成历史, 删除后材料目录同步回收。
+    归属校验: 只能删自己的项目 (admin 可删任意)。"""
+    if not _assert_owner(request, pid):
+        return JSONResponse({"error": "无权访问"}, status_code=403)
+    import shutil
+    from web.uploads import project_dir
+    conn = connect()
+    conn.execute("DELETE FROM project WHERE id=?", (pid,))
+    conn.execute("DELETE FROM task_job WHERE pid=?", (pid,))
+    conn.commit()
+    conn.close()
+    pd = project_dir(pid)
+    if pd.exists():
+        shutil.rmtree(pd, ignore_errors=True)
+    _cache.pop(f"assess:{pid}", None)
+    return {"ok": True, "deleted": pid}
+
+
 @app.get("/login", response_class=HTMLResponse)
 def login_page():
     return env.get_template("login.html").render()
@@ -1163,6 +1184,13 @@ def api_generate_sub(pid: str, sec: str, sub: str):
 from web import tasks as _tasks  # noqa: E402
 
 _tasks.init_tasks()
+
+# ===== 生命周期自动回收 (C档: 空项目TTL + 孤儿材料目录, 启动时幂等执行) =====
+from web.projects_db import cleanup_expired as _cleanup_expired  # noqa: E402
+
+_lifecycle = _cleanup_expired()
+if _lifecycle["dropped_rows"] or _lifecycle["dropped_dirs"]:
+    print(f"[lifecycle] 回收空项目 {_lifecycle['dropped_rows']} 行, 孤儿材料目录 {_lifecycle['dropped_dirs']} 个")
 
 
 def _gen_one(pid: str, sec: str, sub: str | None, title: str | None = None, cache: dict | None = None) -> str:
