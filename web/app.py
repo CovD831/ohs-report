@@ -810,6 +810,12 @@ def import_materials_from_dir(pid: str) -> dict:
                             pn = (p.get("name") or "").strip()
                             if pn and pn not in [x.get("name") for x in products]:
                                 products.append(p)
+                            elif pn:
+                                # 同name已存在: 后处理文件带 delta(可研: 本项目产品判定) → 覆盖旧条目
+                                for x in products:
+                                    if x.get("name") == pn and p.get("delta_num") is not None:
+                                        x.update(p)
+                                        break
                         else:
                             if p and p not in products:
                                 products.append({"name": p})
