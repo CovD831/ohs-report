@@ -259,15 +259,24 @@ def api_report_generate(request: Request):
     def _job():
         try:
             # ---- 阶段0: 材料解析 (后台, 不阻塞 HTTP 响应) ----
-            # 内存保护: 复合报告 PDF 解析峰值 ~800MB(20MB可研/33MB检测), 1.8G 小内存服务器
-            # 上与其他进程叠加会触发全局 OOM-kill 把整个 worker 杀死 → 任务永远 0%。
-            # 对策: ① 解析前 gc 清当前堆 ② 解析后立即 gc 归还峰值 ③ 失败不拖垮任务(跳过解析
-            #   用已有 data 继续 LLM 生成, 材料沿用上次 import 结果)
+            # 内存保护(硬性): 复合报告 PDF 解析峰值 ~800MB, 1.87G 小内存服务器上若在
+            # worker 进程内解析, 全局 OOM-kill 会杀死整个 worker → 任务永远 0%。
+            # 对策: 解析挪到独立子进程 reparse_worker.py (setrlimit 限地址空间,
+            # 超限抛 MemoryError → 返回空 dict; 子进程被杀也不影响 worker),
+            # 主进程继续用项目已有 data 生成, 任务永不因解析 OOM 卡死。
+            import subprocess as _sp
+            import json as _json
+            import sys as _sys
             import gc as _gc
             _gc.collect()
             _tasks.set_progress(jid, 0)
+            imported = {}
             try:
-                imported = import_materials_from_dir(pid)
+                _worker = str(Path(__file__).resolve().parent / "reparse_worker.py")
+                _r = _sp.run([_sys.executable, "-u", _worker, pid],
+                             capture_output=True, timeout=900, cwd=str(Path(__file__).resolve().parent.parent))
+                if _r.returncode == 0 and _r.stdout.strip():
+                    imported = _json.loads(_r.stdout)
             except MemoryError:
                 imported = {}          # OOM: 跳过解析, 沿用项目已有 data
             except Exception:
