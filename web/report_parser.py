@@ -293,7 +293,7 @@ def parse_report_file(path) -> dict:
     prods = []
     _NOISE = ("产品", "中间产品", "新增不饱和树脂", "新增产品", "主要产品", "副产品", "产品方案", "小计", "合计", "产品名称",
               "废气", "废水", "废渣", "三废", "污染物", "None", "扩产前", "扩产", "未命名", "原有", "改建",
-              "单位", "万吨", "万千瓦时", "万立方米", "吨", "物料名称", "原料名称")
+              "单位", "万吨", "万千瓦时", "万立方米", "吨", "物料名称", "原料名称", "名称", "序号")
     for tb in tables:
         if not tb or not tb[0]:
             continue
@@ -325,23 +325,42 @@ def parse_report_file(path) -> dict:
         c_delta = -1
         for i, h in enumerate(head):
             hs = h.replace(" ", "")
+            hs2 = re.sub(r"\s+", "", h)
             if hs == "名称" and i > pic and c_type < 0:
                 c_type = i
             if "年产量" in h or "产量" in h or "吨/年" in h or "产能" in h:
                 c_out = i
-            if "变化量" in h or "新增量" in h or "新增产能" in h:
+            if ("变化量" in hs2) or ("新增量" in hs2) or ("新增产能" in hs2):
                 c_delta = i
+        # 类型列动态推断: PDF 合并单元格 → 表头无第二"名称"列(None), 但数据行第 pic+1 列是类型
+        # (长兴可研PDF: 表头[序号|名称|None|...], 数据行['1','不饱和聚酯树脂','通用型',...])
+        if c_type < 0 and pic + 1 < len(tb[0]):
+            sample = [str(r[pic + 1]).replace("\n", " ").strip() for r in tb[1:4] if pic + 1 < len(r)]
+            if sample and all(s and len(s) <= 8 for s in sample):
+                c_type = pic + 1
+        last_base = ""  # 合并单元格延续: 上一行的产品 base
         for row in tb[1:]:
             if pic >= len(row):
                 continue
             c = str(row[pic]).replace("\n", " ").strip()
+            if c in ("None", "nan", "NaN"):
+                c = ""  # 合并单元格 (pdfplumber None → 归空, 走合并延续逻辑)
             if not c:
-                continue
+                # 名称列空(合并单元格): 类型列有值 → 延续上一行产品 base (不饱和聚酯树脂→复合材料型)
+                if last_base and c_type >= 0 and c_type < len(row):
+                    typ = str(row[c_type]).replace("\n", " ").strip()
+                    if typ and typ not in _NOISE and len(typ) <= 8 and typ != last_base:
+                        c = last_base + "（" + typ + "）"
+                if not c:
+                    continue
+            is_merged = "（" in c
             c2 = re.sub(r"[（(].*?[)）]", "", c).strip()
             c2 = re.sub(r"^\d+(\.\d+)?", "", c2).strip()
             c2 = c2.replace("吨/年", "").replace("产品", "").strip()
             c2 = re.sub(r"[\s、,，/]", "", c2)
             c2 = re.sub(r"\d+(\.\d+)?", "", c2).strip()
+            if not is_merged:
+                last_base = c2
             # 类型拼进产品名 (通用型/复合材料型 → 不饱和聚酯树脂(通用型)); 类型==产品名则不加
             if c_type >= 0 and c_type < len(row):
                 typ = str(row[c_type]).replace("\n", " ").strip()
