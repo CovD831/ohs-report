@@ -230,57 +230,82 @@ async def api_report_upload(request: Request):
 
 @app.post("/api/report/generate", response_class=JSONResponse)
 def api_report_generate(request: Request):
-    """一键生成: 导入已传材料 → 识别/判定/分级 → 后台生成全部章节"""
+    """一键生成: 导入已传材料 → 识别/判定/分级 → 后台生成全部章节
+
+    修复"点生成卡住不跳转": 材料解析(复合报告PDF 46s/个, 大文件内存700MB+)原来同步执行,
+    POST 60-90s 才返回 → 前端 fetch 等不到响应 → 不跳转; 且小内存服务器(1.8G)并发解析会
+    OOM(exit 137) → 生成不完全的报告。现在解析整体挪进后台线程, 接口秒回 → 前端立刻
+    跳转报告页, 进度由 /api/tasks 轮询(含"解析材料中"阶段)。
+    """
     from web.report_struct import count_units
     # 优先用前端上传记录的 pid (修复"上传长兴却生成浦发"); 否则用身份最新
     pid = request.query_params.get("pid") or _resolve_pid(request)
     p = get_project(pid)
     if not p:
         return JSONResponse({"error": "not found"}, status_code=404)
-    # 先导入材料 (解析设备/检测/工艺 + 项目概况名/行业)
-    imported = import_materials_from_dir(pid)
-    data = dict(p["data"])
-    data["equipment"] = imported["equipment"]
-    data["detections"] = imported["detections"]
-    data["process_text"] = imported["process_text"]
-    # 结构化字段: 物料/定员/防护/PPE/应急/建构筑物/设施配置/产品/公辅/概况细节
-    for k in ("materials", "staffing", "protection", "ppe", "emergency",
-              "buildings", "facilities", "products", "public_works",
-              "investment", "area", "capacity", "nature", "location",
-              "equipment_detail", "shifts", "health_check", "management",
-              "hazard_grid", "emergency_supplies"):
-        if imported.get(k):
-            data[k] = imported[k]
-    # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
-    if imported.get("industry"):
-        data["industry"] = imported["industry"]
-    proj_name = imported.get("name") or p["name"]
-    if proj_name and proj_name != "未命名报告":
-        p["name"] = proj_name
-        data["name"] = proj_name
+    # 项目名/行业先取旧值 (后台解析后覆盖)
+    proj_name = p["name"]
     # 生命周期: 重新生成必须先清空旧的 section_states,
     # 否则打勾的是上次材料的旧内容, 与当前数据不一致 (用户指出的 bug)
+    data = dict(p["data"])
     data["section_states"] = {}
+    data["generating"] = True
     _save_project_data(pid, data)
-    if proj_name and proj_name != "未命名报告":
-        update_project(pid, proj_name, data)
     _cache.pop(f"assess:{pid}", None)
     total = count_units(data)
     user = request.state.user if hasattr(request.state, "user") else None
-    jid = _tasks.create_job((user or {}).get("username", "-"), pid, "generate_all", total)
+    jid = _tasks.create_job((user or {}).get("username", "-"), pid, "generate_all", total + 1)  # +1 = 材料解析阶段
 
     def _job():
         try:
+            # ---- 阶段0: 材料解析 (后台, 不阻塞 HTTP 响应) ----
+            _tasks.set_progress(jid, 0)
+            imported = import_materials_from_dir(pid)
+            p2 = get_project(pid)
+            data = dict(p2["data"]) if p2 else {}
+            data["equipment"] = imported["equipment"]
+            data["detections"] = imported["detections"]
+            data["process_text"] = imported["process_text"]
+            # 结构化字段: 物料/定员/防护/PPE/应急/建构筑物/设施配置/产品/公辅/概况细节
+            for k in ("materials", "staffing", "protection", "ppe", "emergency",
+                      "buildings", "facilities", "products", "public_works",
+                      "investment", "area", "capacity", "nature", "location",
+                      "equipment_detail", "shifts", "health_check", "management",
+                      "hazard_grid", "emergency_supplies"):
+                if imported.get(k):
+                    data[k] = imported[k]
+            # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
+            if imported.get("industry"):
+                data["industry"] = imported["industry"]
+            nonlocal_name = imported.get("name") or p2["name"] if p2 else None
+            if nonlocal_name and nonlocal_name != "未命名报告":
+                data["name"] = nonlocal_name
+                update_project(pid, nonlocal_name, data)
+            else:
+                update_project(pid, p2["name"] if p2 else pid, data)
+            _cache.pop(f"assess:{pid}", None)
             _run_generate_all(pid, jid)
+            # 生成结束清 generating 标记
+            p3 = get_project(pid)
+            if p3:
+                d3 = dict(p3["data"])
+                d3["generating"] = False
+                _save_project_data(pid, d3)
             _tasks.finish_job(jid, None)
         except Exception as e:
+            p3 = get_project(pid)
+            if p3:
+                d3 = dict(p3["data"])
+                d3["generating"] = False
+                _save_project_data(pid, d3)
             _tasks.finish_job(jid, traceback.format_exc())
 
     import threading
     threading.Thread(target=_job, daemon=True).start()
     return {"ok": True, "pid": pid, "job_id": jid, "total": total,
-            "imported": {"equipment": len(imported["equipment"]),
-                         "detections": len(imported["detections"])}}
+            "parsing": True,
+            "imported": {"equipment": len(p["data"].get("equipment") or []),
+                         "detections": len(p["data"].get("detections") or [])}}
 
 
 @app.get("/api/report", response_class=JSONResponse)
