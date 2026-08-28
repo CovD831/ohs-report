@@ -319,15 +319,18 @@ def parse_report_file(path) -> dict:
                     break
         if pic < 0:
             continue
-        # 类型列(混合表第二'名称'), 年产量列
+        # 类型列(混合表第二'名称'), 年产量列, 变化量列(本项目产品判定)
         c_type = -1
         c_out = -1
+        c_delta = -1
         for i, h in enumerate(head):
             hs = h.replace(" ", "")
             if hs == "名称" and i > pic and c_type < 0:
                 c_type = i
             if "年产量" in h or "产量" in h or "吨/年" in h or "产能" in h:
                 c_out = i
+            if "变化量" in h or "新增量" in h or "新增产能" in h:
+                c_delta = i
         for row in tb[1:]:
             if pic >= len(row):
                 continue
@@ -361,6 +364,12 @@ def parse_report_file(path) -> dict:
             p = {"name": c2}
             if c_out >= 0 and c_out < len(row):
                 p["output"] = str(row[c_out]).replace("\n", " ").strip()
+            # 变化量列: 本项目产品判定 (新建项目无此列→全部产品都是本项目产品)
+            if c_delta >= 0 and c_delta < len(row):
+                dv = str(row[c_delta]).replace("\n", " ").strip()
+                num = re.sub(r"[\s+,.]", "", dv).replace("+", "").lstrip("0")
+                p["delta"] = dv
+                p["delta_num"] = float(num) if num and num.isdigit() else 0.0
             prods.append(p)
         if len(prods) >= 20:
             break

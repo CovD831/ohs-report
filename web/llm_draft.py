@@ -13,6 +13,7 @@
 """
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -528,6 +529,13 @@ def draft_detail(pid: str, key: str, title: str, _cache: dict | None = None) -> 
         canon = sub4_title(key)
     else:
         canon = title
+    # 数据单元(产品/工段级, sub3_title/sub4_title查表返回原key): 用传入的 title
+    # (修复: 5.1.1.2 这类数据四级传 key 给 LLM → LLM 自造"5.1.1.2 生产工艺过程中的职业病
+    #  危害因素分析"标题; 应传真实标题如"饱和聚酯树脂")
+    if canon == key and title and title != key:
+        canon = title
+    # 去掉标题里的编号前缀 (title 形如 "5.1.1.2 饱和聚酯树脂" → "饱和聚酯树脂")
+    canon = re.sub(r"^\d+(\.\d+)*\s*", "", canon).strip() or canon
     # 构造 prompt: 用标题 + 项目数据 info, 生成该节叙述
     prompt = f"""撰写预评价报告「{canon}」小节的叙述段落。
 

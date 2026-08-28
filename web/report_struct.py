@@ -190,8 +190,24 @@ def _extract_product_units(proj_data: dict) -> list[tuple]:
     import re
     items = []
     seen = set()
+    # 0) 本项目产品判定: 产品表有"变化量"列 → 变化量>0 的行才是本项目产品
+    #    (扩建项目产品表=全厂产品(存量+新增), 如长兴[通用型+12000/饱和+0]; 项目只新增12000通用型)
+    #    新建项目无变化量列 → 全部产品都是本项目产品
+    reduced = []
+    has_delta = any(isinstance(p, dict) and p.get("delta_num") is not None
+                    for p in (proj_data.get("products") or []))
+    if has_delta:
+        for p in (proj_data.get("products") or []):
+            if isinstance(p, dict) and (p.get("delta_num") or 0) > 0:
+                reduced.append(p)
+        if reduced:  # 有变化量>0的产品 → 用本项目产品; 全0(没新增)则全部(兜底)
+            prods_src = reduced
+        else:
+            prods_src = proj_data.get("products") or []
+    else:
+        prods_src = proj_data.get("products") or []
     # 1) 产品产量表 (最可靠: 产品名/工段名)
-    for p in (proj_data.get("products") or []):
+    for p in prods_src:
         if isinstance(p, dict):
             name = str(p.get("name") or p.get("产品名称") or p.get("product") or "").strip()
         else:
@@ -232,13 +248,23 @@ def _extract_product_units(proj_data: dict) -> list[tuple]:
     # 数据驱动三级: 3.5.x 产品工艺
     for i, name in enumerate(items, 1):
         out.append((f"3.5.{i}", f"{name}{DATA3['3.5']['suffix']}"))
-    # 固定尾三级: 生产工艺评价 (编号 = 产品数+1, 如 3.5.5)
-    if items:
-        tail_idx = len(items) + 1
-        out.append((f"3.5.{tail_idx}", DATA3["3.5"]["tail"]))
+    # 固定尾三级: 生产辅助工序(原报告通用规律: 长兴3.5.2/新泰无但5.1.1有) + 生产工艺评价
+    # 辅助工序只在设备/工艺含辅助系统时生成(条件单元, 不写死行业)
+    tail_idx = len(items) + 1
+    _AUX_KWS = ("公用", "辅助", "污水", "废水", "废气", "储运", "锅炉", "制冷", "供热",
+                "供气", "配电", "化验", "检维修", "压缩", "冷却", "空压")
+    aux_txt = " ".join(str(x) for x in (proj_data.get("equipment") or [])) + \
+              (proj_data.get("process_text") or "")
+    if any(k in aux_txt for k in _AUX_KWS):
+        out.append((f"3.5.{tail_idx}", "生产辅助工序"))
+        tail_idx += 1
+    out.append((f"3.5.{tail_idx}", DATA3["3.5"]["tail"]))
     # 数据驱动四级: 5.1.1.x 产品/工段
     for i, name in enumerate(items, 1):
         out.append((f"5.1.1.{i}", name))
+    # 固定尾四级: 生产辅助工序 (原报告通用规律: 长兴5.1.1.2 生产辅助工序 / 新泰5.1.1.4 公用及辅助设施)
+    if any(k in aux_txt for k in _AUX_KWS):
+        out.append((f"5.1.1.{len(items)+1}", "生产辅助工序"))
     return out
 
 
