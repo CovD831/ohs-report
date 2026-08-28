@@ -54,10 +54,13 @@ def _llm(prompt: str, system: str = _NARR_SYSTEM) -> str:
     }).encode(), headers={"Authorization": f"Bearer {key}",
                           "Content-Type": "application/json"})
     # 域名解析/网络偶发失败: 指数退避重试 (2s/4s/8s)
+    # 读超时: 长章节(几千字) GLM 生成需 2-4 分钟, 60s 会超时→重试→再超时死循环(全部章节失败,
+    # 任务卡 0%)。默认 300s, 可用 LLM_READ_TIMEOUT 覆盖。
+    READ_TIMEOUT = int(os.environ.get("LLM_READ_TIMEOUT", "300"))
     last_err = None
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with urllib.request.urlopen(req, timeout=READ_TIMEOUT) as r:
                 d = json.loads(r.read())
             return d["choices"][0]["message"]["content"]
         except Exception as e:
