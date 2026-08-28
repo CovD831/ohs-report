@@ -16,6 +16,7 @@ import secrets
 import sqlite3
 import time
 import traceback
+import asyncio
 from pathlib import Path
 
 from fastapi import FastAPI, Request, UploadFile
@@ -203,19 +204,19 @@ async def api_report_upload(request: Request):
         coverage = coverage_report(pid)  # 只按类别判断缺失
     except Exception:
         coverage = {"covered": [], "missing": [], "completeness": 0}
-    # 上传完成后提取一次(单次, 缓存pid): 用提取字段判断12项资料覆盖
-    # 复合报告(申请报告/现状报告)含概况/设备/工艺/定员/防护, 提取出字段=该资料项有值
-    # (修复: 复合报告只归一类 → 其他类别被误判'缺失'; default缓存避免每文件重复提取)
+    # 资料提取: 仅 finalize(最后一文件传完) 时完整提取一次, 且放线程执行。
+    # 修复"上传卡1/229": 之前每个文件上传都同步执行 import_materials_from_dir(解析已传全部
+    # 材料, 47s+) 阻塞事件循环 → 第2个文件请求排队等待 → 前端永远卡在 1/229。
     extracted = None
     finalize = request.query_params.get("finalize")  # 最后一文件传完 → 强刷完整提取
     try:
         if finalize:  # finalize=1: 清缓存强制完整提取(此时所有文件已传完)
             _import_cache.pop(pid, None)
-        if pid in _import_cache:
+            imported = await asyncio.to_thread(import_materials_from_dir, pid)
+            _import_cache[pid] = imported
+            extracted = imported
+        elif pid in _import_cache:
             extracted = _import_cache[pid]
-        else:
-            extracted = import_materials_from_dir(pid)
-            _import_cache[pid] = extracted
     except Exception:
         pass
     # 完整度用提取字段计算(类别覆盖缺≠数据缺): extracted有字段→对应类别视为已覆盖
