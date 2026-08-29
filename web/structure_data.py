@@ -162,7 +162,9 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
         if e:
             emphasis = e
             break
-    order = emphasis + [f for f in fields if f not in emphasis]
+    # 命中侧重 → 只投喂侧重字段 (每个小节讲该讲的事, 不重复全章字段)
+    # 未命中 → 章级全量 (兜底)
+    fields = emphasis if emphasis else fields
 
     # 从 project/assess 取各字段值
     hazards = assess.get("hazards", [])
@@ -213,7 +215,7 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
         return project.get(field, [] if field in ("equipment", "materials", "staffing", "ppe") else "")
 
     lines = []
-    for field in order:
+    for field in fields:
         if field not in PROJECT_INFO_SCHEMA:
             continue
         desc, typ = PROJECT_INFO_SCHEMA[field]
