@@ -454,8 +454,31 @@ def parse_report_file(path) -> dict:
                     shifts.append({"system": cells[4] if len(cells) > 4 else "", "post": cells[1] if len(cells) > 1 else ""})
         # 检测表 (采样车间|采样点|粉尘/毒物|检测结果 或 工种|检测地点|...|检测结果mg/m3)
         # 兼容表头变体: 采样/检测地点/工种 + 检测结果/mg
-        if (("采样" in head0) or ("检测地点" in head0) or ("工作场所" in head0) or ("工种" in head0)) \
+        # 修复: 必须有"检测结果/CTWA"列才算检测结果表 (排除 检测计划表:
+        #   表22 岗位|采样地点|检测项目|接触时间|采样数量|检测天数 → 无结果列, "检测项目"≠"检测结果")
+        _has_result_col = any(("检测结果" in str(c)) or ("CTWA" in str(c).replace("\n", ""))
+                              for c in tb[0])
+        if _has_result_col and \
+                (("采样" in head0) or ("检测地点" in head0) or ("工作场所" in head0) or ("工种" in head0)) \
                 and ("检测结果" in flat or "mg/m3" in flat or "mg" in flat or "CTWA" in flat):
+            # 按表头定位 CTWA/检测结果列 (修复: 表25 粉尘种类|接触时间|检测结果1/2/3|CTWA
+            #   → 直接取 CTWA 列, 不能取第一个数字(会取到接触时间/检测结果变体))
+            _head = [str(c).replace("\n", "").strip() for c in tb[0]]
+            _ctwa_col = -1
+            for _i, _h in enumerate(_head):
+                if "CTWA" in _h:
+                    _ctwa_col = _i
+                    break
+            if _ctwa_col < 0:
+                for _i, _h in enumerate(_head):
+                    if "检测结果" in _h:
+                        _ctwa_col = _i
+                        break
+            _factor_col = -1
+            for _i, _h in enumerate(_head):
+                if ("粉尘种类" in _h) or ("毒物种类" in _h) or ("危害因素" in _h) or ("检测项目" in _h):
+                    _factor_col = _i
+                    break
             for row in tb[1:]:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
                 if not cells or not any(cells):
@@ -470,24 +493,46 @@ def parse_report_file(path) -> dict:
                 # 跳过纯数字/短表头行
                 if len(cells[0]) < 2 or re.fullmatch(r"\d+(\.\d+)?", cells[0]):
                     continue
-                # factor: 危害因子词启发式(非数字单元格)
+                # factor: 优先"检测项目/粉尘种类"列; 无则危害因子词启发式
                 factor = ""
-                for c in cells:
-                    if c and len(c) <= 22 and re.search(r"(苯乙烯|苯|粉尘|滑石|甲苯|二甲苯|乙二醇|丙二醇|甲醇|丙醇|丁酮|丙酮|乙酸|乙酯|氢氧化|矽|游离|锰|臭氧|氮氧化物|硫酸|硫酸雾|镍|铬|锑|炭黑|白炭黑|电焊烟尘|矽尘|树脂|铅|汞|噪声|高温|振动|氟化物|氟化氢|氯化氢|氢氟酸|盐酸|氨|纯碱|碳酸钠|磷酸|二氯甲烷)", c) \
-                            and not re.match(r"^\d", c) \
-                            and not re.search(r"(车间|单元|生产|工序|装置|工段|班组|区域)", c):
-                        factor = c
-                        break
+                if _factor_col >= 0 and _factor_col < len(cells):
+                    fc = cells[_factor_col]
+                    # 检测项目常为多项("其他粉尘、苯乙烯、噪声") → 取第一项
+                    if fc and len(fc) <= 40 and not re.match(r"^\d", fc):
+                        factor = fc.split("、")[0].split(",")[0].strip()
+                if not factor:
+                    for c in cells:
+                        if c and len(c) <= 22 and re.search(r"(苯乙烯|苯|粉尘|滑石|甲苯|二甲苯|乙二醇|丙二醇|甲醇|丙醇|丁酮|丙酮|乙酸|乙酯|氢氧化|矽|游离|锰|臭氧|氮氧化物|硫酸|硫酸雾|镍|铬|锑|炭黑|白炭黑|电焊烟尘|矽尘|树脂|铅|汞|噪声|高温|振动|氟化物|氟化氢|氯化氢|氢氟酸|盐酸|氨|纯碱|碳酸钠|磷酸|二氯甲烷)", c) \
+                                and not re.match(r"^\d", c) \
+                                and not re.search(r"(车间|单元|生产|工序|装置|工段|班组|区域)", c):
+                            factor = c
+                            break
                 if not factor:
                     continue
-                # result: 检测结果/CTWA 数字(取第一个数值单元格, 兼容 <0.33 这种检出限值)
+                # ctwa: 优先 CTWA/检测结果列 (表头定位)
                 ctwa = ""
-                for c in cells[2:]:
-                    if re.fullmatch(r"([<>≤≥]?\s*)?\d+(\.\d+)?", c):
-                        ctwa = c
-                        break
+                if _ctwa_col >= 0 and _ctwa_col < len(cells):
+                    v = cells[_ctwa_col]
+                    if re.fullmatch(r"([<>≤≥]?\s*)?\d+(\.\d+)?", v):
+                        ctwa = v
+                if not ctwa:
+                    # 兜底: 取第一个数值单元格 (兼容 <0.33 检出限值)
+                    for c in cells[2:]:
+                        if re.fullmatch(r"([<>≤≥]?\s*)?\d+(\.\d+)?", c):
+                            ctwa = c
+                            break
                 detections.append({"factory": cells[0], "point": (cells[1] if len(cells) > 1 else ""),
                                    "factor": factor, "ctwa": ctwa, "cste": "", "cme": ""})
+        # 检测去重: 同 (factory, point, factor) 只保留首条 (修复: 现状报告多张检测表重复提取)
+        if detections:
+            _seen_det = set()
+            _dedup = []
+            for _d in detections:
+                _k = (_d.get("factory"), _d.get("point"), _d.get("factor"))
+                if _k not in _seen_det:
+                    _seen_det.add(_k)
+                    _dedup.append(_d)
+            detections = _dedup
         # 建构筑物表 (按表头定位列: 功能区/名称/火灾危险/耐火等级/层数/占地/建面)
         if "建构筑" in flat or ("建筑面积" in flat and "占地" in flat):
             head = [str(c).replace("\n", " ").strip() for c in tb[0]]

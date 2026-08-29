@@ -1013,8 +1013,10 @@ def import_materials_from_dir(pid: str) -> dict:
                                        "b1": _get(r, "一班"), "b2": _get(r, "二班"),
                                        "b3": _get(r, "三班"), "b4": _get(r, "四班"),
                                        "total": _get(r, "合计")})
-            # 检测
-            if "检测" in name:
+            # 检测 (排除体检报告: 文件名含"职业健康检查/体检/检查总结/健康监护" ≠ 现场检测)
+            # (修复: 05_类比检测文件 实为体检总结报告(康检字第20251354号), "危害因素|CTWA"列
+            #  实为体检项目/接触因素标注 → 误提取成检测值 → LLM 写进结论'聚乙烯粉尘超标')
+            if "检测" in name and not any(k in name for k in ("职业健康检查", "体检", "检查总结", "健康监护", "检查报告", "健康检查")):
                 for r in _dict_rows(_read_rows(f)):
                     fac = _get(r, "危害因素", "因子", "检测项目")
                     ctwa_raw = _get(r, "CTWA(mg/m3)", "CTWA", "PC-TWA", "检测值")
