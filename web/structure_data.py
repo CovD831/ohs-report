@@ -25,6 +25,8 @@ PROJECT_INFO_SCHEMA: dict[str, tuple[str, str]] = {
 # 补充 hazard/risk_level 等评估字段 (不进 PROJECT_SCHEMA, 由 assess 输出)
 PROJECT_INFO_SCHEMA.setdefault("hazards", ("主要职业病危害因素", "list"))
 PROJECT_INFO_SCHEMA.setdefault("risk_level", ("职业病危害风险类别", "str"))
+# 辅助工段字段 (3.5.x / 5.1.1.x 的"生产辅助工序"单元专用: 只投喂辅助单元数据)
+PROJECT_INFO_SCHEMA.setdefault("aux_units", ("辅助工段(公辅/储运/化验/检维修等)", "list"))
 
 # ============ 各章节取哪些数据字段 (适配 11 章平铺, 映射到 report_struct 的 key) ============
 # 章级 → 字段; 二级小节 → (章字段 + 该小节侧重的字段)
@@ -165,6 +167,17 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
     # 命中侧重 → 只投喂侧重字段 (每个小节讲该讲的事, 不重复全章字段)
     # 未命中 → 章级全量 (兜底)
     fields = emphasis if emphasis else fields
+    # 数据单元为"生产辅助工序" (3.5.x/5.1.1.x) → 只投喂辅助工段数据, 不投喂产品主线
+    # (修复: 3.5.2 辅助工序正文写成四条产品线概况 → 主题错位)
+    if isinstance(project, dict):
+        try:
+            from web.report_struct import _extract_product_units
+            for uk, ut in _extract_product_units(project):
+                if uk == sec and "辅助工序" in (ut or ""):
+                    fields = ["aux_units", "hazards", "equipment"]
+                    break
+        except Exception:
+            pass
 
     # 从 project/assess 取各字段值
     hazards = assess.get("hazards", [])
@@ -212,6 +225,21 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
             # 工艺文本压到前1500字(一段长文, 取全部但限制)
             t = (project.get("process_text") or "").strip()
             return t[:1500] + ("…" if len(t) > 1500 else "")
+        if field == "aux_units":
+            # 辅助工段数据: hazard_grid 中含辅助关键词的单元行 (公辅/储运/化验/检维修等)
+            _AUX = ("公用", "辅助", "污水", "废水", "废气", "储运", "储罐区", "锅炉", "制冷",
+                    "供热", "供气", "配电", "化验", "检维修", "压缩", "冷却", "空压", "固废")
+            out = []
+            for g in (project.get("hazard_grid") or []):
+                if not isinstance(g, dict):
+                    continue
+                u = str(g.get("unit") or "")
+                if not u or not any(k in u for k in _AUX):
+                    continue
+                row = {k: str(v)[:60] for k, v in g.items() if v and k != "unit"}
+                row["单元"] = u
+                out.append(row)
+            return out[:20] or [{"说明": "辅助工段数据待补充"}]
         return project.get(field, [] if field in ("equipment", "materials", "staffing", "ppe") else "")
 
     lines = []
