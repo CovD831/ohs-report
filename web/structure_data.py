@@ -151,7 +151,17 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
     ch = sec.split(".")[0]
     fields = CHAPTER_INFO_MAPPING.get(ch, list(PROJECT_INFO_SCHEMA.keys()))
     # 二级小节侧重字段 (合并到章字段, 靠前)
-    emphasis = SUB_EMPHASIS.get(sec, [])
+    # 三级/四级单元(如 3.5.1 产品工艺/5.1.1.2 识别) 向上回溯父级侧重:
+    # 3.5.1 → 查 "3.5.1"(无) → "3.5"(有工艺/设备/产品) → 用;
+    # 否则整章全量字段 → LLM 每节重述项目概况 → 字数膨胀4-5倍(比对发现)
+    emphasis: list[str] = []
+    parts = sec.split(".")
+    for n in range(len(parts), 1, -1):
+        cand = ".".join(parts[:n])
+        e = SUB_EMPHASIS.get(cand)
+        if e:
+            emphasis = e
+            break
     order = emphasis + [f for f in fields if f not in emphasis]
 
     # 从 project/assess 取各字段值
