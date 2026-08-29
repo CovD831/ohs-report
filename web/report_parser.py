@@ -248,22 +248,30 @@ def parse_report_file(path) -> dict:
                     if kw in h:
                         return i
             return -1
-        mic = _col(["原辅材料名称", "物料名称", "原料名称"])
+        mic = _col(["原辅材料名称", "物料名称", "原料名称", "材料名称"])
         if mic < 0:
             continue
         c_spec = _col(["规格", "型号"])
-        c_year = _col(["年用量", "年耗量", "年消耗", "年用量t", "年耗量t"])
-        c_stk = _col(["最大储量", "最大储存量", "最大贮"])
+        c_year = _col(["年用量", "年耗量", "年消耗", "年耗用量", "年用量t", "年耗量t"])
+        c_stk = _col(["最大储量", "最大储存量", "最大贮", "最大存储", "最大贮存量"])
         c_state = _col(["物态", "形态"])
-        c_loc = _col(["储存地点", "存放地点", "存储地点", "存于"])
+        c_loc = _col(["储存地点", "存放地点", "存储地点", "存于", "存储区域", "储存区域", "存放区域"])
         c_cas = _col(["CAS"])
+        # 原料表特征: 必须有 年用量/最大储量/储存地点 至少1列 (排除"材料名称"的危化品目录表:
+        # 表头"序号|材料名称|依据《危险化学品目录》"只有名称列 → 跳过)
+        if c_year < 0 and c_stk < 0 and c_loc < 0:
+            continue
         for row in tb[1:]:
             if mic >= len(row):
                 continue
             v = str(row[mic]).replace("\n", " ").strip()
             if not v or v == "None":
                 continue
-            if re.match(r"^(序号|物料名称|原辅材料名称|原料名称|合计|小计|备注)", v):
+            if re.match(r"^(序号|物料名称|原辅材料名称|原料名称|材料名称|合计|小计|备注)", v):
+                continue
+            # 合并单元格行/全列同值行: 横向合并(如一整行同值) → 噪声, 跳过
+            vals = {str(c).strip() for c in row[:min(len(row), 8)]}
+            if len(vals) == 1:
                 continue
             v = re.sub(r"[\s，]", "", v)
             if not v or len(v) > 30 or v in seen_m:
@@ -283,9 +291,11 @@ def parse_report_file(path) -> dict:
                 m["cas"] = str(row[c_cas]).replace("\n", " ").strip()
             seen_m.add(v)
             mats.append(m)
-        if len(mats) >= 45:
+        # 全量原则: 处理完所有匹配表, 跨表按 name 去重(seen_m 共享);
+        # 上限仅防病态表(>400), 不得在 200 提前 break 跳过后续主表(如长兴主清单表33=120x14)
+        if len(mats) >= 400:
             break
-    out["materials"] = mats[:45]
+    out["materials"] = mats
 
     # ===== 产品 (通用: 只匹配真产品表: 表头含'名称'+'主要成分/年产量', 排除'物料名称'表/技术指标表) =====
     # 产品表(如表5): 名称|名称|主要成分|年产量|最大储量|物态 → 产品名=第一名称列, 类型=第二名称列, 年产量=产量列
