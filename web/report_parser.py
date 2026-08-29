@@ -276,6 +276,9 @@ def parse_report_file(path) -> dict:
             v = re.sub(r"[\s，]", "", v)
             if not v or len(v) > 30 or v in seen_m:
                 continue
+            # 噪声行过滤: 单字/无意义 (如'酐'/'盐'/'物' 被拆开的残片)
+            if len(v) == 1 or re.match(r"^(氢|氧|碳|氮|物|液|固|气|安|钠|氯|酸|盐|胺|醇|酯)$", v):
+                continue
             m = {"name": v}
             if c_spec >= 0 and c_spec < len(row):
                 m["规格"] = str(row[c_spec]).replace("\n", " ").strip()
