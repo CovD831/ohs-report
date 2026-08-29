@@ -314,6 +314,12 @@ def api_report_generate(request: Request):
                 d3 = dict(p3["data"])
                 d3["generating"] = False
                 _save_project_data(pid, d3)
+            # 生成后自动评测 (benchmark 钩子: 失败不影响生成结果, 结果存 data.bench)
+            try:
+                _run_bench_after_generate(pid)
+            except Exception as _be:
+                import logging
+                logging.getLogger("ohs").warning(f"自动评测失败: {_be}")
             _tasks.finish_job(jid, None)
         except Exception as e:
             p3 = get_project(pid)
@@ -1360,6 +1366,79 @@ def _run_generate_all(pid: str, jid: str):
 def _conn_tasks():
     from web.tasks import _conn
     return _conn()
+
+
+def _run_bench_after_generate(pid: str):
+    """生成后自动评测钩子 (确定性层; Judge 层可选 LLM, 生成时跳过省时)
+
+    结果存 project.data["bench"] = {version, scores, issues, graded_at}
+    页面'/api/report' 可读, 前端展示评测分。失败不阻塞生成结果(调用方已捕获)。
+    """
+    import json as _json
+    from pathlib import Path as _P
+    from web.projects_db import get_project as _gp, _save_project_data as _save
+
+    p = _gp(pid)
+    if not p:
+        return
+    pd = p.get("data") or {}
+    if not pd.get("section_states"):
+        return
+    # 导出 docx 到临时路径
+    try:
+        import tempfile
+        from web.word_export import export_docx
+        tmpf = _P(tempfile.gettempdir()) / f"bench_{pid}.docx"
+        export_docx(pd, {}, tmpf, section_states=pd.get("section_states"))
+    except Exception as _e:
+        import logging
+        logging.getLogger("ohs").warning(f"bench 导出docx失败: {_e}")
+        return
+    # 跑确定性评测 (模块级复用 tools/report_bench)
+    try:
+        import sys as _sys
+        tools_dir = _P(__file__).resolve().parent.parent / "tools"
+        if str(tools_dir) not in _sys.path:
+            _sys.path.insert(0, str(tools_dir))
+        import report_bench as _rb
+        std = []
+        try:
+            from web.report_struct import CHAPTERS, SUBS, SUBS3
+            for ch in CHAPTERS:
+                std.append(ch)
+                for sn, _ in SUBS.get(ch, []):
+                    std.append(sn)
+        except Exception:
+            pass
+        text = "\n".join(pp.text for pp in __import__("docx").Document(str(tmpf)).paragraphs)
+        issues = {
+            "A_internal_consistency": _rb.check_internal_consistency(text),
+            "B_traceability": _rb.check_traceability(text, pd),
+            "D_structure": _rb.check_structure(tmpf, std),
+            "E_tables": _rb.check_tables(tmpf, pd),
+            "F_completeness": _rb.check_completeness(tmpf, pd),
+        }
+        def _score(items):
+            if not items:
+                return 100
+            penalty = sum((25 if i.get("severity") == "high" else 12 if i.get("severity") == "medium" else 6)
+                          for i in items)
+            return max(0, 100 - penalty)
+        scores = {k: _score(v) for k, v in issues.items()}
+        total = round(sum(scores.values()) / 5, 1)
+        bench = {"version": _rb.BENCH_VERSION, "scores": scores,
+                 "total_deterministic": total, "issues": issues,
+                 "graded_at": int(__import__("time").time())}
+        p2 = _gp(pid)
+        if p2:
+            d2 = dict(p2.get("data") or {})
+            d2["bench"] = bench
+            _save(pid, d2)
+        import logging
+        logging.getLogger("ohs").info(f"[bench] pid={pid} 确定性评测 {total}/100 (v{bench['version']})")
+    except Exception as _e2:
+        import logging
+        logging.getLogger("ohs").warning(f"bench 评测执行失败: {_e2}")
 
 
 @app.post("/api/projects/{pid}/generate-all", response_class=JSONResponse)

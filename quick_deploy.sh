@@ -11,7 +11,7 @@ echo "=== 1. 打源码包 (排除数据/venv, ~2MB) ==="
 # docker-compose.yml 不上送: LLM 端点/key 等运行时配置只在服务器本地维护, 避免部署覆盖
 tar czf /tmp/ohs_src.tgz --exclude '.git' --exclude '.venv' --exclude 'raw' \
     --exclude 'data' --exclude '__pycache__' --exclude '*.docx' \
-    --exclude '.env*' --exclude 'docker-compose.yml' knowledge web acquire requirements.txt Dockerfile
+    --exclude '.env*' --exclude 'docker-compose.yml' knowledge web tools acquire requirements.txt Dockerfile
 
 echo "=== 2. 上送并解压 ==="
 scp -q /tmp/ohs_src.tgz $SRV:/tmp/
