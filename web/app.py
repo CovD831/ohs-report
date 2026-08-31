@@ -373,7 +373,8 @@ def api_reports_list(request: Request):
             "id": r["id"], "name": r.get("name", "未命名报告"),
             "status": "ready" if gen > 0 else (r.get("status") or "draft"),
             "industry": str(d.get("industry", "")), "gen_count": gen,
-            "updated": r.get("updated"), "materials": len((r.get("_mats") or []))})
+            "updated": r.get("updated"), "materials": len((r.get("_mats") or [])),
+            "bench": (d.get("bench") or {}).get("total_deterministic")})
     return {"ok": True, "reports": out}
 
 

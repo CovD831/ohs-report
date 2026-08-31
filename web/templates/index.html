@@ -345,8 +345,12 @@ async function loadMyReports() {
                  : (rep.status === 'generating' ? '<span style="color:orange;">🔄生成中</span>' : '草稿');
       const ind = rep.industry ? ` · ${rep.industry}` : '';
       const nm = rep.name && rep.name !== '未命名报告' ? rep.name : '未命名报告';
+      const bench = rep.bench;
+      const benchBadge = bench != null
+        ? `<span style="font-size:11px;padding:1px 6px;border-radius:8px;color:#fff;background:${bench>=90?'#2e7d32':bench>=70?'#f9a825':'#c62828'};margin-left:6px;" title="确定性评测分(自动)">评测 ${bench}</span>`
+        : '';
       return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
-        <span>${nm}${ind} <span style="color:var(--text-muted);font-size:11px;">(生成${rep.gen_count}节)</span></span>
+        <span>${nm}${ind} <span style="color:var(--text-muted);font-size:11px;">(生成${rep.gen_count}节)</span>${benchBadge}</span>
         <span><a href="/report/${rep.id}" style="font-size:12px;color:var(--primary);margin-right:10px;">查看</a>
         <button onclick="deleteReport('${rep.id}', '${nm.replace(/'/g, "\\'")}')" title="删除报告及上传材料"
           style="font-size:11px;color:var(--danger);background:none;border:none;cursor:pointer;margin-right:10px;">删除</button>
