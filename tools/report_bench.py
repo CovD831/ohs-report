@@ -230,6 +230,9 @@ def check_completeness(path: Path, project_data: dict) -> list[dict]:
             n_eq_rows = max(n_eq_rows, len(tb.rows) - 1)
         if "检测" in head and ("CTWA" in head or "结果" in head):
             n_det_rows = max(n_det_rows, len(tb.rows) - 1)
+        # 检测表头变体: 无"检测"字样但含 CTWA/危害因素 (如"序号 危害因素 CTWA PC-TWA 判定")
+        if "检测结果" not in head and "CTWA" in head and "危害因素" in head:
+            n_det_rows = max(n_det_rows, len(tb.rows) - 1)
     if proj_mats > 0 and n_mat_rows < proj_mats * 0.8:
         issues.append({"type": "truncated", "rule_id": "F-01", "data": "materials",
                        "expected": proj_mats, "actual": n_mat_rows,

@@ -27,6 +27,8 @@ PROJECT_INFO_SCHEMA.setdefault("hazards", ("主要职业病危害因素", "list"
 PROJECT_INFO_SCHEMA.setdefault("risk_level", ("职业病危害风险类别", "str"))
 # 辅助工段字段 (3.5.x / 5.1.1.x 的"生产辅助工序"单元专用: 只投喂辅助单元数据)
 PROJECT_INFO_SCHEMA.setdefault("aux_units", ("辅助工段(公辅/储运/化验/检维修等)", "list"))
+# 现有企业产品字段 (2.1 现有企业概况专用: 只给现有产量, 不写本项目语境)
+PROJECT_INFO_SCHEMA.setdefault("existing_products", ("现有企业产品及产量", "list"))
 
 # ============ 各章节取哪些数据字段 (适配 11 章平铺, 映射到 report_struct 的 key) ============
 # 章级 → 字段; 二级小节 → (章字段 + 该小节侧重的字段)
@@ -67,9 +69,9 @@ SUB_EMPHASIS: dict[str, list[str]] = {
     # 1 总论
     "1.1": ["name", "industry", "nature", "investment"],
     "1.3": ["name", "industry", "risk_level"],
-    "1.6": ["name", "hazards"],
+    "1.6": ["name", "hazards", "detections"],  # 类比法描述引用真检测事实 (防编造化学毒物检测)
     # 2 现有企业概况
-    "2.1": ["name", "industry", "nature", "risk_level", "staffing", "products"],
+    "2.1": ["name", "industry", "nature", "risk_level", "staffing", "existing_products"],
     "2.2": ["staffing", "hazards"],
     "2.3": ["protection", "facilities"],
     "2.4": ["ppe"],
@@ -240,6 +242,14 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
                 row["单元"] = u
                 out.append(row)
             return out[:20] or [{"说明": "辅助工段数据待补充"}]
+        if field == "existing_products":
+            # 现有企业产品: products 的现有产量(扩产前), 不写本项目新增/扩产后语境
+            out = []
+            for p in (project.get("products") or []):
+                if not isinstance(p, dict):
+                    continue
+                out.append({"name": str(p.get("name") or ""), "现有产量": str(p.get("output") or "—")})
+            return out or [{"说明": "现有企业产品数据待补充"}]
         return project.get(field, [] if field in ("equipment", "materials", "staffing", "ppe") else "")
 
     lines = []

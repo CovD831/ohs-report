@@ -331,16 +331,29 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
 
     if sec == "8":
         # 个人防护用品: PPE配备表
-        import csv
-        f = Path(__file__).resolve().parent.parent / "data" / "materials" / "A2f_防护措施.txt"
+        # 通用: 从项目 data 的 ppe 字典列表生成 (上传管线提取, 全项目通用)
+        # (修复: 旧硬编码 data/materials/A2f_防护措施.txt 不存在 → 永远空表)
+        pd = assess.get("_project_data") or {}
         p_rows = []
-        if f.exists():
-            for line in f.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line.startswith("-") and "|" in line:
-                    parts = line.lstrip("- ").split("|")
-                    if len(parts) >= 2:
-                        p_rows.append([len(p_rows) + 1, parts[0].strip(), parts[1].strip(), "GB 39800.1—2020"])
+        for p in (pd.get("ppe") or []):
+            if isinstance(p, dict):
+                p_rows.append([len(p_rows) + 1,
+                               str(p.get("post") or p.get("岗位") or p.get("工段") or ""),
+                               str(p.get("item") or p.get("name") or p.get("equipment")
+                                   or p.get("防护用品") or p.get("ppe") or ""),
+                               str(p.get("frequency") or p.get("标准") or "GB 39800.1—2020")])
+            elif isinstance(p, str) and p.strip():
+                p_rows.append([len(p_rows) + 1, "", p.strip(), "GB 39800.1—2020"])
+        # 兜底: protection 文本 (防护措施描述) 提取 "护目镜/防毒面具/耳塞..." 行
+        if not p_rows:
+            import re as _re
+            prot = pd.get("protection") or ""
+            if isinstance(prot, str) and prot.strip():
+                for line in prot.splitlines():
+                    if _re.search(r"(保护|防护|个人防护|PPE)", line) and ("|" in line or "：" in line or ":" in line):
+                        parts = _re.split(r"[|：:]", line.lstrip("-_* "), 1)
+                        if len(parts) >= 2:
+                            p_rows.append([len(p_rows) + 1, parts[0].strip(), parts[1].strip(), "GB 39800.1—2020"])
         if p_rows:
             return [{"name": "PPE配备表", "cols": ["序号", "岗位/危害", "防护装备", "标准"], "rows": p_rows[:60]}]
         return []
