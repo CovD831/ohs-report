@@ -158,6 +158,17 @@ def parse_report_file(path) -> dict:
     m = re.search(r"(?:注册资金|注册资本)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(万美元|万元人民币?|万元)", text)
     if m:
         out["registered_capital"] = m.group(1) + m.group(2)
+    # 注册资金多值收集 (申请报告/可研可能多处记载不同值, 如长兴4100万 vs 2300万 — 如实标注待核实)
+    vals = re.findall(r"(?:注册资金|注册资本)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(万美元|万元人民币?|万元)", text)
+    uniq_vals = []
+    for v in vals:
+        s = v[0] + v[1]
+        if s not in uniq_vals:
+            uniq_vals.append(s)
+    if len(uniq_vals) > 1:
+        out["registered_capital_all"] = "、".join(uniq_vals)
+    elif uniq_vals and not out.get("registered_capital"):
+        out["registered_capital"] = uniq_vals[0]
     m = re.search(r"法定代表人\s*[:：]?\s*([\u4e00-\u9fa5]{2,6})", text)
     if m:
         out["legal_rep"] = m.group(1)

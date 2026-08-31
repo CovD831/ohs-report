@@ -35,6 +35,10 @@ PROJECT_INFO_SCHEMA.setdefault("founded", ("成立时间", "str"))
 PROJECT_INFO_SCHEMA.setdefault("registered_capital", ("注册资金", "str"))
 PROJECT_INFO_SCHEMA.setdefault("legal_rep", ("法定代表人", "str"))
 PROJECT_INFO_SCHEMA.setdefault("investor", ("投资方", "str"))
+# 注册资金多值集合 (资料多处记载不一致时, LLM 如实标注)
+PROJECT_INFO_SCHEMA.setdefault("registered_capital_all", ("注册资金(资料多处记载)", "str"))
+# 物料名精简清单 (7.1/7.2 应急: 只引用项目真实物料名)
+PROJECT_INFO_SCHEMA.setdefault("materials_short", ("项目主要原辅材料(名称)", "list"))
 
 # ============ 各章节取哪些数据字段 (适配 11 章平铺, 映射到 report_struct 的 key) ============
 # 章级 → 字段; 二级小节 → (章字段 + 该小节侧重的字段)
@@ -73,7 +77,8 @@ CHAPTER_INFO_MAPPING: dict[str, list[str]] = {
 # 二级小节 → 侧重字段 (在章字段基础上, 该小节再强调这些)
 SUB_EMPHASIS: dict[str, list[str]] = {
     # 1 总论
-    "1.1": ["company", "founded", "registered_capital", "legal_rep", "investor",
+    "1.1": ["company", "founded", "registered_capital", "registered_capital_all",
+            "legal_rep", "investor",
             "name", "industry", "nature", "investment"],
     "1.3": ["name", "industry", "risk_level"],
     "1.4": ["name", "location", "nature", "industry", "process_text"],  # 评价范围: 项目边界数据, 防写成评价内容
@@ -112,8 +117,8 @@ SUB_EMPHASIS: dict[str, list[str]] = {
     "6.1": ["protection", "facilities", "hazards"],
     "6.2": ["protection", "detections"],
     # 7 应急救援
-    "7.1": ["emergency", "hazards"],
-    "7.2": ["emergency", "hazards"],
+    "7.1": ["emergency", "hazards", "materials_short", "process_text"],  # 应急: 用项目真实物料(防LLM从库招硫酸二甲酯/丙酮等不存在物料)
+    "7.2": ["emergency", "hazards", "materials_short"],
     # 8 PPE
     "8.1": ["ppe", "hazards"],
     "8.2": ["ppe", "hazards", "detections"],
@@ -260,6 +265,17 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
                     continue
                 out.append({"name": str(p.get("name") or ""), "现有产量": str(p.get("output") or "—")})
             return out or [{"说明": "现有企业产品数据待补充"}]
+        if field == "materials_short":
+            # 物料名精简清单 (应急/危害识别: 只引用项目真实物料名, 防LLM引用库/外部物料)
+            out = []
+            for m in (project.get("materials") or []):
+                if isinstance(m, dict):
+                    nm = str(m.get("name") or m.get("材料名称") or "").strip()
+                else:
+                    nm = str(m).split("|")[0].strip()
+                if nm and len(nm) >= 2 and nm not in out:
+                    out.append(nm)
+            return out[:80] or [{"说明": "项目原材料待补充"}]
         return project.get(field, [] if field in ("equipment", "materials", "staffing", "ppe") else "")
 
     lines = []
