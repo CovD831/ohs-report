@@ -43,6 +43,8 @@ PROJECT_INFO_SCHEMA.setdefault("materials_short", ("项目主要原辅材料(名
 PROJECT_INFO_SCHEMA.setdefault("critical_points", ("关键控制点(因子/级别/措施)", "list"))
 # 附件清单 (11章结论: 标准预评价附件)
 PROJECT_INFO_SCHEMA.setdefault("attachment_list", ("报告附件清单", "list"))
+# 职业卫生管理 (含标准库特殊作业条款 10.6 受限空间)
+PROJECT_INFO_SCHEMA.setdefault("management", ("职业卫生管理制度", "str"))
 
 # ============ 各章节取哪些数据字段 (适配 11 章平铺, 映射到 report_struct 的 key) ============
 # 章级 → 字段; 二级小节 → (章字段 + 该小节侧重的字段)
@@ -137,8 +139,7 @@ SUB_EMPHASIS: dict[str, list[str]] = {
     "10.6": ["emergency", "protection", "management", "facilities"],  # 受限空间: 应急/防护/管理(不是定员! 修复错投)
     "10.7": ["emergency", "hazards"],
     # 11 结论
-    "11.1": ["name", "industry", "risk_level", "hazards", "detections", "critical_points",
-             "attachment_list", "materials_short"],  # 结论: 关键控制点/附件/物料
+    "11.1": ["name", "industry", "risk_level", "hazards", "detections", "critical_points"],  # 结论精简: 行业/危害/风险/关键点 (别塞物料附件带偏LLM)
 }
 
 
@@ -303,6 +304,25 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
                 ("职业健康检查报告", "企业职业健康检查总结报告"),
             ]
             return [{"附件": n, "说明": d} for n, d in std_att]
+        if field == "management":
+            # 职业卫生管理 + 标准库特殊作业条款 (受限空间/高温/有限空间 10.6 需要)
+            # (修复: 10.6信息块只给项目management文本, 无GB 30871条款 → LLM自写18-22%氧含量)
+            mg = str(project.get("management") or "")
+            if assess is not None:
+                try:
+                    from .projects_db import _conn as _mconn
+                    _mc = _mconn()
+                    # 匹配 category=受限空间/特殊作业 或 require 含 盲板/置换/氧含量/通风
+                    kws = ("受限空间", "特殊作业", "有限空间", "密闭空间", "盲板", "氧含量", "置换", "上锁")
+                    rows = _mc.execute(
+                        f"SELECT require, std_code, clause FROM management_rule WHERE " +
+                        " OR ".join(["require LIKE ?"] * len(kws)), tuple(f"%{k}%" for k in kws)).fetchall()
+                    _mc.close()
+                    for r, std, clause in rows[:8]:
+                        mg += f"\n- [{std} {clause}] {r[:80]}" if std else f"\n- {r[:80]}"
+                except Exception:
+                    pass
+            return mg or "职业卫生管理制度待补充(需企业提供)"
         return project.get(field, [] if field in ("equipment", "materials", "staffing", "ppe") else "")
 
     lines = []
