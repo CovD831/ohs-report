@@ -39,6 +39,10 @@ PROJECT_INFO_SCHEMA.setdefault("investor", ("投资方", "str"))
 PROJECT_INFO_SCHEMA.setdefault("registered_capital_all", ("注册资金(资料多处记载)", "str"))
 # 物料名精简清单 (7.1/7.2 应急: 只引用项目真实物料名)
 PROJECT_INFO_SCHEMA.setdefault("materials_short", ("项目主要原辅材料(名称)", "list"))
+# 关键控制点 (11章结论: 岗位×关键因子×控制级别)
+PROJECT_INFO_SCHEMA.setdefault("critical_points", ("关键控制点(因子/级别/措施)", "list"))
+# 附件清单 (11章结论: 标准预评价附件)
+PROJECT_INFO_SCHEMA.setdefault("attachment_list", ("报告附件清单", "list"))
 
 # ============ 各章节取哪些数据字段 (适配 11 章平铺, 映射到 report_struct 的 key) ============
 # 章级 → 字段; 二级小节 → (章字段 + 该小节侧重的字段)
@@ -130,10 +134,11 @@ SUB_EMPHASIS: dict[str, list[str]] = {
     "10.3": ["staffing"],
     "10.4": ["hazards"],
     "10.5": ["staffing", "hazards"],
-    "10.6": ["staffing"],
+    "10.6": ["emergency", "protection", "management", "facilities"],  # 受限空间: 应急/防护/管理(不是定员! 修复错投)
     "10.7": ["emergency", "hazards"],
     # 11 结论
-    "11.1": ["name", "industry", "risk_level", "hazards", "detections"],
+    "11.1": ["name", "industry", "risk_level", "hazards", "detections", "critical_points",
+             "attachment_list", "materials_short"],  # 结论: 关键控制点/附件/物料
 }
 
 
@@ -276,6 +281,28 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
                 if nm and len(nm) >= 2 and nm not in out:
                     out.append(nm)
             return out[:80] or [{"说明": "项目原材料待补充"}]
+        if field == "critical_points":
+            # 关键控制点 (11章结论/5.4: 从 assess judgements 生成 — 岗位×关键因子×控制级别)
+            out = []
+            for j in (assess.get("judgements") or []):
+                if isinstance(j, dict) and j.get("factor"):
+                    lv = (j.get("level") or {}).get("level", "") if isinstance(j.get("level"), dict) else ""
+                    out.append({"关键控制因子": str(j["factor"]), "控制级别": str(lv or "—"),
+                                "控制措施": str((j.get("level") or {}).get("control", "") if isinstance(j.get("level"), dict) else "")[:60]})
+            return out[:15] or [{"说明": "关键控制点待补充(需危害判定完成)"}]
+        if field == "attachment_list":
+            # 附件清单 (11章结论: 从上传材料分类生成, 通用)
+            # 材料分类文件列表由 uploads 提供; 这里用 mapping 描述标准预评价附件
+            std_att = [
+                ("委托书", "建设单位委托书"),
+                ("营业执照", "工商营业执照(副本)"),
+                ("项目批文/备案证", "项目备案证/批复文件"),
+                ("总平面布置图", "项目总平面布置图/周边关系图"),
+                ("工艺及设备资料", "生产工艺/设备清单"),
+                ("类比检测报告", "类比企业职业病危害因素检测报告"),
+                ("职业健康检查报告", "企业职业健康检查总结报告"),
+            ]
+            return [{"附件": n, "说明": d} for n, d in std_att]
         return project.get(field, [] if field in ("equipment", "materials", "staffing", "ppe") else "")
 
     lines = []

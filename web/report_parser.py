@@ -147,6 +147,20 @@ def parse_report_file(path) -> dict:
             m = re.search(r"([A-Z]?\d{3})\s*([\u4e00-\u9fff]{2,12})", text)
             if m:
                 out["industry"] = m.group(1) + m.group(2)
+    # 行业精确子类补全: 提取到 3位大类(如265)但文本含更精确子类(如2651/初级形态塑料及合成树脂)
+    # (修复: 原报告用 C2651 初级形态塑料及合成树脂制造, 我们只到 265 合成材料制造)
+    if out.get("industry") and re.match(r"^\d{3}", out["industry"]):
+        m = re.search(r"(?:C?)(\d{4})\s*(?:[\u4e00-\u9fff]{2,15}?(?:制造|业))", text)
+        if m and m.group(1).startswith(out["industry"][:3]):
+            try:
+                from web.projects_db import _conn as _ic
+                _conn0 = _ic()
+                r = _conn0.execute("SELECT name FROM industry_class WHERE code=? LIMIT 1", (m.group(1),)).fetchone()
+                _conn0.close()
+                if r:
+                    out["industry"] = m.group(1) + r[0]
+            except Exception:
+                pass
     out["nature"] = _field("项目性质", "建设性质", "项目类别")
     out["location"] = _field("建设地点", "项目地点", "建设地址", "拟建地点", "项目地址")
     # 企业基本信息 (1.1/2.1 项目背景/现有企业概况 需要): 成立时间/注册资本/法定代表人/投资方
