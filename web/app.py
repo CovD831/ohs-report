@@ -294,7 +294,8 @@ def api_report_generate(request: Request):
                       "buildings", "facilities", "products", "public_works",
                       "investment", "area", "capacity", "nature", "location",
                       "equipment_detail", "shifts", "health_check", "management",
-                      "hazard_grid", "emergency_supplies"):
+                      "hazard_grid", "emergency_supplies",
+                      "company", "founded", "registered_capital", "legal_rep", "investor"):
                 if imported.get(k):
                     data[k] = imported[k]
             # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
