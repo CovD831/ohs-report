@@ -29,6 +29,12 @@ PROJECT_INFO_SCHEMA.setdefault("risk_level", ("职业病危害风险类别", "st
 PROJECT_INFO_SCHEMA.setdefault("aux_units", ("辅助工段(公辅/储运/化验/检维修等)", "list"))
 # 现有企业产品字段 (2.1 现有企业概况专用: 只给现有产量, 不写本项目语境)
 PROJECT_INFO_SCHEMA.setdefault("existing_products", ("现有企业产品及产量", "list"))
+# 企业基本信息 (1.1/2.1 项目背景/现有企业概况 用): 提取层新增字段
+PROJECT_INFO_SCHEMA.setdefault("company", ("企业名称", "str"))
+PROJECT_INFO_SCHEMA.setdefault("founded", ("成立时间", "str"))
+PROJECT_INFO_SCHEMA.setdefault("registered_capital", ("注册资金", "str"))
+PROJECT_INFO_SCHEMA.setdefault("legal_rep", ("法定代表人", "str"))
+PROJECT_INFO_SCHEMA.setdefault("investor", ("投资方", "str"))
 
 # ============ 各章节取哪些数据字段 (适配 11 章平铺, 映射到 report_struct 的 key) ============
 # 章级 → 字段; 二级小节 → (章字段 + 该小节侧重的字段)
@@ -67,11 +73,13 @@ CHAPTER_INFO_MAPPING: dict[str, list[str]] = {
 # 二级小节 → 侧重字段 (在章字段基础上, 该小节再强调这些)
 SUB_EMPHASIS: dict[str, list[str]] = {
     # 1 总论
-    "1.1": ["name", "industry", "nature", "investment"],
+    "1.1": ["company", "founded", "registered_capital", "legal_rep", "investor",
+            "name", "industry", "nature", "investment"],
     "1.3": ["name", "industry", "risk_level"],
     "1.6": ["name", "hazards", "detections"],  # 类比法描述引用真检测事实 (防编造化学毒物检测)
     # 2 现有企业概况
-    "2.1": ["name", "industry", "nature", "risk_level", "staffing", "existing_products"],
+    "2.1": ["company", "founded", "registered_capital", "legal_rep", "investor",
+            "name", "industry", "nature", "risk_level", "staffing", "existing_products"],
     "2.2": ["staffing", "hazards"],
     "2.3": ["protection", "facilities"],
     "2.4": ["ppe"],

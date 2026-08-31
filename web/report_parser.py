@@ -120,6 +120,9 @@ def _table_field(tables, row_label, col_hint):
 def parse_report_file(path) -> dict:
     """从复合报告抽取字段 (纯规则+表格, 不用LLM)"""
     text = read_full_text(path)
+    # 统一空白: pdfplumber 提取的换行会切断中文短语 (如'长兴合成\n树脂' → '合成树脂'正则匹配断)
+    # 企业名/成立于 等连写短语需要压缩换行
+    text = re.sub(r"(?<=[\u4e00-\u9fa5）)])\s*\n\s*(?=[\u4e00-\u9fa5（(])", "", text)
     if not text or len(text) < 200:
         return {}
     out = {}
@@ -146,6 +149,21 @@ def parse_report_file(path) -> dict:
                 out["industry"] = m.group(1) + m.group(2)
     out["nature"] = _field("项目性质", "建设性质", "项目类别")
     out["location"] = _field("建设地点", "项目地点", "建设地址", "拟建地点", "项目地址")
+    # 企业基本信息 (1.1/2.1 项目背景/现有企业概况 需要): 成立时间/注册资本/法定代表人/投资方
+    # 来源: 申请报告/营业执照文本 "成立于2006年5月...注册资金4100万美元...法定代表人:钱林芳"
+    m = re.search(r"([\u4e00-\u9fa5A-Za-z0-9（）()·]{2,30}?(?:公司|集团))成立于([\u4e00-\u9fa5\d年月日\s]{2,15}?)(?:[，。,。]|$|月)", text)
+    if m:
+        out["company"] = m.group(1)
+        out["founded"] = m.group(2).strip()
+    m = re.search(r"(?:注册资金|注册资本)\s*[:：]?\s*(\d+(?:\.\d+)?)\s*(万美元|万元人民币?|万元)", text)
+    if m:
+        out["registered_capital"] = m.group(1) + m.group(2)
+    m = re.search(r"法定代表人\s*[:：]?\s*([\u4e00-\u9fa5]{2,6})", text)
+    if m:
+        out["legal_rep"] = m.group(1)
+    m = re.search(r"(?:由|为)([\u4e00-\u9fa5]{2,14}?(?:集团|公司|企业))(?:投资设立|独资|控股|投资)", text)
+    if m:
+        out["investor"] = m.group(1)
     # 投资/产能/面积: 正文键值(带单位) + 表格数字
     inv = _kv(text, "项目总投资", 40) or _kv(text, "总投资", 40)
     if inv and "万元" in inv:
