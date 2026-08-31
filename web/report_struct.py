@@ -213,9 +213,17 @@ def _extract_product_units(proj_data: dict) -> list[tuple]:
         else:
             name = str(p).split("|")[0].strip()
         name = re.sub(r"[（(].*?[)）]", "", name).strip()  # 去括号(产能/规格)
-        if name and len(name) >= 2 and name not in seen:
-            items.append(name)
-            seen.add(name)
+        # 去重: 同前缀(氯化钾 vs 氯化钾水溶液; 氢氟酸 vs 氢氟酸30%) → 只保留短的(通用名)
+        # (修复: 新泰产品表含"氯化钾"(0)与"氯化钾水溶液"(17000)为同一产品 → 重复单元)
+        if name and len(name) >= 2:
+            dup = False
+            for it in items:
+                if name == it or (len(it) >= 2 and (it.startswith(name) or name.startswith(it))):
+                    dup = True
+                    break
+            if not dup:
+                items.append(name)
+                seen.add(name)
     # 1.5) 项目名称匹配产品线 (通用: 项目名含产品名 → 只保留相关产品)
     #      (修复: 新泰'液体氯化钙、氢氟酸及氯化钾溶液产品结构调整项目' 产品表=全厂21条,
     #       但项目只涉'氯化钙/氢氟酸(氟化盐)/氯化钾' → 原报告3.5只4条; 长兴'不饱和聚酯树脂扩建'→1条)
