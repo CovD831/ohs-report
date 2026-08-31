@@ -69,6 +69,15 @@ CALIBRATION_CASES: list[dict] = [
         "sample_text": "（原料表已生成, 行数少于项目数据）",
         "field": "materials",
     },
+    {
+        "id": "C006",
+        "added": "2026-08-31",
+        "rule_id": "B-01",
+        "type": "expect_pass",   # 误报回归: 限值表/标准条文引用的因子(甲醛/氨/乙醇)不算溯源失败
+        "desc": "v6评测: '甲醛/氨/乙醇'报未溯源 — 实为GBZ限值表/健康影响表引用, 非报告编造; 标准库因子豁免",
+        "sample_text": "根据GBZ 2.1—2019，甲醛的PC-TWA为0.5 mg/m³，氨为20 mg/m³，乙醇为300 mg/m³。",
+        "project_data_hint": {"materials": ["苯乙烯", "甲苯"]},
+    },
 ]
 
 

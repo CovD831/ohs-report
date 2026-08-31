@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # 版本号: 每次修改评测规则(增加/收紧/放松判定)必须 bump
-BENCH_VERSION = "1.1.0"
+BENCH_VERSION = "1.2.0"
 
 
 # ============ A. 数据一致性: 报告内数字交叉检查 ============
@@ -98,6 +98,25 @@ def check_traceability(text: str, project_data: dict) -> list[dict]:
         r"氟化氢|氯化氢|氢氟酸|氨|甲醛|丙烯酰胺|苯酚|正己烷|矽尘|滑石粉尘|电焊烟尘|白炭黑|"
         r"聚乙烯粉尘|其他粉尘|噪声|高温|局部振动|工频电场|邻苯二甲酸酐|马来酸酐|甲基丙烯酸甲酯)")
     norm_data = {f.replace(" ", "").replace("（", "(").replace("）", ")") for f in data_factors if f}
+    # 豁免: 限值表/健康影响表/标准条文里的因子 (如甲醛/氨/乙醇 — GBZ条文引用, 非报告编造)
+    # (校准案例 C006: 限值表引用因子 ≠ 溯源失败)
+    import sqlite3 as _s3
+    _con = None
+    std_factors = set()
+    try:
+        from knowledge.oel import connect as _ocon
+        _con = _ocon()
+        std_factors = {str(r[0]).strip() for r in _con.execute(
+            "SELECT DISTINCT name FROM oel_limit WHERE name LIKE '%' ").fetchall()}
+        std_factors |= {str(r[0]).strip() for r in _con.execute(
+            "SELECT DISTINCT hazard_name FROM hazard_factor LIMIT 2000").fetchall()}
+    except Exception:
+        pass
+    if not std_factors:
+        # 回退: 防护条款标准因子 (限值表/健康影响表常见引用, 不依赖DB, 通用)
+        std_factors = {"甲醛", "氨", "乙醇", "甲醇", "甲苯", "二甲苯", "苯乙烯", "盐酸", "硫酸",
+                       "氢氧化钠", "氟化氢", "氯化氢", "氢氟酸", "苯酚", "正己烷", "矽尘", "噪声",
+                       "高温", "振动", "电焊烟尘", "白炭黑", "滑石粉尘", "聚乙烯粉尘", "其他粉尘"}
     seen = set()
     for m in pattern.findall(text):
         if m in seen:
@@ -105,6 +124,8 @@ def check_traceability(text: str, project_data: dict) -> list[dict]:
         seen.add(m)
         # 精确匹配: data 中是否有相同短语 (去括号/空白) — 不用子串(避免"苯"匹配"甲苯")
         nm = m.replace(" ", "").replace("（", "(").replace("）", ")")
+        if nm in std_factors or any(nm in f or f in nm for f in std_factors if f):
+            continue  # 标准库因子(限值表/危害因子表) → 豁免
         if not any(nm == d for d in norm_data):
             issues.append({
                 "type": "untraceable_factor", "rule_id": "B-01",
