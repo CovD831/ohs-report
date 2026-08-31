@@ -433,6 +433,37 @@ def assess_project(conn, project: dict) -> dict:
         if j.get("level") and isinstance(j["level"], dict):
             lv = j["level"]["level"]
             levels.setdefault(lv, []).append(j["factor"])
+    # 危害因素源头过滤: 只保留能回溯项目数据的因子 (物料精确/检测/grid/通用物理)
+    # (修复: v10/v11 报告'硫酸二甲酯/苯醌/石蜡烟' — assess从行业模板/检查表带入, 项目data无此物料)
+    _proj_mats = set()
+    for m in (project.get("materials") or []):
+        nm = (str(m.get("name") if isinstance(m, dict) else m)).split("|")[0].strip()
+        if nm:
+            _proj_mats.add(nm)
+    _grid_factors = set()
+    for g in (project.get("hazard_grid") or []):
+        if isinstance(g, dict):
+            for f in str(g.get("factors") or "").replace(" ", "").split("、"):
+                if f and len(f) >= 2:
+                    _grid_factors.add(f)
+    _det_factors = set(str(d.get("factor") or "") for d in (project.get("detections") or []))
+    _keep_common = {"噪声", "高温", "局部振动", "工频电场", "紫外辐射", "矽尘", "电焊烟尘",
+                    "其他粉尘", "粉尘", "噪声(等效声级)", "WBGT", "电焊弧光", "臭氧",
+                    "氮氧化物", "锰及其无机化合物", "三氧化铬", "金属镍与难溶性镍化合物"}
+
+    def _real_factor(f):
+        if not f:
+            return False
+        return (f in _det_factors or f in _grid_factors or f in _keep_common
+                or f in _proj_mats)
+
+    hazards = [h for h in hazards if isinstance(h, dict) and _real_factor(h.get("factor", ""))]
+    # 去重 (同名因子合并)
+    _seen_hz = {}
+    for h in hazards:
+        _seen_hz.setdefault(h["factor"], h)
+    hazards = list(_seen_hz.values())
+
     return {
         "project": project.get("name", ""),
         "_project_data": project,  # 原文输入 (设备/检测/工艺) 供报告表格全量
