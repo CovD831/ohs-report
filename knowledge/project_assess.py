@@ -223,8 +223,20 @@ def industry_chain(conn, industry_code: str) -> dict | None:
         "SELECT code, name FROM industry_class WHERE code=? AND level='中类' LIMIT 1",
         (industry_code,)).fetchone()
     if not mid:
-        # 兼容: 用户给了 C261 → 取后3位
-        if len(industry_code) > 3 and industry_code[-3:].isdigit():
+        # 4位小类码 (如2651): 查小类, 用其名称 (chain 显示完整小类, 而非截断误映射)
+        if re.match(r"^\d{4}$", str(industry_code)):
+            sm = conn.execute(
+                "SELECT code, name FROM industry_class WHERE code=? AND level='小类' LIMIT 1",
+                (industry_code,)).fetchone()
+            if sm:
+                mid = (sm[0], sm[1])
+                big = conn.execute(
+                    "SELECT code, name FROM industry_class WHERE code=? AND level='大类' LIMIT 1",
+                    (industry_code[:2],)).fetchone()
+        # 兼容: 用户给了 C261 → 取后3位 (仅当输入是 '<字母>3位码' 形式)
+        # (修复: 4位码如'2651'是完整小类, 不能截成后3位'651' → 误映射软件开发!
+        #  2651 初级形态塑料及合成树脂制造 被 industry_chain 映射到 651 软件开发)
+        if not mid and re.match(r"^[A-Za-z]\d{3}$", str(industry_code)):
             mid = conn.execute(
                 "SELECT code, name FROM industry_class WHERE code=? AND level='中类' LIMIT 1",
                 (industry_code[-3:],)).fetchone()
@@ -235,6 +247,10 @@ def industry_chain(conn, industry_code: str) -> dict | None:
     big = conn.execute(
         "SELECT code, name FROM industry_class WHERE code=? AND level='大类' LIMIT 1",
         (industry_code[:2],)).fetchone()
+    if not big and re.match(r"^\d{4}$", str(industry_code)):
+        big = conn.execute(
+            "SELECT code, name FROM industry_class WHERE code=? AND level='大类' LIMIT 1",
+            (industry_code[:2],)).fetchone()
     # 门类: 大类范围 (26 → C 13-43)
     gate_code = None
     for gate, (lo, hi) in GATE_RANGES.items():
