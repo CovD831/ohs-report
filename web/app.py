@@ -1376,7 +1376,7 @@ def _run_bench_after_generate(pid: str):
     """
     import json as _json
     from pathlib import Path as _P
-    from web.projects_db import get_project as _gp, _save_project_data as _save
+    from web.projects_db import get_project as _gp
 
     p = _gp(pid)
     if not p:
@@ -1433,7 +1433,7 @@ def _run_bench_after_generate(pid: str):
         if p2:
             d2 = dict(p2.get("data") or {})
             d2["bench"] = bench
-            _save(pid, d2)
+            _save_project_data(pid, d2)
         import logging
         logging.getLogger("ohs").info(f"[bench] pid={pid} 确定性评测 {total}/100 (v{bench['version']})")
     except Exception as _e2:
