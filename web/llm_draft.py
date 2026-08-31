@@ -93,6 +93,37 @@ def _build_info(project: dict, assess: dict) -> str:
     risk = assess.get("industry_risk") or {}
     hazards = assess.get("hazards", [])
     eqs = project.get("equipment", [])[:20]
+    # 危害因素过滤: 只保留能回溯到项目数据的因子 (物料→因子/检测因子/grid因子)
+    # (修复: 报告出现'硫酸二甲酯/甲苯' — 项目data无此物料, assess从库/行业模板带入 → 混入清单)
+    _proj_mats = set()
+    for m in (project.get("materials") or []):
+        nm = str(m.get("name") or m if isinstance(m, dict) else str(m)).split("|")[0].strip()
+        if nm:
+            _proj_mats.add(nm)
+    _proj_grid_factors = set()
+    for g in (project.get("hazard_grid") or []):
+        if isinstance(g, dict):
+            for f in str(g.get("factors") or "").replace(" ", "").split("、"): 
+                if f and len(f) >= 2: _proj_grid_factors.add(f)
+    _det_factors = set(str(d.get("factor") or "") for d in (project.get("detections") or []))
+    # 通用物理/粉尘因子 (不限物料: 噪声/高温/振动/粉尘等若grid/检测出现则保留; 无来源不入列表)
+    hz_keep_common = {"噪声", "高温", "局部振动", "工频电场", "紫外辐射", "矽尘", "电焊烟尘",
+                      "其他粉尘", "粉尘", "噪声(等效声级)", "WBGT"}
+    def _mats_backed(factor):
+        """因子能否回溯到项目物料: 精确相等(如'硫酸'=='硫酸') 或 因子是某物料名的完整后缀/全名
+        (禁用宽松子串: '硫酸'会匹配'硫酸二甲酯'/'甲苯'匹配'N,N-二甲基对甲苯胺' → 混入不在物料清单的因子)"""
+        for k in _proj_mats:
+            if not k:
+                continue
+            if factor == k:
+                return True
+            # 因子是物料名的完整结尾/开头 (物料'硫酸'→因子'硫酸'; 物料'五氧化二磷'→因子'磷'? 不保留)
+        return False
+    hazards = [h for h in hazards
+               if h.get("factor") in _det_factors
+               or _mats_backed(h.get("factor"))
+               or h.get("factor") in _proj_grid_factors
+               or h.get("factor") in hz_keep_common]
 
     # 危害因素 → 叙述
     hz_parts = []
@@ -166,6 +197,8 @@ _WRITING_GUIDE = """
 3. 去套话: 禁用"随着…发展""综上所述""本报告认为""近年来"等空话
 4. 不重复: 信息块已列出的内容(设备清单/危害因素表)不逐条复述, 只提炼"该环节的风险特征"
 5. 数据缺失=明确标注: 信息块没有的值(如投资/规模)写"待补充(需企业提供)", 不编造不展开
+5b. 物料/危害因素/设备清单严格限于信息块: 信息块列出的才可写; 信息块外(如"硫酸二甲酯/甲苯"
+    在项目无此物料)一律不得出现 — 严禁从标准库/常识/其他行业知识补料, 违反=重大差错
 6. 结构紧凑: 短句, 一段一个主题, 同一信息不换个说法重说
 7. 每节一屏读完: 正文不超过信息块的1.5倍长, 信息块短则正文短, 不为凑篇幅铺垫
 """
