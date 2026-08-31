@@ -76,6 +76,8 @@ SUB_EMPHASIS: dict[str, list[str]] = {
     "1.1": ["company", "founded", "registered_capital", "legal_rep", "investor",
             "name", "industry", "nature", "investment"],
     "1.3": ["name", "industry", "risk_level"],
+    "1.4": ["name", "location", "nature", "industry", "process_text"],  # 评价范围: 项目边界数据, 防写成评价内容
+    "1.5": ["name", "industry", "nature", "risk_level"],  # 评价内容: 项目属性, 防写成评价结果
     "1.6": ["name", "hazards", "detections"],  # 类比法描述引用真检测事实 (防编造化学毒物检测)
     # 2 现有企业概况
     "2.1": ["company", "founded", "registered_capital", "legal_rep", "investor",
@@ -145,8 +147,8 @@ def _fmt_list(items: list) -> str:
                 parts[-1] = parts[-1][:157] + "…"
         else:
             parts.append(str(it))
-        if len(parts) >= 60:  # 上限: 防止超长 prompt (全量但封顶60条)
-            parts.append(f"…(共{len(items)}条, 仅列前60)")
+        if len(parts) >= 200:  # 上限: 全量原则(原报告原料219种全列), 上限仅防极端(>200条病态输入)
+            parts.append(f"…(共{len(items)}条)")
             break
     return "；".join(parts) if parts else "（暂无数据）"
 

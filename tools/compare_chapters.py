@@ -107,8 +107,13 @@ def main():
             print(f"[{sec}] 仅单边存在, 跳过")
             continue
         g, o = gen_secs[sec], orig_secs[sec]
+        # 正文 + 表格 (表格数据是核心内容, 不喂会误判'表题悬空')
         g_txt = "\n".join(g["text"])[:args.max_chars]
         o_txt = "\n".join(o["text"])[:args.max_chars]
+        for tb in (g.get("tables") or [])[:3]:
+            g_txt += "\n[表] " + " | ".join((row[0] if row else "") for row in tb[:8])
+        for tb in (o.get("tables") or [])[:3]:
+            o_txt += "\n[表] " + " | ".join((row[0] if row else "") for row in tb[:8])
         prompt = COMPARE_PROMPT.format(sec=sec, title=o["title"], orig=o_txt, gen=g_txt)
         try:
             raw = call_llm(prompt, DEEPSEEK_KEY)
