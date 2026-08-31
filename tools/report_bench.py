@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # 版本号: 每次修改评测规则(增加/收紧/放松判定)必须 bump
-BENCH_VERSION = "1.2.0"
+BENCH_VERSION = "1.3.0"
 
 
 # ============ A. 数据一致性: 报告内数字交叉检查 ============
@@ -210,16 +210,36 @@ def check_tables(path: Path, project_data: dict) -> list[dict]:
         "定员": ("定员", "岗位", "工种", "人数", "班组"),
         "防护设施": ("防护", "隔声", "通风", "除尘", "防毒"),
         "PPE": ("防护用品", "个人防护", "防护装备"),
-        "应急": ("应急", "救援", "应急物资"),
+        "应急": ("应急", "救援", "应急物资", "配备设施", "放置点位"),
     }
     tbl_heads = []
+    # 表前标题段落匹配: "表7.1 应急救援物资清单" 这类标题 (表头无"应急"但标题有)
+    from docx.table import Table as _T
+    from docx.text.paragraph import Paragraph as _P
+    from docx.oxml.ns import qn as _qn
+    prev_titles = []
+    cur_title = ""
+    for el in d.element.body:
+        if el.tag == _qn("w:p"):
+            pp = _P(el, d)
+            t = pp.text.strip()
+            if t.startswith("表") and len(t) < 60:
+                cur_title = t
+            else:
+                cur_title = ""
+        elif el.tag == _qn("w:tbl"):
+            prev_titles.append(cur_title or "")
+    _ti = 0
     for tb in d.tables:
         if tb.rows:
             h = " ".join(c.text.strip()[:12] for c in tb.rows[0].cells)
-            # 合并首行(跨列表头) + 次行
             if len(tb.rows) > 1:
                 h2 = " ".join(c.text.strip()[:12] for c in tb.rows[1].cells)
                 h = h + " " + h2
+            # 表头 + 表前标题 (联合匹配)
+            if _ti < len(prev_titles) and prev_titles[_ti]:
+                h = h + " " + prev_titles[_ti]
+            _ti += 1
             tbl_heads.append(h)
     for req in required:
         kws = kw_map[req]

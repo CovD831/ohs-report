@@ -55,10 +55,35 @@ def extract_docx_text(path: str, max_chars: int = 60000) -> str:
         if t:
             out.append(t)
     txt = "\n".join(out)
+    # 按章采样: 每章取前 4500 字符 — 全章覆盖 (修复: 整体截断6万字符 → 6-11章不可见
+    # → Judge 误报'6-11章空白')
+    if len(txt) > max_chars:
+        import re as _re
+        chs = []
+        # 找章标题行 ("数字 标题")
+        idxs = [(i, t) for i, t in enumerate(out)
+                if _re.match(r"^\d{1,2}\s+\S{2,20}$", t)]
+        per_ch = max_chars // max(1, len(idxs) or 1)
+        for k, (i, t) in enumerate(idxs):
+            end = idxs[k + 1][0] if k + 1 < len(idxs) else len(out)
+            block = out[i:end]
+            take = 0
+            for line in block:
+                if take >= per_ch:
+                    break
+                chs.append(line)
+                take += len(line)
+        txt = "\n".join(chs)
     return txt[:max_chars]
 
 
 JUDGE_PROMPT = """你是职业卫生评价报告的质量评审专家。请评审以下生成的「建设项目职业病危害预评价报告」片段。
+
+【评审须知】
+- 现行标准版本(勿误判为虚构/过时): GBZ/T 196—2025(预评价导则), GBZ 2.1—2019(化学有害因素接触限值),
+  GBZ 2.2—2007(物理因素接触限值), GBZ 1—2010(工业企业设计卫生标准), GB 39800.1—2020(个体防护装备)
+- "表x.x 相关数据表" 等占位段落是 Word 表格标题的正常形态, 表格本体即随后的数据表, 不是"空表"
+- 报告中"风险类别为严重/待补充/依据标准推断"为行业惯用表述, 少量出现属正常, 大量重复才扣分
 
 【报告片段】
 {content}
