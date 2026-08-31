@@ -216,6 +216,49 @@ def _extract_product_units(proj_data: dict) -> list[tuple]:
         if name and len(name) >= 2 and name not in seen:
             items.append(name)
             seen.add(name)
+    # 1.5) 项目名称匹配产品线 (通用: 项目名含产品名 → 只保留相关产品)
+    #      (修复: 新泰'液体氯化钙、氢氟酸及氯化钾溶液产品结构调整项目' 产品表=全厂21条,
+    #       但项目只涉'氯化钙/氢氟酸(氟化盐)/氯化钾' → 原报告3.5只4条; 长兴'不饱和聚酯树脂扩建'→1条)
+    #      规则: 项目名提取产品关键词, 产品表命中则只用命中产品 (≥1命中才限定, 新建项目名不含产品→全量)
+    proj_name = str(proj_data.get("name") or proj_data.get("指标值") or "")
+    name_products = []
+    for m in re.finditer(r"([\u4e00-\u9fa5A-Za-z0-9]{1,12}?(?:树脂|氯化钙|氢氟酸|氯化钾|氯化钠|盐酸|磷酸|硫酸|硝酸|氟化盐|氟化氢|氢氧化钠|氢氧化钾|碳酸钠|碳酸钙|氟化氢|聚酯|聚氨酯|丙烯酸|沥青|溶剂油|合成树脂|单体))", proj_name):
+        name_products.append(m.group(1))
+    # 拆词: "液体氯化钙" → ["氯化钙"]; "氢氟酸及氯化钾" → ["氢氟酸","氯化钾"] (按、及和与 拆)
+    _split = re.compile(r"[、及和与，,]")
+    _split_products = []
+    for np_ in name_products:
+        npc = np_.replace("（", "").replace("）", "")
+        npc = re.sub(r"^(?:液体|固体|混合|年产|溶液|产品|新建|扩建|技改|改造|新增|调整|复合)", "", npc)
+        for seg in _split.split(npc):
+            if seg and len(seg) >= 2 and seg not in _split_products:
+                _split_products.append(seg)
+    name_products = _split_products or name_products
+    if name_products and items:
+        keep = set()
+        # 别名映射: 项目名产品词 → 产品表可能用的同义词 (通用, 非单项目)
+        ALIAS = {"氢氟酸": ("氟化盐", "氟化氢"), "氟化氢": ("氟化盐", "氢氟酸"),
+                 "氟化盐": ("氟化氢", "氢氟酸"),
+                 "氯化钙": ("氯化钙",), "氯化钾": ("氯化钾",), "氯化钠": ("氯化钠",),
+                 "氢氧化钠": ("氢氧化钠", "烧碱"), "氢氧化钾": ("氢氧化钾", "苛性钾"),
+                 "聚酯": ("聚酯", "树脂"), "树脂": ("树脂", "聚酯")}
+        for it in items:
+            for np_ in name_products:
+                npc = np_.replace("（", "").replace("）", "").replace("、", "")
+                itc = it.replace("（", "").replace("）", "")
+                # 直接互含
+                hit = (npc in itc or itc in npc)
+                # 别名命中: 项目名词 → 产品同义词
+                for src in (npc,):
+                    for al in ALIAS.get(src, ()):
+                        if al in itc:
+                            hit = True
+                            break
+                if hit:
+                    keep.add(it)
+                    break
+        if keep:  # 命中≥1才限定 (避免误伤)
+            items = [it for it in items if it in keep]
     # 2) 从设备名提取产品/工段 (设备名常含产品线, 如'氯化钙生产线')
     #    注意: 排除 仓库/车间/机房/办公/辅助 等非生产工段
     _NON_PRODUCT = ("仓库", "车间", "机房", "办公室", "化验室", "实验室", "配电", "辅助",
