@@ -1384,16 +1384,22 @@ def _run_bench_after_generate(pid: str):
     pd = p.get("data") or {}
     if not pd.get("section_states"):
         return
-    # 导出 docx 到临时路径
-    try:
-        import tempfile
-        from web.word_export import export_docx
-        tmpf = _P(tempfile.gettempdir()) / f"bench_{pid}.docx"
-        export_docx(pd, {}, tmpf, section_states=pd.get("section_states"))
-    except Exception as _e:
-        import logging
-        logging.getLogger("ohs").warning(f"bench 导出docx失败: {_e}")
-        return
+    # 用正式报告文件 (生成时已导出 /app/data/report_{pid}.docx) — 与网页下载/export 一致
+    # (修复: 钩子自 export_docx(assess={}) 漏 18 张表 → 评测失真)
+    from pathlib import Path as _P2
+    out_path = _P2(__file__).resolve().parent.parent / "data" / f"report_{pid}.docx"
+    if not out_path.exists():
+        # 回退: 现场导出 (assess 从正式 assess 缓存取, 不空)
+        try:
+            import tempfile
+            from web.word_export import export_docx
+            out_path = _P2(tempfile.gettempdir()) / f"bench_{pid}.docx"
+            export_docx(pd, {}, out_path, section_states=pd.get("section_states"))
+        except Exception as _e:
+            import logging
+            logging.getLogger("ohs").warning(f"bench 导出docx失败: {_e}")
+            return
+    tmpf = out_path
     # 跑确定性评测 (模块级复用 tools/report_bench)
     try:
         import sys as _sys
