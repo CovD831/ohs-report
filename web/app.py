@@ -1305,7 +1305,8 @@ def _run_generate_all(pid: str, jid: str):
     done = fail = 0
 
     def _finish(f):
-        """处理一个完成的 future: 写result (空结果不标记generated, 打勾必须真有内容)"""
+        """处理一个完成的 future: 写result (空结果不标记generated, 打勾必须真有内容)
+        + 逐节校验器: 生成时检测(数值/要素/幻觉), 问题写 section_states['validation']"""
         nonlocal done, fail
         s, sb = futures.pop(f)
         try:
@@ -1315,7 +1316,13 @@ def _run_generate_all(pid: str, jid: str):
             if len(t) < 30 or t.startswith("暂不支持"):
                 fail += 1
             else:
-                update_section_state(pid, sb or s, "generated", text)
+                # 逐节校验 (生成过程中检测, 不是事后)
+                try:
+                    from web.validators import validate_section
+                    _val = validate_section(sb or s, t, proj_data, cache.get("assess"))
+                    update_section_state(pid, sb or s, "generated", text, validation=_val)
+                except Exception:
+                    update_section_state(pid, sb or s, "generated", text)
                 done += 1
         except Exception:
             fail += 1

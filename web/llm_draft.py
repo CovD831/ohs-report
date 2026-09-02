@@ -508,6 +508,8 @@ def draft_sub(pid: str, sec: str, sub: str, _cache: dict | None = None) -> str:
     c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
     from web.structure_data import get_chapter_info
     info = get_chapter_info(sub or sec, c["project"], c["assess"])
+    from web.structure_data import chapter_must_cover
+    info = info + "\n\n" + chapter_must_cover(sub or sec) if chapter_must_cover(sub or sec) else info
     prompt = build_sub_prompt(sub, info)
     if not prompt:
         return "暂不支持该小节(可扩展)"
@@ -521,6 +523,8 @@ def draft_section(pid: str, sec: str, _cache: dict | None = None) -> str:
     project, assess = c["project"], c["assess"]
     from web.structure_data import get_chapter_info
     info = get_chapter_info(sec, project, assess)
+    from web.structure_data import chapter_must_cover
+    info = info + "\n\n" + chapter_must_cover(sec) if chapter_must_cover(sec) else info
     # 报告1-11章 → 标准10.2.x 章节prompt (2026备案稿11章平铺, GBZ/T 196—2025 10.2节)
     map_sec = {"1": "10.2.1", "2": "10.2.2", "3": "10.2.3", "4": "10.2.4",
                "5": "10.2.5", "6": "10.2.6", "7": "10.2.7", "8": "10.2.8",
@@ -560,6 +564,8 @@ def draft_detail(pid: str, key: str, title: str, _cache: dict | None = None) -> 
     c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
     from web.structure_data import get_chapter_info
     info = get_chapter_info(key, c["project"], c["assess"])
+    from web.structure_data import chapter_must_cover
+    info = info + "\n\n" + chapter_must_cover(key) if chapter_must_cover(key) else info
     # 决定权威标题 (按 key 层级)
     parts = key.split(".")
     lv = len(parts)

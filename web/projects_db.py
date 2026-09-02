@@ -197,8 +197,10 @@ def update_project(pid: str, name: str, data: dict) -> dict | None:
     return get_project(pid)
 
 
-def update_section_state(pid: str, sec: str, state: str, generated_text: str = "") -> dict:
-    """章节状态: mechanical(机械待确认) → generated(已生成) → confirmed(定稿)"""
+def update_section_state(pid: str, sec: str, state: str, generated_text: str = "",
+                         validation: dict | None = None) -> dict:
+    """章节状态: mechanical(机械待确认) → generated(已生成) → confirmed(定稿)
+    validation: 逐节校验器结果 (生成时检测数据/要素/幻觉), 存 section_states[sec]['validation']"""
     from web.report_struct import section_title, sub_title, sub3_title, sub4_title
     p = get_project(pid)
     if not p:
@@ -218,7 +220,10 @@ def update_section_state(pid: str, sec: str, state: str, generated_text: str = "
         title = f"{sec} {st}" if st != sec else sec
     else:                                   # 一级: "1"
         title = section_title(sec)
-    sec_states[sec] = {"state": state, "text": generated_text, "title": title}
+    st = {"state": state, "text": generated_text, "title": title}
+    if validation:
+        st["validation"] = validation
+    sec_states[sec] = st
     conn = _conn()
     conn.execute("UPDATE project SET data=?, updated=? WHERE id=?",
                  (json.dumps(data, ensure_ascii=False), time.time(), pid))
