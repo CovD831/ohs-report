@@ -345,13 +345,15 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
 
 # ============ 章节要素清单 (MUST_COVER: 每节必须覆盖的内容要点) ============
 # 通用: 与 web/validators.py 的 MUST_COVER 同源; 投喂给 LLM 让生成时知道该写全什么
+# 原则: 骨架(要素名/要素词)写在代码; 具体数值/限值一律从标准库动态取(单一数据源,
+#       标准换版只改库不改代码 — 修复: 10.6氧含量数值曾硬编码, 会与标准库分叉)
 MUST_COVER_INFO = {
     "10.6": "【本节必须覆盖】① 作业前安全隔绝(插入盲板/拆除管道/封堵孔洞/断电上锁挂牌)；"
-            "② 清洗置换后气体检测(氧含量19.5%~21%、富氧不大于23.5%、有毒气体符合GBZ 2.1)；"
+            "② 清洗置换后气体检测(以标准库受限空间条款为准)；"
             "③ 通风(自然/强制风机/管道送风先分析)；④ 作业许可证+专人监护；⑤ 作业中断超时重新检测",
     "7.1": "【本节必须覆盖】① 应急情景(中毒/灼伤/中暑/烫伤/密闭空间窒息/泄漏)；"
            "② 应急用品清单(空气呼吸器/防毒面具/化学防护服/急救箱/对讲机/警铃)；"
-           "③ 应急处置要点(切断物料/撤离人员/收集泄漏/中毒急救)；④ 依据标准(GBZ 1—2010)",
+           "③ 应急处置要点(切断物料/撤离人员/收集泄漏/中毒急救)；④ 依据标准(以标准库应急条款为准)",
     "11.1": "【本节必须覆盖】① 风险类别判定(严重/较重/一般)；② 关键控制点(因子×工序: 酯化/稀释/过滤/包装)；"
             "③ 达标结论(防护措施基本合理、符合职业病防治法/GBZ 1要求)；④ 存在问题与建议(待完善项)",
     "10.5": "【本节必须覆盖】① 监护制度(岗前/在岗/离岗)；② 体检项目(按接触危害); ③ 职业禁忌证; ④ 档案管理",
@@ -359,7 +361,35 @@ MUST_COVER_INFO = {
            "④ 检测结果对比(GBZ 2.1限值)与可比性分析；⑤ 检测数据来源标注",
 }
 
+# 章节 → 标准库条款关键词 (动态取数值/限值: 单一数据源)
+_MUST_COVER_CLAUSES = {
+    "10.6": ("受限空间", "盲板", "氧含量", "置换", "上锁"),
+    "7.1": ("应急", "救援"),
+}
+
+
+def _std_clauses(sec: str) -> str:
+    """从标准库动态取该章节相关条款 (数值/限值唯一来源; 库无条款时返回空, 骨架仍生效)"""
+    kws = _MUST_COVER_CLAUSES.get(sec)
+    if not kws:
+        return ""
+    try:
+        from .projects_db import _conn as _mc
+        conn = _mc()
+        rows = conn.execute(
+            "SELECT require, std_code, clause FROM management_rule WHERE " +
+            " OR ".join(["require LIKE ?"] * len(kws)), tuple(f"%{k}%" for k in kws)).fetchall()
+        conn.close()
+    except Exception:
+        return ""
+    lines = [f"- [{r[1]} {r[2]}] {r[0][:90]}" for r in rows[:8] if r and r[0]]
+    return "\n【标准依据(数值以此为准)】\n" + "\n".join(lines) if lines else ""
+
 
 def chapter_must_cover(sec: str) -> str:
-    """返回章节要素清单 (无则空串) — 生成时拼到信息块尾部"""
-    return MUST_COVER_INFO.get(sec, "")
+    """返回章节要素清单 (无则空串) — 生成时拼到信息块尾部
+    骨架来自 MUST_COVER_INFO(代码); 数值/限值来自标准库(动态, 单一数据源)"""
+    base = MUST_COVER_INFO.get(sec, "")
+    if not base:
+        return ""
+    return base + _std_clauses(sec)
