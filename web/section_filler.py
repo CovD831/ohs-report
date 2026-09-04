@@ -360,8 +360,16 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
 
     if sec == "9":
         # 职业卫生管理: 管理制度检查表 + 职业健康监护表
+        # 检索优化: 管理制度按"通用必列 + 项目相关"过滤, 不整表倾倒(条款库扩大后防表格爆表)
         tables = []
         rows = _rows_of(conn, "SELECT category, require, std_code, clause FROM management_rule")
+        # 受限空间等特殊作业条款仅当项目工艺涉及时才进检查表 (通用判定: 危害grid/工艺文本含关键词)
+        _pd9 = assess.get("_project_data") or {}
+        _proc = str(_pd9.get("process_text") or "") + " ".join(
+            str(g.get("factors") or "") + str(g.get("materials") or "") for g in (_pd9.get("hazard_grid") or []))
+        _special_kw = {"受限空间": ("受限空间", "密闭", "清罐", "釜内", "进入设备"), }
+        rows = [(c, q, s, cl) for (c, q, s, cl) in rows
+                if c not in _special_kw or any(k in _proc for k in _special_kw[c])]
         tables.append({"name": "管理制度检查表", "cols": ["序号", "制度类别", "检查点", "依据"],
                        "rows": [[i, r[0], r[1][:40], f"{r[2]} {r[3]}"] for i, r in enumerate(rows, 1)]})
         surv = _rows_of(conn, "SELECT factor, check_type, cycle FROM surveillance_rule")

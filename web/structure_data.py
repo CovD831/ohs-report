@@ -369,7 +369,10 @@ _MUST_COVER_CLAUSES = {
 
 
 def _std_clauses(sec: str) -> str:
-    """从标准库动态取该章节相关条款 (数值/限值唯一来源; 库无条款时返回空, 骨架仍生效)"""
+    """从标准库动态取该章节相关条款 (数值/限值唯一来源; 库无条款时返回空, 骨架仍生效)
+    检索优化(第一层): 条款按相关性排序, 不依赖数据库返回序 —
+      ① 命中章节核心词次数多者优先  ② std_code 含年份新者优先(现行版在前)
+      ③ 条款号精细者优先(8.4.2a 比 8.4.2 细)"""
     kws = _MUST_COVER_CLAUSES.get(sec)
     if not kws:
         return ""
@@ -382,7 +385,19 @@ def _std_clauses(sec: str) -> str:
         conn.close()
     except Exception:
         return ""
-    lines = [f"- [{r[1]} {r[2]}] {r[0][:90]}" for r in rows[:8] if r and r[0]]
+
+    import re as _re
+
+    def _score(r):
+        require, std, clause = r[0] or "", r[1] or "", r[2] or ""
+        s = sum(1 for k in kws if k in require) * 10       # 核心词命中数
+        m = _re.search(r"(\d{4})", std)                     # 标准年份越新越优先
+        s += int(m.group(1)) // 100 if m else 0
+        s += min(len(clause), 12)                           # 条款号精细度(长=细分条款)
+        return -s                                           # 升序排 → 取负
+
+    rows = sorted(rows, key=_score)[:8]
+    lines = [f"- [{r[1]} {r[2]}] {r[0][:90]}" for r in rows if r and r[0]]
     return "\n【标准依据(数值以此为准)】\n" + "\n".join(lines) if lines else ""
 
 
