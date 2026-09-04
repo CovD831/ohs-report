@@ -796,12 +796,18 @@ def import_materials_from_dir(pid: str) -> dict:
                 location = location or rp.get("location", "")
                 investment = investment or rp.get("investment", "")
                 area = area or rp.get("area", "")
-                company = company or rp.get("company", "")
-                founded = founded or rp.get("founded", "")
-                reg_cap = reg_cap or rp.get("registered_capital", "")
-                reg_cap_all = reg_cap_all or rp.get("registered_capital_all", "")
-                legal_rep = legal_rep or rp.get("legal_rep", "")
-                investor = investor or rp.get("investor", "")
+                # 企业基本信息只从"本项目报告"(可研/申请)取; 现状评价报告是存量企业描述
+                # (修复: 04现状报告写'2300万美元', 03可研写'4100万美元' — 现状报告不得覆盖本项目企业信息)
+                if _is_proj_report:
+                    company = company or rp.get("company", "")
+                    founded = founded or rp.get("founded", "")
+                    reg_cap = reg_cap or rp.get("registered_capital", "")
+                    reg_cap_all = reg_cap_all or rp.get("registered_capital_all", "")
+                    legal_rep = legal_rep or rp.get("legal_rep", "")
+                    investor = investor or rp.get("investor", "")
+                else:
+                    company = company or rp.get("company", "")
+                    founded = founded or rp.get("founded", "")
                 if rp.get("process_text") and not proc:
                     proc = rp["process_text"] if len(rp["process_text"]) > len(proc) else proc
                 if rp.get("equipment"):
