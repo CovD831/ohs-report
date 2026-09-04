@@ -113,9 +113,11 @@ def _check_factors(text: str, project_data: dict, assess: dict | None) -> list[d
             "三氧化铬", "金属镍与难溶性镍化合物", "工频电场"}
     allowed |= keep
     # 提取文本中像危害因子的词 (已知幻觉黑名单优先检查)
-    blacklist = {"硫酸二甲酯", "石蜡烟", "聚乙烯粉尘", "信息传输", "软件开发"}  # 已修复的历史幻觉
+    # 黑名单只管"data 完全无源"的词; 若该词在项目检测数据里(如聚乙烯粉尘是类比检测真因子)则合规
+    blacklist = {"硫酸二甲酯", "石蜡烟", "信息传输", "软件开发"}  # 历史幻觉词(项目data确实无源)
+    det_text = " ".join(str(d.get("factor") or "") for d in (project_data.get("detections") or []))
     for b in blacklist:
-        if b in text:
+        if b in text and b not in det_text:
             issues.append({"rule_id": "V-02", "note": f"本节出现历史幻觉词: {b}", "found": b})
     return issues
 
