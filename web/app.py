@@ -295,7 +295,8 @@ def api_report_generate(request: Request):
                       "investment", "area", "capacity", "nature", "location",
                       "equipment_detail", "shifts", "health_check", "management",
                       "hazard_grid", "emergency_supplies",
-                      "company", "founded", "registered_capital", "legal_rep", "investor"):
+                      "company", "founded", "registered_capital", "registered_capital_all",
+                      "legal_rep", "investor"):
                 if imported.get(k):
                     data[k] = imported[k]
             # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
@@ -694,7 +695,7 @@ def import_materials_from_dir(pid: str) -> dict:
     hazard_grids = []  # 危害识别网格 (评价单元|岗位|产品|工段|危害因素)
     emergency_supplies = []  # 应急物资 (类别|名称|数量|放置点位)
     investment, area, capacity, nature, location = "", "", "", "", ""
-    company, founded, reg_cap, legal_rep, investor = "", "", "", "", ""
+    company, founded, reg_cap, reg_cap_all, legal_rep, investor = "", "", "", "", "", ""
 
     def _read_rows(f):
         """读取表格文件: 兼容 csv/txt/xlsx, 多种分隔符(\x07/\t/,/;), 容错编码"""
@@ -798,6 +799,7 @@ def import_materials_from_dir(pid: str) -> dict:
                 company = company or rp.get("company", "")
                 founded = founded or rp.get("founded", "")
                 reg_cap = reg_cap or rp.get("registered_capital", "")
+                reg_cap_all = reg_cap_all or rp.get("registered_capital_all", "")
                 legal_rep = legal_rep or rp.get("legal_rep", "")
                 investor = investor or rp.get("investor", "")
                 if rp.get("process_text") and not proc:
@@ -1056,6 +1058,7 @@ def import_materials_from_dir(pid: str) -> dict:
             "investment": investment, "area": area, "capacity": capacity, "nature": nature,
             "location": location,
             "company": company, "founded": founded, "registered_capital": reg_cap,
+            "registered_capital_all": reg_cap_all,
             "legal_rep": legal_rep, "investor": investor,
             "equipment_detail": eq_detail, "shifts": shifts,
             "health_check": health_checks, "management": management,
