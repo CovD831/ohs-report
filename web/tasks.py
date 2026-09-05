@@ -125,9 +125,9 @@ def cancel_job(jid: str) -> bool:
 
 
 def _should_stop(jid: str) -> bool:
-    """worker 每单元检查是否被请求取消"""
-    if _cancel.get(jid):
-        return True
+    """worker 每单元检查是否被请求取消
+    跨进程安全: uvicorn --workers 2 时 _cancel 是进程内 dict, 用户取消请求可能落在另一个
+    worker 进程上 → 不能只看内存, 以 DB 状态为准 (DB 查询每单元一次, 开销可接受)"""
     conn = _conn()
     r = conn.execute("SELECT status FROM task_job WHERE id=?", (jid,)).fetchone()
     conn.close()

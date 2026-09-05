@@ -318,6 +318,12 @@ def main():
             project_data = json.loads(row[0])
         conn.close()
 
+    # 评测输入自检: project-json 若截断(如 materials 前80)会误报溯源失败 — 显式警告
+    _mats = project_data.get("materials") or []
+    if args.project_json and _mats and len(_mats) < 100 and not project_data.get("_truncated_ok"):
+        print(f"⚠️ 警告: --project-json 仅含 {len(_mats)} 条 materials — 若为截断快照, B维度(溯源)"
+              f"可能误报'因子无对应'。建议 --pid 或传全量 data JSON。", file=sys.stderr)
+
     text = ""
     import docx
     d = docx.Document(args.docx)
