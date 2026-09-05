@@ -1326,9 +1326,17 @@ def _run_generate_all(pid: str, jid: str):
                 fail += 1
             else:
                 # 逐节校验 (生成过程中检测, 不是事后)
+                # all_texts: 用当前已写section_states做重复检测快照 (并发下尽力而为)
                 try:
                     from web.validators import validate_section
-                    _val = validate_section(sb or s, t, proj_data, cache.get("assess"))
+                    from web.projects_db import get_project as _gp
+                    try:
+                        _snap = {k: (v or {}).get('text', '')
+                                 for k, v in ((_gp(pid) or {}).get('data', {}).get('section_states') or {}).items()
+                                 if isinstance(v, dict) and v.get('text')}
+                    except Exception:
+                        _snap = None
+                    _val = validate_section(sb or s, t, proj_data, cache.get("assess"), _snap)
                     update_section_state(pid, sb or s, "generated", text, validation=_val)
                 except Exception:
                     update_section_state(pid, sb or s, "generated", text)

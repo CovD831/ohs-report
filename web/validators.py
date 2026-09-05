@@ -187,12 +187,48 @@ def _check_must_cover(sec: str, text: str) -> list[dict]:
     return issues
 
 
-def validate_section(sec: str, text: str, project_data: dict, assess: dict | None = None) -> dict:
+def _check_duplication(sec: str, text: str, all_texts: dict | None = None) -> list[dict]:
+    """V-04 跨节重复检测: 本节的长片段(30字滑窗)在其他节出现 → 提示串章
+    滑窗而非整句: 前缀不同('本项目为…' vs 直接开头)但主体相同也能抓到
+    all_texts: {sec: text} 生成时的全局快照 (无则跳过)"""
+    if not all_texts:
+        return []
+    issues = []
+    seen = set()
+    W = 30  # 滑窗宽度
+    for other_sec, other in all_texts.items():
+        if other_sec == sec or not other:
+            continue
+        # 本节每个30字窗去其他节找
+        hits = 0
+        sample = ""
+        for i in range(0, max(1, len(text) - W), W // 2):
+            frag = text[i:i + W]
+            if len(frag) < W or frag in seen:
+                continue
+            seen.add(frag)
+            # 跳过含标点过多的碎窗 (列表/公式)
+            if sum(1 for c in frag if c in '、，,（()）0123456789./') > W * 0.5:
+                continue
+            if frag in other:
+                hits += 1
+                sample = sample or frag
+        if hits >= 2:  # 至少2个窗命中才算重复 (1个可能是正常引用句)
+            issues.append({"rule_id": "V-04", "note": f"本节与[{other_sec}]大段重复({hits}处): {sample[:30]}…",
+                           "found": other_sec})
+        if len(issues) >= 3:
+            break
+    return issues
+
+
+def validate_section(sec: str, text: str, project_data: dict, assess: dict | None = None,
+                     all_texts: dict | None = None) -> dict:
     """逐节校验: 返回 {passed, issues, score} — 生成时调用"""
     issues = []
     issues += _check_numbers(text, project_data)
     issues += _check_factors(text, project_data, assess)
     issues += _check_must_cover(sec, text)
+    issues += _check_duplication(sec, text, all_texts)
     return {
         "passed": len(issues) == 0,
         "issues": issues,
