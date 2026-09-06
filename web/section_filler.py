@@ -250,6 +250,29 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 lim_rows.append([fac, r[0], r[1], r[2]])
         if lim_rows:
             tables.append({"name": "接触限值表", "cols": ["危害因素", "限值类型", "限值", "单位"], "rows": lim_rows})
+        # 物理因素限值表 (GBZ 2.2—2007 静态标准数据, 规则生成 — 盲区修复: 原报告5.3有噪声/高温限值表)
+        _hz5 = " ".join([str(h.get("factor") or "") for h in assess.get("hazards", [])] +
+                        [str(g.get("factors") or "") for g in (assess.get("_project_data") or {}).get("hazard_grid", [])])
+        phys_rows = []
+        if "噪声" in _hz5:
+            phys_rows += [
+                ["噪声", "8h等效声级(Lex,8h)", "85", "dB(A)"],
+                ["噪声", "4h等效声级(Lex,4h)", "88", "dB(A)"],
+                ["噪声", "2h等效声级(Lex,2h)", "91", "dB(A)"],
+                ["噪声", "1h等效声级(Lex,1h)", "94", "dB(A)"],
+                ["噪声", "脉冲噪声(峰值)", "140", "dB"],
+            ]
+        if "高温" in _hz5:
+            phys_rows += [
+                ["高温(WBGT指数)", "接触时间率100%(8h)", "30", "℃(体力劳动强度I级)"],
+                ["高温(WBGT指数)", "接触时间率75%", "31", "℃"],
+                ["高温(WBGT指数)", "接触时间率50%", "32", "℃"],
+                ["高温(WBGT指数)", "接触时间率25%", "33", "℃"],
+            ]
+        if "局部振动" in _hz5:
+            phys_rows.append(["局部振动", "4h等能量频率计权振动加速度", "5", "m/s²"])
+        if phys_rows:
+            tables.append({"name": "物理因素职业接触限值表(GBZ 2.2)", "cols": ["物理因素", "限值类型/接触时间率", "限值", "单位"], "rows": phys_rows})
         # 工种×危害表 (岗位→危害, 从网格关联)
         if grid:
             gw_rows = []
