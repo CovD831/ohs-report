@@ -292,7 +292,7 @@ def api_report_generate(request: Request):
             # 结构化字段: 物料/定员/防护/PPE/应急/建构筑物/设施配置/产品/公辅/概况细节
             for k in ("materials", "staffing", "protection", "ppe", "emergency",
                       "buildings", "facilities", "products", "public_works",
-                      "investment", "area", "capacity", "nature", "location",
+                      "investment", "ohy_investment", "area", "capacity", "nature", "location",
                       "equipment_detail", "shifts", "health_check", "management",
                       "hazard_grid", "emergency_supplies",
                       "company", "founded", "registered_capital", "registered_capital_all",
@@ -694,7 +694,7 @@ def import_materials_from_dir(pid: str) -> dict:
     buildings, facilities, products, public_works = [], [], [], []
     hazard_grids = []  # 危害识别网格 (评价单元|岗位|产品|工段|危害因素)
     emergency_supplies = []  # 应急物资 (类别|名称|数量|放置点位)
-    investment, area, capacity, nature, location = "", "", "", "", ""
+    investment, ohy_investment, area, capacity, nature, location = "", "", "", "", "", ""
     company, founded, reg_cap, reg_cap_all, legal_rep, investor = "", "", "", "", "", ""
 
     def _read_rows(f):
@@ -795,6 +795,7 @@ def import_materials_from_dir(pid: str) -> dict:
                 nature = nature or rp.get("nature", "")
                 location = location or rp.get("location", "")
                 investment = investment or rp.get("investment", "")
+                ohy_investment = ohy_investment or rp.get("ohy_investment", "")
                 area = area or rp.get("area", "")
                 # 企业基本信息只从"本项目报告"(可研/申请)取; 现状评价报告是存量企业描述
                 # (修复: 04现状报告写'2300万美元', 03可研写'4100万美元' — 现状报告不得覆盖本项目企业信息)
@@ -1061,7 +1062,8 @@ def import_materials_from_dir(pid: str) -> dict:
             "ppe": ppe, "emergency": emergency,
             "buildings": buildings, "facilities": facilities,
             "products": products, "public_works": public_works,
-            "investment": investment, "area": area, "capacity": capacity, "nature": nature,
+            "investment": investment, "ohy_investment": ohy_investment,
+            "area": area, "capacity": capacity, "nature": nature,
             "location": location,
             "company": company, "founded": founded, "registered_capital": reg_cap,
             "registered_capital_all": reg_cap_all,

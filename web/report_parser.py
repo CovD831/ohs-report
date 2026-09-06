@@ -197,6 +197,16 @@ def parse_report_file(path) -> dict:
         n = _number_after(text, "项目总投资", "总投资", "工程总投资")
         if n:
             out["investment"] = n
+    # 职业卫生专项经费/专项投资 (9.2 章: 与项目总投资严格区分, 防混用)
+    # 来源: 可研/申请报告'职业病防治经费'投入估算 (健康监护/防护设施/检测/应急/培训)
+    oh = _kv(text, "职业卫生专项经费", 50) or _kv(text, "职业病防治经费", 50) \
+        or _kv(text, "职业病防治专项", 50) or _kv(text, "职业卫生投资", 50)
+    if oh:
+        out["ohy_investment"] = re.sub(r"[^\\d.]", "", oh)[:12]
+    if not out.get("ohy_investment"):
+        m = re.search(r"(?:职业病防治|职业卫生)(?:专项)?经费[^。\\n]{0,30}?(\\d+(?:\\.\\d+)?)\\s*(?:万元|元)", text)
+        if m:
+            out["ohy_investment"] = m.group(1)
     cap = _kv(text, "生产规模", 40) or _kv(text, "建设规模", 40) or _kv(text, "年产量", 40)
     if cap and len(cap) <= 40:
         out["capacity"] = cap
