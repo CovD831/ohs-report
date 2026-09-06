@@ -413,8 +413,9 @@ def _std_clauses(sec: str) -> str:
     try:
         from .projects_db import _conn as _mc
         conn = _mc()
+        # category='受限空间' 直接命中全文化条款(8.4.7清点/8.4.9储罐等行为细则不含关键词)
         rows = conn.execute(
-            "SELECT require, std_code, clause FROM management_rule WHERE " +
+            "SELECT require, std_code, clause FROM management_rule WHERE category='受限空间' OR " +
             " OR ".join(["require LIKE ?"] * len(kws)), tuple(f"%{k}%" for k in kws)).fetchall()
         conn.close()
     except Exception:
@@ -428,9 +429,11 @@ def _std_clauses(sec: str) -> str:
         m = _re.search(r"(\d{4})", std)                     # 标准年份越新越优先
         s += int(m.group(1)) // 100 if m else 0
         s += min(len(clause), 12)                           # 条款号精细度(长=细分条款)
+        if _re.search(r"\d\.\d+\.\d+[a-z]", clause):        # 字母子项(8.4.2a) = 最细颗粒, 强制保留
+            s += 50
         return -s                                           # 升序排 → 取负
 
-    rows = sorted(rows, key=_score)[:16]
+    rows = sorted(rows, key=_score)[:24]
     lines = [f"- [{r[1]} {r[2]}] {r[0][:90]}" for r in rows if r and r[0]]
     # 条款展开指令: 逐条覆盖 (颗粒度通用化 — LLM按条款号逐条展开, 不许挑着写)
     head = "\n【标准依据(数值以此为准, 逐条覆盖, 每条给出条款号引用)】\n"
