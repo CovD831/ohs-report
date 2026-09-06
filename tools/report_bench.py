@@ -254,6 +254,25 @@ def check_tables(path: Path, project_data: dict) -> list[dict]:
                 "severity": "medium",
                 "note": f"缺少主题表: {req} (表内未找到含 {kws} 的表头)"
             })
+    # E-02 表格种类齐全度: 物理因素限值表 (噪声/高温/振动 — GBZ 2.2 静态表, 任何项目接触物理因素就需要)
+    # (盲区修复: 之前只查"有数据驱动的表", GBZ 2.2 标准限值表这种'通用必备表'没查)
+    phys_required = []
+    _allfactors = " ".join(str(h.get("factor") or "") for h in (project_data.get("hazards") or [])) + \
+                  " " + " ".join(str(g.get("factors") or "") for g in (project_data.get("hazard_grid") or []))
+    if "噪声" in _allfactors:
+        phys_required.append(("噪声限值", ("噪声", "声级", "等效声级")))
+    if "高温" in _allfactors:
+        phys_required.append(("高温限值", ("高温", "WBGT")))
+    if "振动" in _allfactors:
+        phys_required.append(("振动限值", ("振动",)))
+    for req, kws in phys_required:
+        if not any(any(k in h for k in kws) for h in tbl_heads):
+            issues.append({
+                "type": "missing_table", "rule_id": "E-02",
+                "table": req,
+                "severity": "medium",
+                "note": f"缺少物理因素限值表: {req} (项目危害含{req[:2]}, 应有GBZ 2.2对应限值表)"
+            })
     return issues
 
 

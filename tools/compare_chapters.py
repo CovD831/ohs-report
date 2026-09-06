@@ -99,6 +99,38 @@ def main():
     if not DEEPSEEK_KEY:
         print("❌ 无 DEEPSEEK_KEY"); sys.exit(1)
 
+    # ===== 结构性缺失检测: 原报告目录全集 vs 生成报告目录 =====
+    # (盲区修复: 之前只比"两边都有的节" — 原报告有而生成侧没有的节永远不会报差异)
+    # 只比 1-2 级标题 (3级以下目录差异多为编号风格)
+    def toplevel(secs, max_depth=2):
+        return {sid: s["title"] for sid, s in secs.items() if sid.count(".") < max_depth}
+    gen_top, orig_top = toplevel(gen_secs), toplevel(orig_secs)
+    # 排除目录区重复 (生成报告目录区+正文区双标题, id 集合相同)
+    struct_missing = sorted(set(orig_top) - set(gen_top), key=lambda x: [int(p) for p in x.split(".") if p.isdigit()])
+    if struct_missing:
+        print(f"\n⚠️ 结构性缺失 {len(struct_missing)} 节 (原报告有, 生成报告未生成):")
+        for sid in struct_missing:
+            print(f"   ❌ [{sid}] {orig_top[sid]}")
+    # 表格种类对照: 原报告表名/表头 vs 生成报告 (1-2级节聚合)
+    def table_heads(secs, top):
+        heads = {}
+        for sid, s in secs.items():
+            if sid.count(".") >= 2:
+                continue
+            for tb in (s.get("tables") or []):
+                if tb and tb[0]:
+                    h = " | ".join(str(c)[:8] for c in tb[0][:5])
+                    heads.setdefault(h, sid)
+        return heads
+    gen_tbl, orig_tbl = table_heads(gen_secs, gen_top), table_heads(orig_secs, orig_top)
+    tbl_missing = {h: sid for h, sid in orig_tbl.items() if h not in gen_tbl}
+    if tbl_missing:
+        print(f"\n⚠️ 表格种类缺失 {len(tbl_missing)} 张 (原报告有, 生成报告无同表头表):")
+        for h, sid in list(tbl_missing.items())[:10]:
+            print(f"   ❌ [{sid}] 表头: {h[:50]}")
+    struct_result = {"structural_missing_sections": struct_missing,
+                     "structural_missing_tables": {h: sid for h, sid in tbl_missing.items()}}
+
     results = {}
     for sec in ids:
         if sec not in gen_secs or sec not in orig_secs:
@@ -126,8 +158,9 @@ def main():
         print(f"[{sec}] {o['title'][:25]}: {n} 项差异")
 
     if args.out:
+        results["_structural"] = struct_result
         Path(args.out).write_text(json.dumps(results, ensure_ascii=False, indent=1))
-        print(f"✅ 已保存 {args.out}")
+        print(f"✅ 已保存 {args.out} (含结构性缺失检测)")
     else:
         print(json.dumps(results, ensure_ascii=False, indent=1))
 
