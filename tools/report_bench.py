@@ -266,7 +266,20 @@ def check_tables(path: Path, project_data: dict) -> list[dict]:
     if "振动" in _allfactors:
         phys_required.append(("振动限值", ("振动",)))
     for req, kws in phys_required:
-        if not any(any(k in h for k in kws) for h in tbl_heads):
+        # 物理因素限值表: '高温'在数据行不在表头 → 扫描全表前6行 (表头+数据样例)
+        hit = False
+        for tb_i, h in enumerate(tbl_heads):
+            if any(k in h for k in kws):
+                hit = True
+                break
+        if not hit:
+            # 深扫: 表头没中, 扫每张表全部行 (物理限值表高温行在第6行之后)
+            for tb in docx.Document(str(path)).tables:
+                body = " ".join(c.text.strip() for r in tb.rows for c in r.cells)
+                if any(k in body for k in kws) and ("限值" in body or "dB" in body or "WBGT" in body):
+                    hit = True
+                    break
+        if not hit:
             issues.append({
                 "type": "missing_table", "rule_id": "E-02",
                 "table": req,
