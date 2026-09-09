@@ -203,6 +203,9 @@ _WRITING_GUIDE = """
     (如信息块"2651初级形态塑料及合成树脂制造" → 不得写成"信息传输、软件和信息技术服务业")
 5d. 标准条款限值(氧含量/浓度限值/温度等)必须以信息块给的数值为准, 不得凭记忆/其他标准改写
     (如信息块"氧含量19.5%~21%(GB 30871—2022)" → 不得写成"18%~22%")
+5e. 企业背景/资质/荣誉类信息一律以信息块为唯一来源: 认证历程(BV/ISO/清洁生产/安全标准化/其他奖项)、
+    集团经验年限、产品应用领域、市场背景/供需描述、产线历史 — 信息块没给的一律不写, 写"待补充(需企业提供)",
+    严禁凭行业常识/模型记忆/原报告印象补写 (违反=重大差错)
 6. 结构紧凑: 短句, 一段一个主题, 同一信息不换个说法重说
 7. 每节一屏读完: 正文不超过信息块的1.5倍长, 信息块短则正文短, 不为凑篇幅铺垫
 8. 章节边界(防串章): 只写本节主题, 以下内容已在别的节写过, 本节禁止复述 —
@@ -509,8 +512,53 @@ def _assess_cached(pid: str, _cache: dict | None = None):
     return {"project": project, "assess": assess, "info": info}
 
 
+# 固定文本章节 (GBZ/T 196 定式写法 — LLM 零参与, 防乱说话/编造)
+# key=节号, value=最终正文. 动态部分用 {proj}/{industry} 占位, 由 _proj_fill 替换
+FIXED_TEXTS = {
+    "1.2": (
+        "（1）贯彻落实《中华人民共和国职业病防治法》及国家相关的法律、法规、规章、标准和产业政策，"
+        "从源头控制和消除职业病危害，防治职业病，保护劳动者健康。\n"
+        "（2）识别、分析{proj}可能产生的职业病危害因素，评价其危害程度，确定职业病危害类别，"
+        "为建设项目职业病危害分类管理提供科学依据。\n"
+        "（3）在对职业病危害因素识别和分析的基础上，论证该建设项目拟采取的职业病危害控制措施的"
+        "可行性、有效性及合理性，提出相应的补充措施，以完善职业病防治的对策，使该建设项目建成投产后"
+        "能符合国家有关职业卫生法律、法规、标准和规范的要求。\n"
+        "（4）从职业病防治角度评估建设项目的可行性，为本项目的初步设计提供职业病危害预防的技术依据。"
+    ),
+    "1.3.1": (
+        "本项目的评价依据主要包括以下法律、法规、规章：\n"
+        "（1）《中华人民共和国职业病防治法》（主席令第24号，2018年修正）；\n"
+        "（2）《中华人民共和国劳动法》；\n"
+        "（3）《中华人民共和国安全生产法》；\n"
+        "（4）《中华人民共和国清洁生产促进法》；\n"
+        "（5）《工作场所职业卫生管理规定》（国家卫生健康委令第5号）；\n"
+        "（6）《建设项目职业病防护设施\u201c三同时\u201d监督管理办法》（国家安全生产监督管理总局令第90号）。\n"
+        "以上法规现行有效版本为评价依据。"
+    ),
+}
+
+_FIXED_PROJ = {"proj": "该项目"}
+
+
+def _fixed_text(sec: str, project: dict | None = None) -> str | None:
+    """若该节有固定文本(定式写法), 返回填充后的正文; 否则 None"""
+    tpl = FIXED_TEXTS.get(sec)
+    if not tpl:
+        return None
+    name = ""
+    if project:
+        name = project.get("name", "")
+        if name and name not in ("", "新建项目"):
+            name = f"{name}"
+    return tpl.format(**({**_FIXED_PROJ, "proj": name or _FIXED_PROJ["proj"]})) if "{proj}" in tpl else tpl
+
+
 def draft_sub(pid: str, sec: str, sub: str, _cache: dict | None = None) -> str:
-    """二级小节 LLM 草稿 (可传预计算 _cache 提速)"""
+    """二级小节 LLM 草稿 (可传预计算 _cache 提速)
+    固定文本先行: 1.2评价目的/1.3.1法律依据 = GBZ/T 196 定式, 不走 LLM (防乱说话/编造)"""
+    _fixed = _fixed_text(sub or sec)
+    if _fixed:
+        return _fixed
     c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
     from web.structure_data import get_chapter_info
     info = get_chapter_info(sub or sec, c["project"], c["assess"])
