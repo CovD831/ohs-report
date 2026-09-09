@@ -146,10 +146,18 @@ def add_toc(doc: Document):
 
 
 def _heading(doc, text: str, level: int = 1):
-    """带大纲级别的标题 (Word 导航窗格/自动目录可用)"""
+    """带大纲级别的标题 (Word 导航窗格/自动目录可用)
+    格式规约: 一级=宋体16居中加粗; 二级=黑体14加粗; 三级=宋体13加粗; 四级=宋体12加粗"""
     h = doc.add_heading(text, level=level)
+    fonts = {1: ("宋体", 16, True, WD_ALIGN_PARAGRAPH.CENTER),
+             2: ("黑体", 14, True, None),
+             3: ("宋体", 13, True, None),
+             4: ("宋体", 12, True, None)}
+    fname, size, bold, align = fonts.get(level, ("宋体", 13, True, None))
     for r in h.runs:
-        _set_font(r, HEI, {1: 16, 2: 14, 3: 13}.get(level, 13), True)
+        _set_font(r, fname, size, bold)
+    if align is not None:
+        h.alignment = align
     return h
 
 
@@ -222,9 +230,12 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
         sec_text = sec_meta.get("text", "")
         _heading(doc, f"{sec}  {CHAPTERS[sec]}", 1)
         if sec_text and sec_meta.get("state") == "generated":
+            # 章级文本只写"非小标题行" — 防旧文本/LLM嵌套标题污染正文 (v25 章节重复根因)
             for line in sec_text.split("\n"):
                 line = line.strip()
                 if line and not line.startswith("#"):
+                    if re.match(r"^\d+(\.\d+)?\s+\S", line) and len(line) < 40:
+                        continue  # 嵌套小标题(如 "1.1 项目概况")跳过 — 真正标题由 SUBS 生成
                     _para(doc, line, FANGSONG, 14, indent=0.74)
         if not SUBS.get(sec):
             # 无小节的章 (如第6章结论): 章节级表格
@@ -239,13 +250,13 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                 for line in sub_text.split("\n"):
                     line = line.strip()
                     if line and not line.startswith("#"):
+                        if re.match(r"^\d+(\.\d+)*\s+\S", line) and len(line) < 40:
+                            continue
                         _para(doc, line, FANGSONG, 14, indent=0.74)
             # 内嵌表格: 该小节对应的数据表 (跟真实报告一致, 表格在正文对应位置)
             sub_tables = _tables_for_sub(conn, sec, sn, assess)
             if sub_tables:
-                doc.add_paragraph()
-                _para(doc, "表" + sn.replace(".", ".") + " 相关数据表", HEI, 12, bold=True, align=1)
-                _write_tables(doc, sub_tables)
+                _write_tables_named(doc, sn, sub_tables)
             # 三级 + 固定四级
             for sub3, (parent, t3) in SUBS3.items():
                 if parent != sn:
@@ -286,6 +297,20 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                             _para(doc, line, FANGSONG, 14, indent=0.74)
     conn.close()
     doc.save(str(out_path))
+
+
+
+def _write_tables_named(doc, sn: str, tables: list[dict]):
+    """内嵌表格 + 语义化标题: 表{sn}-{idx} {tablename}
+    原报告格式: '表3.4-1 本项目扩建前后全厂产品方案对比表' (不再'相关数据表'占位)"""
+    idx = 0
+    for t in tables:
+        if not t.get("rows"):
+            continue
+        idx += 1
+        doc.add_paragraph()
+        _para(doc, f"表{sn}-{idx} {t.get('name', '相关数据表')}", HEI, 12, bold=True, align=1)
+        _write_tables(doc, [t])
 
 
 def _write_tables(doc, tables):
