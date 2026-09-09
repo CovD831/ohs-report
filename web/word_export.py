@@ -7,6 +7,7 @@
 用法: python3 -m web.word_export <project_id> [output.docx]
 """
 import json
+import re
 import sys
 from pathlib import Path
 
