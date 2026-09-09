@@ -148,18 +148,35 @@ def add_toc(doc: Document):
 
 def _heading(doc, text: str, level: int = 1):
     """带大纲级别的标题 (Word 导航窗格/自动目录可用)
-    格式规约: 一级=宋体16居中加粗; 二级=黑体14加粗; 三级=宋体13加粗; 四级=宋体12加粗"""
-    h = doc.add_heading(text, level=level)
-    fonts = {1: ("宋体", 16, True, WD_ALIGN_PARAGRAPH.CENTER),
-             2: ("黑体", 14, True, None),
-             3: ("宋体", 13, True, None),
-             4: ("宋体", 12, True, None)}
-    fname, size, bold, align = fonts.get(level, ("宋体", 13, True, None))
-    for r in h.runs:
-        _set_font(r, fname, size, bold)
+    格式规约: 一级=宋体16居中加粗; 二级=黑体14加粗; 三级=宋体13加粗; 四级=宋体12加粗
+    直接用 add_heading 会被 Heading 样式的主题字体覆盖(仿宋13) — 改: 段落+outlineLvl+字体全显式"""
+    from docx.shared import Pt as _Pt
+    from docx.oxml.ns import qn as _qn
+    from docx.enum.text import WD_ALIGN_PARAGRAPH as _AL
+    p = doc.add_paragraph()
+    # 大纲级别 (Word 导航窗格/自动目录可见)
+    pPr = p._p.get_or_add_pPr()
+    lvl = pPr.find(_qn('w:outlineLvl'))
+    if lvl is None:
+        lvl = pPr.makeelement(_qn('w:outlineLvl'), {})
+        pPr.append(lvl)
+    lvl.set(_qn('w:val'), str(max(0, level - 1)))
+    fonts = {1: (SONG, 16, True, _AL.CENTER),
+             2: (HEI, 14, True, None),
+             3: (SONG, 13, True, None),
+             4: (SONG, 12, True, None)}
+    fname, size, bold, align = fonts.get(level, (SONG, 13, True, None))
+    r = p.add_run(text)
+    _set_font(r, fname, size, bold)
+    # 段落字体 (防 Normal 样式干扰)
+    p.style = doc.styles['Normal']
     if align is not None:
-        h.alignment = align
-    return h
+        p.alignment = align
+    # 段前段后微调
+    pf = p.paragraph_format
+    pf.space_before = _Pt(6 if level == 1 else 3)
+    pf.space_after = _Pt(6 if level == 1 else 3)
+    return p
 
 
 def add_units_section(doc, units: list[dict]):
@@ -231,13 +248,9 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
         sec_text = sec_meta.get("text", "")
         _heading(doc, f"{sec}  {CHAPTERS[sec]}", 1)
         if sec_text and sec_meta.get("state") == "generated":
-            # 章级文本只写"非小标题行" — 防旧文本/LLM嵌套标题污染正文 (v25 章节重复根因)
-            for line in sec_text.split("\n"):
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    if re.match(r"^\d+(\.\d+)?\s+\S", line) and len(line) < 40:
-                        continue  # 嵌套小标题(如 "1.1 项目概况")跳过 — 真正标题由 SUBS 生成
-                    _para(doc, line, FANGSONG, 14, indent=0.74)
+            # 章级文本不 dump — 原报告章级是纯标题(1 总论 后直接 1.1),
+            # 章级概述段是生成器多余产物 (v25 章节重复根因: 旧文本嵌'1.1 项目概况'小标题)
+            pass
         if not SUBS.get(sec):
             # 无小节的章 (如第6章结论): 章节级表格
             tables = fill_section(conn, sec, assess)
