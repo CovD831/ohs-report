@@ -96,8 +96,8 @@ SUB_EMPHASIS: dict[str, list[str]] = {
     # 2 现有企业概况
     "2.1": ["company", "founded", "registered_capital", "legal_rep", "investor",
             "name", "industry", "nature", "risk_level", "staffing", "existing_products"],
-    "2.2": ["staffing", "hazards"],
-    "2.3": ["protection", "facilities"],
+    "2.2": ["management", "staffing", "hazards"],  # 管理台账文本(现状报告)是2.2主体数据源
+    "2.3": ["protection", "facilities", "emergency"],  # emergency含防护设施评价文本(现状报告)
     "2.4": ["ppe"],
     "2.5": ["staffing"],
     # 3 工程分析

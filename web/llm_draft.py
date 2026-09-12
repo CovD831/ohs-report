@@ -564,8 +564,44 @@ FIXED_TEXTS = {
 _FIXED_PROJ = {"proj": "该项目"}
 
 
+_LAWS_TEXT = None
+
+
+def _load_laws_text() -> str:
+    """法规清单全文 (通用法规列表, 跨项目相同; 数据源: fixed_texts_data.json 从原报告笔法提取)"""
+    global _LAWS_TEXT
+    if not _LAWS_TEXT:
+        try:
+            import json as _j
+            from pathlib import Path as _P
+            f = _P(__file__).parent / "fixed_texts_data.json"
+            _LAWS_TEXT = _j.loads(f.read_text(encoding="utf-8")).get("laws_text", "")
+        except Exception:
+            _LAWS_TEXT = ""
+    return _LAWS_TEXT
+
+
 def _fixed_text(sec: str, project: dict | None = None) -> str | None:
-    """若该节有固定文本(定式写法), 返回填充后的正文; 否则 None"""
+    """若该节有固定文本(定式写法), 返回填充后的正文; 否则 None
+    1.3.1 特例: 法规清单全文从 fixed_texts_data.json 动态加载 (通用法规列表, 跨项目相同)"""
+    if sec == "1.3.1":
+        laws = _load_laws_text()
+        if laws:
+            return ("本项目的评价依据主要包括以下法律、法规、规章（均以现行有效版本为准）：\n"
+                    + laws
+                    + "\n以上法规、规章及规范性文件的现行有效版本为本项目评价依据。")
+    if sec == "1.3.2":
+        try:
+            import json as _j
+            from pathlib import Path as _P
+            std = _j.loads(_P(__file__).parent.joinpath("fixed_texts_data.json")
+                           .read_text(encoding="utf-8")).get("std_text", "")
+        except Exception:
+            std = ""
+        if std:
+            return ("本项目的评价依据主要包括以下技术规范和标准（均以现行有效版本为准）：\n"
+                    + std
+                    + "\n评价中涉及的具体限值与检测方法，以上述标准现行有效版本为准。")
     tpl = FIXED_TEXTS.get(sec)
     if not tpl:
         return None
