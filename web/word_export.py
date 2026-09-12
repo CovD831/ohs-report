@@ -111,9 +111,11 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     for t in tables:
         for w in wanted:
             if t["name"] == w or t["name"].startswith(w) or w in t["name"]:
-                # 全局去重: 每个表名只出现一次 (避免设备×2/检查表×2/管理制度×3)
-                if t["name"] not in _USED_TABLES:
-                    _USED_TABLES.add(t["name"])
+                # 去重: 同一"节+表名"只出现一次; 不同节允许复用同名表
+                # (原报告同一张检查表在 2.3 现状/6.2 评价/10.4 建议多处出现)
+                key = f"{sub}:{t['name']}"
+                if key not in _USED_TABLES:
+                    _USED_TABLES.add(key)
                     res.append(t)
                 break
     return res

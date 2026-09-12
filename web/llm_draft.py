@@ -578,28 +578,27 @@ def _fixed_text(sec: str, project: dict | None = None) -> str | None:
 
 
 def _strip_md_tables(text: str) -> str:
-    """剥离 LLM 误写入正文的 Markdown 表格 (表格由系统生成, 正文不得承载)
-    行首为 '|' 或含 '|---' 分隔行的连续块 → 删除 (护栏: prompt 不能保证, 代码兜底)"""
-    if "|" not in text:
-        return text
-    lines = text.split("\n")
-    out, i = [], 0
-    while i < len(lines):
-        ln = lines[i].strip()
-        # 表格块: 当前行以|开头 或 下一行是分隔行
-        is_tbl = ln.startswith("|") or (i + 1 < len(lines) and re.match(r"^\|?[\s:\-|]{5,}$", lines[i + 1].strip())
-                                        and "|" in lines[i + 1])
-        if is_tbl:
-            # 跳过整个表格块
-            while i < len(lines) and (lines[i].strip().startswith("|") or not lines[i].strip()):
-                i += 1
-            continue
-        out.append(lines[i])
-        i += 1
-    res = "\n".join(out)
-    # 清理多余空行
-    res = re.sub(r"\n{3,}", "\n\n", res).strip()
-    return res
+    """剥离 LLM 误写入正文的 Markdown 表格 + 表标题行 (表格由系统生成插入)
+    ① 行首为 '|' 的表格块 ② '表X.X-X ...' 标题行 (系统插表时会写真正的表标题)"""
+    if "|" in text or re.search(r"^表\d", text, re.M):
+        lines = text.split("\n")
+        out, i = [], 0
+        while i < len(lines):
+            ln = lines[i].strip()
+            is_tbl = ln.startswith("|") or (i + 1 < len(lines) and re.match(r"^\|?[\s:\-|]{5,}$", lines[i + 1].strip())
+                                            and "|" in lines[i + 1])
+            is_tbltitle = bool(re.match(r"^表\d{1,2}(\.\d+)*-\d+\s", ln)) and len(ln) < 50
+            if is_tbl or is_tbltitle:
+                while i < len(lines) and (lines[i].strip().startswith("|") or not lines[i].strip()
+                                          or (bool(re.match(r"^表\d{1,2}(\.\d+)*-\d+\s", lines[i].strip())) and len(lines[i].strip()) < 50)):
+                    i += 1
+                continue
+            out.append(lines[i])
+            i += 1
+        res = "\n".join(out)
+        res = re.sub(r"\n{3,}", "\n\n", res).strip()
+        return res
+    return text
 
 
 def draft_sub(pid: str, sec: str, sub: str, _cache: dict | None = None) -> str:
