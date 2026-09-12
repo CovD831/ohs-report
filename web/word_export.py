@@ -276,10 +276,13 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
         sec_meta = ss.get(sec, {})
         sec_text = sec_meta.get("text", "")
         _heading(doc, f"{sec}  {CHAPTERS[sec]}", 1)
-        if sec_text and sec_meta.get("state") == "generated":
-            # 章级文本不 dump — 原报告章级是纯标题(1 总论 后直接 1.1),
-            # 章级概述段是生成器多余产物 (v25 章节重复根因: 旧文本嵌'1.1 项目概况'小标题)
-            pass
+        # 章级文本: 11章结论的正文在章级(SUBS[11]仅11.1, 章级是主体) → 输出;
+        # 1-10章章级文本是生成器概述残留(原报告章级纯标题) → 不输出
+        if sec_text and sec_meta.get("state") == "generated" and sec == "11":
+            for line in sec_text.split("\n"):
+                line = line.strip()
+                if line and not line.startswith("#") and not line.startswith("表"):
+                    _para(doc, line, FANGSONG, 14, indent=0.74)
         if not SUBS.get(sec):
             # 无小节的章 (如第6章结论): 章节级表格
             tables = fill_section(conn, sec, assess)
