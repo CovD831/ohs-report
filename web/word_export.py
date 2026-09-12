@@ -98,8 +98,7 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     支持二级(3.1)与三级(3.1.3)节: 三级优先用自己的映射, 无则回退父级"""
     sub = sn if "." in sn else sec
     m = _SUB_TABLE_MAP.get(sub)
-    if not m and "." in sub:
-        m = _SUB_TABLE_MAP.get(sub.rsplit(".", 1)[0])  # 三级回退父级二级
+    # 三级节: 只用自己的专属映射, 不回退父级 (防每三级节挂整章表×N)
     if not m:
         return []
     fill_ch, wanted = m
