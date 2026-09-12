@@ -298,9 +298,12 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                             continue
                         _para(doc, line, FANGSONG, 14, indent=0.74)
             # 内嵌表格: 该小节对应的数据表 (跟真实报告一致, 表格在正文对应位置)
-            sub_tables = _tables_for_sub(conn, sec, sn, assess)
-            if sub_tables:
-                _write_tables_named(doc, sn, sub_tables)
+            # 若该二级节有三级子节: 不在二级挂表 (表跟随三级子节, 原报告如此; 防同表×2)
+            has_sub3 = any(parent == sn for _, (parent, _) in SUBS3.items())
+            if not has_sub3:
+                sub_tables = _tables_for_sub(conn, sec, sn, assess)
+                if sub_tables:
+                    _write_tables_named(doc, sn, sub_tables)
             # 三级 + 固定四级
             for sub3, (parent, t3) in SUBS3.items():
                 if parent != sn:
