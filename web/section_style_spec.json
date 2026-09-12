@@ -1,0 +1,1667 @@
+{
+ "_source": "长兴树脂--预评（备案稿）.docx 逐节写法提取 (2026-09)",
+ "_note": "每节写法规范: style=写法类型, chars_range=正文长度区间, table_header=表结构样例",
+ "sections": {
+  "1": {
+   "title": "1 总论",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.1": {
+   "title": "1.1 项目背景",
+   "style": "long",
+   "chars": 1447,
+   "chars_range": [
+    723,
+    2604
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.2": {
+   "title": "1.2 评价目的",
+   "style": "brief",
+   "chars": 299,
+   "chars_range": [
+    149,
+    538
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.3": {
+   "title": "1.3 评价依据",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.3.1": {
+   "title": "1.3.1 法律、法规和规章",
+   "style": "long",
+   "chars": 1773,
+   "chars_range": [
+    886,
+    3191
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.3.2": {
+   "title": "1.3.2 技术规范和标准",
+   "style": "long",
+   "chars": 1638,
+   "chars_range": [
+    819,
+    2948
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.3.3": {
+   "title": "1.3.3 基础技术资料",
+   "style": "brief",
+   "chars": 151,
+   "chars_range": [
+    75,
+    271
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.4": {
+   "title": "1.4 评价范围",
+   "style": "medium",
+   "chars": 418,
+   "chars_range": [
+    209,
+    752
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.5": {
+   "title": "1.5 评价内容",
+   "style": "brief",
+   "chars": 103,
+   "chars_range": [
+    51,
+    185
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.6": {
+   "title": "1.6 评价方法",
+   "style": "brief",
+   "chars": 116,
+   "chars_range": [
+    58,
+    208
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.6.1": {
+   "title": "1.6.1 类比法",
+   "style": "brief",
+   "chars": 123,
+   "chars_range": [
+    61,
+    221
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.6.2": {
+   "title": "1.6.2 检查表分析法",
+   "style": "brief",
+   "chars": 113,
+   "chars_range": [
+    56,
+    203
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.6.3": {
+   "title": "1.6.3 工程分析法",
+   "style": "brief",
+   "chars": 171,
+   "chars_range": [
+    85,
+    307
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.7": {
+   "title": "1.7 评价程序",
+   "style": "brief",
+   "chars": 70,
+   "chars_range": [
+    35,
+    126
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "1.8": {
+   "title": "1.8 质量控制",
+   "style": "brief",
+   "chars": 298,
+   "chars_range": [
+    149,
+    536
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "2": {
+   "title": "2 现有企业概况",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "2.1": {
+   "title": "2.1 现有企业概况",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "2.1.1": {
+   "title": "2.1.1 企业概况",
+   "style": "medium",
+   "chars": 522,
+   "chars_range": [
+    261,
+    939
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "2.2": {
+   "title": "2.2 职业卫生管理情况",
+   "style": "long_table",
+   "chars": 2988,
+   "chars_range": [
+    1494,
+    5378
+   ],
+   "tables": 3,
+   "table_rows": 164,
+   "table_header": [
+    "类别",
+    "名称",
+    "数量",
+    "放置点位"
+   ]
+  },
+  "2.3": {
+   "title": "2.3 职业病危害防护设施",
+   "style": "long",
+   "chars": 2195,
+   "chars_range": [
+    1097,
+    3951
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "2.4": {
+   "title": "2.4 个人防护用品配备情况",
+   "style": "heading_only",
+   "chars": 58,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "2.5": {
+   "title": "2.5 卫生辅助用室设置情况",
+   "style": "brief",
+   "chars": 63,
+   "chars_range": [
+    31,
+    113
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3": {
+   "title": "3 建设项目工程分析",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.1": {
+   "title": "3.1 工程概况分析",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.1.1": {
+   "title": "3.1.1 基本情况",
+   "style": "brief",
+   "chars": 334,
+   "chars_range": [
+    167,
+    601
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.1.2": {
+   "title": "3.1.2 建设地点",
+   "style": "brief",
+   "chars": 196,
+   "chars_range": [
+    98,
+    352
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.1.3": {
+   "title": "3.1.3 自然环境概况",
+   "style": "long_table",
+   "chars": 1491,
+   "chars_range": [
+    745,
+    2683
+   ],
+   "tables": 1,
+   "table_rows": 30,
+   "table_header": [
+    "序号",
+    "项目",
+    "情况和数据",
+    "备注"
+   ]
+  },
+  "3.1.4": {
+   "title": "3.1.4 社会环境概况",
+   "style": "medium",
+   "chars": 479,
+   "chars_range": [
+    239,
+    862
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.1.5": {
+   "title": "3.1.5 生产制度及岗位定员",
+   "style": "brief_table",
+   "chars": 66,
+   "chars_range": [
+    33,
+    118
+   ],
+   "tables": 1,
+   "table_rows": 4,
+   "table_header": [
+    "工种",
+    "工作区域",
+    "工作内容",
+    "人/班",
+    "生产班制",
+    "总人数（人）",
+    "最大班女工数（人）"
+   ]
+  },
+  "3.1.6": {
+   "title": "3.1.6 项目组成及主要工程内容",
+   "style": "brief",
+   "chars": 238,
+   "chars_range": [
+    119,
+    428
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.1.7": {
+   "title": "3.1.7 主要技术经济指标",
+   "style": "table_only",
+   "chars": 18,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 1,
+   "table_rows": 5,
+   "table_header": [
+    "序号",
+    "项目名称",
+    "单位",
+    "指标",
+    "备注"
+   ]
+  },
+  "3.2": {
+   "title": "3.2 选址分析与评价",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.2.1": {
+   "title": "3.2.1 选址分析",
+   "style": "brief_table",
+   "chars": 181,
+   "chars_range": [
+    90,
+    325
+   ],
+   "tables": 1,
+   "table_rows": 5,
+   "table_header": [
+    "序号",
+    "方位",
+    "周边情况",
+    "最近距离（m）"
+   ]
+  },
+  "3.2.2": {
+   "title": "3.2.2 选址评价",
+   "style": "table_only",
+   "chars": 41,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 1,
+   "table_rows": 5,
+   "table_header": [
+    "检查依据",
+    "卫生要求",
+    "检查结果",
+    "评价"
+   ]
+  },
+  "3.3": {
+   "title": "3.3 总体布局分析与评价",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.3.1": {
+   "title": "3.3.1 总平面布置分析",
+   "style": "medium",
+   "chars": 560,
+   "chars_range": [
+    280,
+    1008
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.3.2": {
+   "title": "3.3.2 竖向布置",
+   "style": "brief",
+   "chars": 174,
+   "chars_range": [
+    87,
+    313
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.3.3": {
+   "title": "3.3.3 总平面布置评价",
+   "style": "brief_table",
+   "chars": 236,
+   "chars_range": [
+    118,
+    424
+   ],
+   "tables": 1,
+   "table_rows": 6,
+   "table_header": [
+    "序号",
+    "卫生要求",
+    "检查依据",
+    "检查结果",
+    "评价"
+   ]
+  },
+  "3.4": {
+   "title": "3.4 产品及原辅材料分析",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.4.1": {
+   "title": "3.4.1 产品情况",
+   "style": "table_only",
+   "chars": 48,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 1,
+   "table_rows": 7,
+   "table_header": [
+    "序号",
+    "名称",
+    "名称",
+    "单位",
+    "主要成分",
+    "年产量吨/年",
+    "年产量吨/年",
+    "变化量"
+   ]
+  },
+  "3.4.2": {
+   "title": "3.4.2 原辅材料使用情况",
+   "style": "table_only",
+   "chars": 37,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 1,
+   "table_rows": 161,
+   "table_header": [
+    "序号",
+    "原辅材料名称",
+    "物料性状",
+    "年耗量(t/a)",
+    "存放地点",
+    "最大储存量（t）",
+    "包装方式/规格"
+   ]
+  },
+  "3.5": {
+   "title": "3.5 生产工艺分析与评价",
+   "style": "brief",
+   "chars": 184,
+   "chars_range": [
+    92,
+    331
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.5.1": {
+   "title": "3.5.1 不饱和聚酯树脂（通用型）生产工艺",
+   "style": "long",
+   "chars": 1476,
+   "chars_range": [
+    738,
+    2656
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.5.2": {
+   "title": "3.5.2 生产辅助工序",
+   "style": "medium",
+   "chars": 454,
+   "chars_range": [
+    227,
+    817
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.5.3": {
+   "title": "3.5.3 生产工艺评价",
+   "style": "brief_table",
+   "chars": 142,
+   "chars_range": [
+    71,
+    255
+   ],
+   "tables": 1,
+   "table_rows": 5,
+   "table_header": [
+    "序号",
+    "卫生要求",
+    "检查依据",
+    "检查情况",
+    "评价"
+   ]
+  },
+  "3.6": {
+   "title": "3.6 生产设备及布局分析与评价",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.6.1": {
+   "title": "3.6.1 生产设备调查",
+   "style": "brief_table",
+   "chars": 97,
+   "chars_range": [
+    48,
+    174
+   ],
+   "tables": 1,
+   "table_rows": 78,
+   "table_header": [
+    "车间",
+    "位号",
+    "设备名称",
+    "规格型号",
+    "数量",
+    "数量",
+    "数量",
+    "材质"
+   ]
+  },
+  "3.6.2": {
+   "title": "3.6.2 生产设备布局",
+   "style": "brief",
+   "chars": 102,
+   "chars_range": [
+    51,
+    183
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.6.3": {
+   "title": "3.6.3 生产设备及布局评价",
+   "style": "brief_table",
+   "chars": 120,
+   "chars_range": [
+    60,
+    216
+   ],
+   "tables": 1,
+   "table_rows": 7,
+   "table_header": [
+    "序号",
+    "检查项目",
+    "检查依据",
+    "检查情况",
+    "评价"
+   ]
+  },
+  "3.7": {
+   "title": "3.7 建筑卫生学分析与评价",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.7.1": {
+   "title": "3.7.1 建筑结构",
+   "style": "brief_table",
+   "chars": 86,
+   "chars_range": [
+    43,
+    154
+   ],
+   "tables": 1,
+   "table_rows": 24,
+   "table_header": [
+    "功能区",
+    "建构筑物名称",
+    "火灾危险类别",
+    "耐火等级",
+    "层数",
+    "占地面积(㎡)",
+    "建筑面积(㎡)",
+    "备注"
+   ]
+  },
+  "3.7.2": {
+   "title": "3.7.2 通风、空气调节、采暖及微小气候",
+   "style": "brief",
+   "chars": 257,
+   "chars_range": [
+    128,
+    462
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.7.3": {
+   "title": "3.7.3 采光照明",
+   "style": "brief",
+   "chars": 184,
+   "chars_range": [
+    92,
+    331
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.7.4": {
+   "title": "3.7.4 建筑卫生学评价",
+   "style": "brief_table",
+   "chars": 154,
+   "chars_range": [
+    77,
+    277
+   ],
+   "tables": 1,
+   "table_rows": 8,
+   "table_header": [
+    "序号",
+    "卫生要求",
+    "检查依据",
+    "检查结果",
+    "评价"
+   ]
+  },
+  "3.8": {
+   "title": "3.8 辅助用室分析与评价",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "3.8.1": {
+   "title": "3.8.1 辅助用室分析",
+   "style": "brief_table",
+   "chars": 385,
+   "chars_range": [
+    192,
+    693
+   ],
+   "tables": 2,
+   "table_rows": 12,
+   "table_header": [
+    "辅助用室",
+    "数量",
+    "设置地点",
+    "设置情况",
+    "设置情况",
+    "设置情况"
+   ]
+  },
+  "3.8.2": {
+   "title": "3.8.2 辅助用室评价",
+   "style": "brief_table",
+   "chars": 144,
+   "chars_range": [
+    72,
+    259
+   ],
+   "tables": 1,
+   "table_rows": 4,
+   "table_header": [
+    "序号",
+    "卫生要求",
+    "检查依据",
+    "检查结果",
+    "评价"
+   ]
+  },
+  "4": {
+   "title": "4 类比企业（项目）调查分析",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.1": {
+   "title": "4.1 类比企业的选择",
+   "style": "brief",
+   "chars": 86,
+   "chars_range": [
+    43,
+    154
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.1.1": {
+   "title": "4.1.1 类比项目",
+   "style": "brief_table",
+   "chars": 273,
+   "chars_range": [
+    136,
+    491
+   ],
+   "tables": 1,
+   "table_rows": 13,
+   "table_header": [
+    "类比项目",
+    "本项目",
+    "类比企业",
+    "比较结果"
+   ]
+  },
+  "4.2": {
+   "title": "4.2 类比企业职业卫生调查",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.2.1": {
+   "title": "4.2.1 类比企业工作日写实",
+   "style": "brief_table",
+   "chars": 213,
+   "chars_range": [
+    106,
+    383
+   ],
+   "tables": 2,
+   "table_rows": 39,
+   "table_header": [
+    "部门",
+    "岗位/工种",
+    "总人数",
+    "女工数",
+    "工作班制",
+    "工作班制时长（h）",
+    "工作日写实"
+   ]
+  },
+  "4.2.2": {
+   "title": "4.2.2 类比企业存在的职业病危害因素及其分布",
+   "style": "brief_table",
+   "chars": 80,
+   "chars_range": [
+    40,
+    144
+   ],
+   "tables": 1,
+   "table_rows": 18,
+   "table_header": [
+    "评价单元",
+    "岗位",
+    "接触途径",
+    "接触途径",
+    "主要职业病危害因素",
+    "作业方式",
+    "接触人数",
+    "接触频次"
+   ]
+  },
+  "4.2.3": {
+   "title": "4.2.3 类比企业职业病危害防护设施设置",
+   "style": "heading_only",
+   "chars": 33,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.2.4": {
+   "title": "4.2.4 类比企业个体使用职业病危害防护用品的配备与使用",
+   "style": "brief_table",
+   "chars": 198,
+   "chars_range": [
+    99,
+    356
+   ],
+   "tables": 2,
+   "table_rows": 34,
+   "table_header": [
+    "序号",
+    "评价单元",
+    "岗位",
+    "接触途径",
+    "接触途径",
+    "主要职业病危害因素",
+    "个人防护用品配备",
+    "符合性"
+   ]
+  },
+  "4.2.5": {
+   "title": "4.2.5 类比企业应急救援设施设置",
+   "style": "brief",
+   "chars": 313,
+   "chars_range": [
+    156,
+    563
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.3": {
+   "title": "4.3 类比企业职业卫生管理",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.3.1": {
+   "title": "4.3.1 职业卫生管理机构和人员",
+   "style": "brief",
+   "chars": 200,
+   "chars_range": [
+    100,
+    360
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.3.2": {
+   "title": "4.3.2 职业卫生管理制度",
+   "style": "brief",
+   "chars": 169,
+   "chars_range": [
+    84,
+    304
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.4": {
+   "title": "4.4 类比企业职业病危害因素检测",
+   "style": "brief",
+   "chars": 386,
+   "chars_range": [
+    193,
+    694
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.5": {
+   "title": "4.5 类比企业职业健康监护",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.5.1": {
+   "title": "4.5.1 职业健康监护管理情况",
+   "style": "brief",
+   "chars": 334,
+   "chars_range": [
+    167,
+    601
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.5.2": {
+   "title": "4.5.2 职业健康检查结果",
+   "style": "brief",
+   "chars": 292,
+   "chars_range": [
+    146,
+    525
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.5.3": {
+   "title": "4.5.3 职业禁忌证、疑似职业病和职业病病人的处置",
+   "style": "brief",
+   "chars": 133,
+   "chars_range": [
+    66,
+    239
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.6": {
+   "title": "4.6 类比调查综合结论",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.6.1": {
+   "title": "4.6.1 类比项目与本项目的可比性",
+   "style": "brief",
+   "chars": 76,
+   "chars_range": [
+    38,
+    136
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.6.2": {
+   "title": "4.6.2 类比项目监测结果",
+   "style": "heading_only",
+   "chars": 28,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.6.3": {
+   "title": "4.6.3 类比项目职业病防护设施",
+   "style": "heading_only",
+   "chars": 44,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.6.4": {
+   "title": "4.6.4 职业卫生管理制度",
+   "style": "brief",
+   "chars": 148,
+   "chars_range": [
+    74,
+    266
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.6.5": {
+   "title": "4.6.5 类比项目职业健康监护",
+   "style": "brief",
+   "chars": 85,
+   "chars_range": [
+    42,
+    153
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "4.6.6": {
+   "title": "4.6.6 类比调查结论",
+   "style": "medium",
+   "chars": 409,
+   "chars_range": [
+    204,
+    736
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "5": {
+   "title": "5 职业病危害因素及危害程度分析",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "5.1": {
+   "title": "5.1 职业病危害因素识别",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "5.1.1": {
+   "title": "5.1.1 生产工艺过程职业病危害因素识别",
+   "style": "brief",
+   "chars": 146,
+   "chars_range": [
+    73,
+    262
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "5.1.1.1": {
+   "title": "5.1.1.1 不饱和聚酯树脂（通用型）生产",
+   "style": "medium",
+   "chars": 639,
+   "chars_range": [
+    319,
+    1150
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "5.1.1.2": {
+   "title": "5.1.1.2 生产辅助工序",
+   "style": "medium",
+   "chars": 857,
+   "chars_range": [
+    428,
+    1542
+   ],
+   "tables": 1,
+   "table_rows": 9,
+   "table_header": [
+    "生产车间",
+    "生产车间",
+    "工序",
+    "设备密闭",
+    "物料或中间产物",
+    "职业病危害因素产生环节",
+    "主要职业病危害因素"
+   ]
+  },
+  "5.1.2": {
+   "title": "5.1.2 生产环境职业病危害因素识别",
+   "style": "brief",
+   "chars": 188,
+   "chars_range": [
+    94,
+    338
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "5.1.3": {
+   "title": "5.1.3 劳动过程职业病危害因素识别",
+   "style": "medium",
+   "chars": 932,
+   "chars_range": [
+    466,
+    1677
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "5.2": {
+   "title": "5.2 职业病危害因素健康效应分析",
+   "style": "brief",
+   "chars": 103,
+   "chars_range": [
+    51,
+    185
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "5.2.1": {
+   "title": "5.2.1 化学物质",
+   "style": "table_only",
+   "chars": 56,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 1,
+   "table_rows": 21,
+   "table_header": [
+    "职业病危害因素",
+    "主要侵入途径",
+    "毒理学资料",
+    "对人体健康的主要影响",
+    "临界不良健康效应",
+    "可能引起的主要职业病"
+   ]
+  },
+  "5.2.2": {
+   "title": "5.2.2 物理因素",
+   "style": "table_only",
+   "chars": 22,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 1,
+   "table_rows": 3,
+   "table_header": [
+    "名称",
+    "危害特性",
+    "对人体健康的影响",
+    "可能引起的职业病"
+   ]
+  },
+  "5.3": {
+   "title": "5.3 职业接触限值",
+   "style": "brief_table",
+   "chars": 212,
+   "chars_range": [
+    106,
+    381
+   ],
+   "tables": 3,
+   "table_rows": 27,
+   "table_header": [
+    "种类",
+    "职业接触限值（mg/m3）",
+    "职业接触限值（mg/m3）",
+    "职业接触限值（mg/m3）",
+    "职业接触限值（mg/m3）",
+    "备注"
+   ]
+  },
+  "5.4": {
+   "title": "5.4 职业病危害因素危害程度分析",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "5.4.1": {
+   "title": "5.4.1 职业病危害预测分析",
+   "style": "medium",
+   "chars": 884,
+   "chars_range": [
+    442,
+    1591
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "5.4.2": {
+   "title": "5.4.2 职业病危害因素异常情况分析",
+   "style": "medium",
+   "chars": 624,
+   "chars_range": [
+    312,
+    1123
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "5.4.3": {
+   "title": "5.4.3 本项目关键控制点",
+   "style": "brief_table",
+   "chars": 198,
+   "chars_range": [
+    99,
+    356
+   ],
+   "tables": 1,
+   "table_rows": 5,
+   "table_header": [
+    "生产车间",
+    "生产车间",
+    "工序",
+    "设备密闭",
+    "接触方式",
+    "主要职业病危害因素",
+    "关键控制措施"
+   ]
+  },
+  "6": {
+   "title": "6 职业病危害防护设施分析与评价",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "6.1": {
+   "title": "6.1 职业病防护设施分析",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "6.1.1": {
+   "title": "6.1.1 拟采取的防尘设施分析",
+   "style": "brief",
+   "chars": 147,
+   "chars_range": [
+    73,
+    264
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "6.1.2": {
+   "title": "6.1.2 拟采取的防毒设施分析",
+   "style": "medium",
+   "chars": 790,
+   "chars_range": [
+    395,
+    1422
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "6.1.4": {
+   "title": "6.1.4 拟采取的防高温设施",
+   "style": "brief",
+   "chars": 208,
+   "chars_range": [
+    104,
+    374
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "6.2": {
+   "title": "6.2 职业病防护设施评价",
+   "style": "brief_table",
+   "chars": 170,
+   "chars_range": [
+    85,
+    306
+   ],
+   "tables": 1,
+   "table_rows": 20,
+   "table_header": [
+    "序号",
+    "卫生要求",
+    "检查依据",
+    "检查结果",
+    "评价"
+   ]
+  },
+  "7": {
+   "title": "7 应急救援措施的分析与评价",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "7.1": {
+   "title": "7.1 应急救援措施分析",
+   "style": "medium",
+   "chars": 939,
+   "chars_range": [
+    469,
+    1690
+   ],
+   "tables": 1,
+   "table_rows": 119,
+   "table_header": [
+    "类别",
+    "名称",
+    "数量",
+    "放置点位"
+   ]
+  },
+  "7.2": {
+   "title": "7.2 应急救援措施评价",
+   "style": "brief_table",
+   "chars": 192,
+   "chars_range": [
+    96,
+    345
+   ],
+   "tables": 1,
+   "table_rows": 10,
+   "table_header": [
+    "序号",
+    "卫生要求",
+    "检查依据",
+    "检查结果",
+    "评价"
+   ]
+  },
+  "8": {
+   "title": "8 个人使用的职业病防护用品的分析与评价",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "8.1": {
+   "title": "8.1 个人使用的职业病防护用品分析",
+   "style": "brief_table",
+   "chars": 182,
+   "chars_range": [
+    91,
+    327
+   ],
+   "tables": 1,
+   "table_rows": 16,
+   "table_header": [
+    "安全装备项目／工作性质、内容",
+    "安全鞋",
+    "绝缘鞋",
+    "安全 帽",
+    "安全眼 镜/面屏",
+    "化学 眼罩",
+    "防尘 口罩",
+    "防毒 面罩"
+   ]
+  },
+  "8.2": {
+   "title": "8.2 个人使用的职业病防护用品评价",
+   "style": "brief_table",
+   "chars": 321,
+   "chars_range": [
+    160,
+    577
+   ],
+   "tables": 1,
+   "table_rows": 8,
+   "table_header": [
+    "序号",
+    "检查内容",
+    "检查依据",
+    "检查结果",
+    "评价"
+   ]
+  },
+  "9": {
+   "title": "9 职业卫生管理的分析与评价",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "9.1": {
+   "title": "9.1 职业卫生管理分析与评价",
+   "style": "brief_table",
+   "chars": 107,
+   "chars_range": [
+    53,
+    192
+   ],
+   "tables": 1,
+   "table_rows": 10,
+   "table_header": [
+    "序号",
+    "检查项目",
+    "检查依据",
+    "检查结果",
+    "结论"
+   ]
+  },
+  "9.2": {
+   "title": "9.2 职业卫生专项投资分析与评价",
+   "style": "brief_table",
+   "chars": 133,
+   "chars_range": [
+    66,
+    239
+   ],
+   "tables": 1,
+   "table_rows": 11,
+   "table_header": [
+    "序号",
+    "项目名名称",
+    "投资金额(万元)"
+   ]
+  },
+  "10": {
+   "title": "10 职业病防治措施的补充建议",
+   "style": "heading_only",
+   "chars": 0,
+   "chars_range": [
+    0,
+    120
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "10.1": {
+   "title": "10.1 职业卫生“三同时”",
+   "style": "brief",
+   "chars": 143,
+   "chars_range": [
+    71,
+    257
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "10.2": {
+   "title": "10.2 补充措施及建议",
+   "style": "medium",
+   "chars": 758,
+   "chars_range": [
+    379,
+    1364
+   ],
+   "tables": 1,
+   "table_rows": 7,
+   "table_header": [
+    "序号",
+    "参数",
+    "参数类别",
+    "单位",
+    "标准值",
+    "备注"
+   ]
+  },
+  "10.3": {
+   "title": "10.3 职业病危害因素接触者个人培训与防护",
+   "style": "brief",
+   "chars": 187,
+   "chars_range": [
+    93,
+    336
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "10.4": {
+   "title": "10.4 工作场所职业病危害警示标识",
+   "style": "brief",
+   "chars": 222,
+   "chars_range": [
+    111,
+    399
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "10.5": {
+   "title": "10.5 职业健康监护",
+   "style": "medium",
+   "chars": 826,
+   "chars_range": [
+    413,
+    1486
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "10.6": {
+   "title": "10.6 受限空间作业措施",
+   "style": "long",
+   "chars": 1673,
+   "chars_range": [
+    836,
+    3011
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "10.7": {
+   "title": "10.7 应急救援措施",
+   "style": "brief",
+   "chars": 178,
+   "chars_range": [
+    89,
+    320
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  },
+  "11": {
+   "title": "11 结论与建议",
+   "style": "long",
+   "chars": 1238,
+   "chars_range": [
+    619,
+    2228
+   ],
+   "tables": 0,
+   "table_rows": 0,
+   "table_header": []
+  }
+ }
+}

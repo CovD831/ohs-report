@@ -449,10 +449,55 @@ def _std_clauses(sec: str) -> str:
     return head + "\n".join(lines) if lines else ""
 
 
+_STYLE_SPEC = None
+
+
+def _style_spec(sec: str) -> str:
+    """逐节写法规范 (从原报告笔法提取, section_style_spec.json)
+    返回"本节写法"指令: 正文长度区间 + 表要求 — 让生成层按真实报告形态输出"""
+    global _STYLE_SPEC
+    if _STYLE_SPEC is None:
+        try:
+            import json as _j
+            from pathlib import Path as _P
+            f = _P(__file__).parent / "section_style_spec.json"
+            _STYLE_SPEC = _j.loads(f.read_text(encoding="utf-8")).get("sections", {})
+        except Exception:
+            _STYLE_SPEC = {}
+    sp = _STYLE_SPEC.get(sec)
+    if not sp:
+        return ""
+
+    st = sp.get("style", "")
+    lo, hi = sp.get("chars_range", [0, 0])
+    ntab, hdr = sp.get("tables", 0), sp.get("table_header") or []
+    hdr_s = " | ".join(hdr[:6]) if hdr else ""
+    if st == "table_only":
+        return (f"\n【本节写法(依真实报告笔法)】表承载型: 正文**只写1句引导语**(如\"本项目X见表X.X-X\"), "
+                f"**不展开叙述**; 核心内容由表格承载(对照表结构: {hdr_s})")
+    if st == "brief_table":
+        return (f"\n【本节写法(依真实报告笔法)】简述+表: 正文{lo}-{hi}字, 简述要点后由表格承载明细"
+                f"(对照表结构: {hdr_s})")
+    if st == "brief":
+        return f"\n【本节写法(依真实报告笔法)】简述型: 正文{lo}-{hi}字, 简明扼要, 不铺陈不重复"
+    if st == "medium":
+        return f"\n【本节写法(依真实报告笔法)】中篇: 正文{lo}-{hi}字, 分点论述, 每点一句实据"
+    if st == "long":
+        return f"\n【本节写法(依真实报告笔法)】论述型: 正文{lo}-{hi}字, 完整论述分析"
+    if st == "long_table":
+        return (f"\n【本节写法(依真实报告笔法)】论述+表: 正文{lo}-{hi}字论述分析, 并用表格汇总"
+                f"(对照表结构: {hdr_s})")
+    if st == "heading_only":
+        return ""
+    return ""
+
+
 def chapter_must_cover(sec: str) -> str:
     """返回章节要素清单 (无则空串) — 生成时拼到信息块尾部
-    骨架来自 MUST_COVER_INFO(代码); 数值/限值来自标准库(动态, 单一数据源)"""
+    骨架来自 MUST_COVER_INFO(代码); 数值/限值来自标准库(动态, 单一数据源);
+    写法规范来自 section_style_spec.json (原报告笔法)"""
     base = MUST_COVER_INFO.get(sec, "")
+    style = _style_spec(sec)
     if not base:
-        return ""
-    return base + _std_clauses(sec)
+        return style
+    return base + style + _std_clauses(sec)
