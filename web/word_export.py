@@ -455,10 +455,14 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                     elif not ln.startswith("#"):
                         _para(doc, ln, FANGSONG, 14, indent=0.74)
             elif sub_text and sub_meta.get("state") == "generated":
-                # 父子章节规律 (原报告 30 个父节取证): 27 个纯标题, 5 个有 ≤150 字短引导语
-                # (1.6 评价方法/3.5 工艺综述/4.1 类比选择/5.1.1 识别方法/5.2 健康影响概述)
-                # → 通用规则: 中间层级仅当正文 ≤150 字 (短引导语) 时输出; 超长正文与子节重复, 不输出
-                if len(sub_text.strip()) <= 150:
+                # 父子章节规律 (原报告 45 个二级节全量取证):
+                #   叶子节(无子节) 17 个: 全部有正文(54~5149字) → 全量输出, 无字数上限
+                #   父节 28 个: 25 纯标题 + 3 引导语(86/102/116字) → 超长正文只取首句作引导语, 其余与子节重复不输出
+                # 父子规律 (两份真实报告交叉取证): 父节 83% 纯标题; 少量引导语(86~120字)出现在
+                # 方法/结论概述型父节, 但节号无规律 (长兴1.6/4.1/5.2 vs 浦发7.6/10.2/10.3)
+                # → 按用户规则"没有通用规律就不强求": 超长 LLM 概述不输出 (与子节必然重复);
+                #   ≤150 字短文本 (真引导语形态) 保留输出
+                if not (has_sub3 and len(sub_text.strip()) > 150):
                     for line in sub_text.split("\n"):
                         line = line.strip()
                         if line and not line.startswith("#"):
@@ -496,8 +500,9 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                     if sub3_tables:
                         _write_tables_named(doc, sub3, sub3_tables)
                     continue
-                if sub3_meta.get("state") == "generated" and (not has_sub4 or len((sub3_meta.get("text", "") or "").strip()) <= 150):
-                    # 父三级 (有四级子节): 仅 ≤150 字短引导语输出 (原报告 5.1.1 有 145 字方法引导)
+                t3_text = (sub3_meta.get("text", "") or "").strip()
+                if sub3_meta.get("state") == "generated" and (not has_sub4 or len(t3_text) <= 150):
+                    # 同二级规律: 叶子三级全量输出; 父三级(有四级子节)仅≤150字引导语 (原报告5.1.1=145字)
                     for line in (sub3_meta.get("text", "") or "").split("\n"):
                         line = line.strip()
                         if line and not line.startswith("#"):
