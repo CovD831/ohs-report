@@ -623,10 +623,11 @@ def _strip_md_tables(text: str) -> str:
             ln = lines[i].strip()
             is_tbl = ln.startswith("|") or (i + 1 < len(lines) and re.match(r"^\|?[\s:\-|]{5,}$", lines[i + 1].strip())
                                             and "|" in lines[i + 1])
-            is_tbltitle = bool(re.match(r"^表\d{1,2}(\.\d+)*-\d+\s", ln)) and len(ln) < 50
+            is_tbltitle = bool(re.match(r"^表\d{1,2}(\.\d+)*-\d+", ln)) and (len(ln) < 60 or "表格由系统插入" in ln)
             if is_tbl or is_tbltitle:
                 while i < len(lines) and (lines[i].strip().startswith("|") or not lines[i].strip()
-                                          or (bool(re.match(r"^表\d{1,2}(\.\d+)*-\d+\s", lines[i].strip())) and len(lines[i].strip()) < 50)):
+                                          or (bool(re.match(r"^表\d{1,2}(\.\d+)*-\d+", lines[i].strip()))
+                                              and (len(lines[i].strip()) < 60 or "表格由系统插入" in lines[i].strip()))):
                     i += 1
                 continue
             out.append(lines[i])

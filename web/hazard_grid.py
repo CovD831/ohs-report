@@ -76,9 +76,12 @@ def factors_from_material(conn, material: str) -> list[str]:
     if not material:
         return []
     m = (material or "").strip()
-    # 直接匹配 (物质名在 hazard_factor)
+    # 精确优先 (避免 LIKE 模糊误配: 乙二醇→乙二醇二硝酸酯, 苯→苯系列)
     rows = conn.execute(
-        "SELECT name FROM hazard_factor WHERE name LIKE ? LIMIT 5", (m + "%",)).fetchall()
+        "SELECT name FROM hazard_factor WHERE name=? LIMIT 5", (m,)).fetchall()
+    if not rows:
+        rows = conn.execute(
+            "SELECT name FROM hazard_factor WHERE name LIKE ? LIMIT 5", (m + "%",)).fetchall()
     factors = [r[0] for r in rows]
     # 别名匹配: oel_name=物料别名 → catalog_name=标准危害名
     if not factors:
