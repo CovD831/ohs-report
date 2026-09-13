@@ -1108,7 +1108,8 @@ def api_export(pid: str, request: Request):
                "shifts": data.get("shifts", []),
                "health_check": data.get("health_check", []),
                "management": data.get("management", ""),
-               "hazard_grid": data.get("hazard_grid", [])}
+               "hazard_grid": data.get("hazard_grid", []),
+               "emergency_supplies": data.get("emergency_supplies", [])}
     assess = assess_project(conn, project)
     # 把完整项目数据塞进 assess._project_data, 供 fill_section 内嵌表格取数
     assess["_project_data"] = dict(project)
