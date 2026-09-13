@@ -242,6 +242,22 @@ def _inject_numbering(docx_path):
     from lxml import etree as _ET
     num_bytes = _ET.tostring(_NUM_ROOT, xml_declaration=True, encoding='UTF-8', standalone=True) if _NUM_ROOT is not None and len(_NUM_ROOT) else None
     if num_bytes is None:
+        # 无编号定义: 仍注入 updateFields (目录域自动更新) — 若 settings 未设
+        p = str(docx_path)
+        try:
+            with _zf.ZipFile(p, 'r') as zin:
+                items = {n: zin.read(n) for n in zin.namelist()}
+            if 'word/settings.xml' in items and b'updateFields' not in items['word/settings.xml']:
+                s = items['word/settings.xml'].decode('utf-8')
+                s = s.replace('</w:settings>', '<w:updateFields w:val="true"/></w:settings>')
+                items['word/settings.xml'] = s.encode('utf-8')
+                tmp = p + '.tmp'
+                with _zf.ZipFile(tmp, 'w', _zf.ZIP_DEFLATED) as zout:
+                    for n, b in items.items():
+                        zout.writestr(n, b)
+                _sh.move(tmp, p)
+        except Exception:
+            pass
         return
     p = str(docx_path)
     tmp = p + '.tmp'
@@ -271,6 +287,12 @@ def _inject_numbering(docx_path):
             rels = rels.replace('</Relationships>',
                 '<Relationship Id="rIdNum1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>')
             items['word/_rels/document.xml.rels'] = rels.encode('utf-8')
+    # settings.xml 注入 updateFields → Word 打开时自动更新 TOC 域 (目录自动生成页码)
+    if 'word/settings.xml' in items and b'updateFields' not in items['word/settings.xml']:
+        s = items['word/settings.xml'].decode('utf-8')
+        if '</w:settings>' in s:
+            s = s.replace('</w:settings>', '<w:updateFields w:val="true"/></w:settings>')
+            items['word/settings.xml'] = s.encode('utf-8')
     with _zf.ZipFile(tmp, 'w', _zf.ZIP_DEFLATED) as zout:
         for n, b in items.items():
             zout.writestr(n, b)
