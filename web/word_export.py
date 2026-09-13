@@ -35,40 +35,42 @@ from web.projects_db import get_project  # noqa: E402
 #   序号在同一二级节内连续 (3.1.5/3.1.7 的表都编 表3.1-x)
 # 值 = (fill_section章, 表名列表)
 _SUB_TABLE_MAP = {
-    "1.3.2": ("1", ["评价依据表"]),  # 标准清单正文后附一览表
-    "2.1.1": ("7", ["应急物资清单"]),  # 拆3张: 应急药品/应急物资/洗眼器 (原报告表2.1-1~3)
-    "3.1.3": ("3", ["项目概况表"]),  # 表3.1-1 气象因素 (概况表含气象)
-    "3.1.5": ("3", ["劳动定员表"]),  # 表3.1-2 生产岗位定员
-    "3.1.7": ("3", ["项目概况表"]),  # 表3.1-x 主要经济技术指标
+    # 全部对齐原报告 40 张表取证 (orig_table_map.py + /tmp/orig_captions.json)
+    "2.1.1": ("7", ["应急物资清单"]),  # 表2.1-1/2/3 应急药品/应急物资/洗眼器 (拆3张)
+    "3.1.3": ("3", ["项目概况表"]),  # 表3.1-1 所在地常年主要气象因素
+    "3.1.5": ("3", ["班制定员表"]),  # 表3.1-2 生产岗位定员
+    "3.1.7": ("3", ["项目概况表"]),  # 表3.1-3 主要经济技术指标
     "3.2.1": ("3", ["选址检查表"]),  # 表3.2-1 厂区周边环境
-    "3.2.2": ("3", ["选址检查表"]),  # 表3.2-2 选址检查结果评价
-    "3.3.3": ("3", ["总体布局检查表"]),  # 表3.3-1
+    "3.2.2": ("3", ["选址检查表"]),  # 表3.2-2 选址检查结果评价一览
+    "3.3.3": ("3", ["总体布局检查表"]),  # 表3.3-1 总体布局检查及评价
     "3.4.1": ("3", ["产品产量表"]),  # 表3.4-1 扩建前后产品方案对比
     "3.4.2": ("3", ["原辅材料表"]),  # 表3.4-2 主要原辅材料
-    "3.5.3": ("3", ["主要设备清单"]),  # 表3.5-1 工艺检查及评价
-    "3.6.1": ("3", ["设备明细表"]),  # 表3.6-1 设施一览
-    "3.6.3": ("3", ["主要设备清单"]),  # 表3.6-x 设备布局分析评价
-    "3.7.1": ("3", ["建构筑物表"]),  # 表3.7-1 建(构)筑物情况
-    "3.7.4": ("3", ["建筑卫生学检查表"]),  # 表3.7-2 卫生学检查
-    "3.8.1": ("3", ["辅助用室设置表"]),  # 表3.8-1/2 卫生特征分级+现有设置
-    "3.8.2": ("3", ["辅助用室检查表"]),  # 表3.8-3
-    "4.1.1": ("4", ["类比可比性表"]),  # 表4.1-1
-    "4.2.2": ("4", ["检测结果表(粉尘)", "检测结果表(化学毒物)"]),  # 表4.2-3 类比企业危害因素识别及分布
-    "4.2.4": ("8", ["PPE配备表"]),  # 表4.2-x 类比企业PPE配备
-    "4.4": None,  # 原报告4.4类无表 (检测结果在4.2类比调查)
-    "4.5": ("4", ["职业健康监护表"]),
+    "3.5.3": ("3", ["工艺检查表"]),  # 表3.5-1 工艺检查及评价
+    "3.6.1": ("3", ["设备明细表"]),  # 表3.6-1 扩建后全厂设备设施一览
+    "3.6.3": ("3", ["设备布局检查表"]),  # 表3.6-3 生产设备及布局分析与评价 (原跳过3.6-2)
+    "3.7.1": ("3", ["建构筑物表"]),  # 表3.7-1 技改范围建(构)筑物
+    "3.7.4": ("3", ["建筑卫生学检查表"]),  # 表3.7-2 建筑物卫生学检查
+    "3.8.1": ("3", ["卫生特征分级表", "辅助用室设置表"]),  # 表3.8-1 卫生特征分级 + 表3.8-2 现有企业辅助用室
+    "3.8.2": ("3", ["辅助用室检查表"]),  # 表3.8-3 辅助用室检查
+    "4.1.1": ("4", ["类比可比性表"]),  # 表4.1-1 类比项目评价参数比较
+    "4.2.1": ("4", ["类比工作日写实表", "劳动强度分级表"]),  # 表4.2-1 写实(时段无实测标—) + 表4.2-2 分级
+    "4.2.2": ("4", ["类比危害分布表"]),  # 表4.2-3 类比企业危害因素识别及分布
+    "4.2.4": ("4", ["类比PPE配备表", "类比PPE有效性表"]),  # 表4.2-4/5 类比企业PPE (ppe数据派生)
     "5.1.1.2": ("5", ["危害因素识别表"]),  # 表5.1-1 危害因素分布一览
-    "5.2.1": ("5", ["健康影响表"]),  # 表5.2-1 化学因素健康影响 (无数据自动跳过)
-    "5.3": ("5", ["接触限值表", "物理因素职业接触限值表(GBZ 2.2)"]),  # 表5.3-1/2
-    "5.4.3": ("5", ["判定表"]),  # 表5.4-1 关键控制点
-    "6.2": ("6", ["防护设施检查表"]),  # 表6.2-1 防护设施评价 (原报告6.2仅1张)
-    "7.1": ("7", ["应急物资清单"]),  # 表7.1-1 应急救援器材一览
+    "5.2.1": ("5", ["健康影响表"]),  # 表5.2-1 化学因素健康影响
+    "5.2.2": ("5", ["物理因素健康影响表"]),  # 表5.2-2 物理因素健康影响
+    "5.3": ("5", ["接触限值表", "物理因素职业接触限值表(GBZ 2.2)", "高温接触限值表"]),  # 表5.3-1/2/3
+    "5.4.3": ("5", ["关键控制点表"]),  # 表5.4-1 关键控制点一览
+    "6.2": ("6", ["防护设施检查表"]),  # 表6.2-1 防护设施评价
+    "7.1": ("7", ["应急物资清单"]),  # 表7.1-1 现有企业应急救援器材一览 (全量1张不拆)
     "7.2": ("7", ["应急救援检查表"]),  # 表7.2-1 应急措施检查及评价
-    "8.1": ("8", ["PPE配备表"]),  # 表8.1-1
+    "8.1": ("8", ["PPE配备表"]),  # 表8.1-1 本项目PPE配备
     "8.2": ("8", ["PPE配备表"]),  # 表8.2-1 拟配置检查表
-    "9.1": ("9", ["管理制度检查表"]),  # 表9.1-1
-    "10.2": ("10", ["问题与建议表"]),  # 表10.2-1
+    "9.1": ("9", ["管理制度检查表"]),  # 表9.1-1 现有企业管理检查
+    "9.2": None,  # 原表9.2-1 经费: 材料无明细, 不硬造
+    "10.2": ("10", ["问题与建议表"]),  # 表10.2-1 室内空气质量标准节选
 }
+
 
 
 def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
@@ -108,7 +110,11 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     res = []
     for t in tables:
         for w in wanted:
-            if t["name"] == w or t["name"].startswith(w) or w in t["name"]:
+            hit = t["name"] == w
+            if not hit and "(" not in w and "（" not in w:
+                # wanted 无括号前缀 (如 检测结果表) → 匹配 检测结果表(粉尘) 变体; 但禁止子串误配 (健康影响表 ⊂ 物理因素健康影响表)
+                hit = t["name"].startswith(w) and not any(t["name"].startswith(x) and x != w and len(x) > len(w) for x in wanted)
+            if hit:
                 # 去重: 同一"节+表名"只出现一次; 不同节允许复用同名表
                 # (原报告同一张检查表在 2.3 现状/6.2 评价/10.4 建议多处出现)
                 key = f"{sub}:{t['name']}"
@@ -175,36 +181,46 @@ def add_toc(doc: Document):
     doc.add_page_break()
 
 
-def _numbered_para(doc, text: str, font: str, size: float):
+_NUM_LIST_STATE = {}  # list_key -> (aid, nid) 同一清单共享同一 numId → Word 自动递增 (1)(2)(3)…
+_NUM_COUNTER = [99]   # 全局递增计数器, 从 100 起 (避开默认模板占用的 0-8)
+
+
+def _numbered_para(doc, text: str, font: str, size: float, list_key: str = None):
     """Word 自动编号段落 (复刻原报告: numFmt=decimal, lvlText=(%1) → (1)(2)(3)…一条一段自动递增)
-    每个列表新建独立 numbering 定义, 从1起号"""
+    list_key 相同的段落共享同一 numId (编号连续递增); 不同 list_key 各自从 1 起号"""
     from docx.oxml import OxmlElement as _OE
-    from docx.shared import Pt as _Pt
     root = _ensure_numbering_part(doc)
-    # abstractNum (格式: (%1) 左对齐 悬挂缩进)
-    ids = [int(e.get(qn('w:abstractNumId'))) for e in root.findall(qn('w:abstractNum'))]
-    aid = (max(ids) + 1) if ids else 100  # 模板 numbering 占 0-8, 我们从 100 起
-    abs_el = _OE('w:abstractNum'); abs_el.set(qn('w:abstractNumId'), str(aid))
-    m0 = _OE('w:nsid'); m0.set(qn('w:val'), f'{aid:08X}')
-    tmpl = _OE('w:multiLevelType'); tmpl.set(qn('w:val'), 'singleLevel')
-    lvl0 = _OE('w:lvl'); lvl0.set(qn('w:ilvl'), '0')
-    start = _OE('w:start'); start.set(qn('w:val'), '1')
-    fmt = _OE('w:numFmt'); fmt.set(qn('w:val'), 'decimal')
-    ltxt = _OE('w:lvlText'); ltxt.set(qn('w:val'), '(%1)')
-    lvlj = _OE('w:lvlJc'); lvlj.set(qn('w:val'), 'left')
-    ppr = _OE('w:pPr')
-    ind = _OE('w:ind'); ind.set(qn('w:left'), '420'); ind.set(qn('w:hanging'), '420')
-    ppr.append(ind)
-    for el in (start, fmt, ltxt, lvlj, ppr):
-        lvl0.append(el)
-    abs_el.append(m0); abs_el.append(tmpl); abs_el.append(lvl0)
-    root.append(abs_el)
-    nids = [int(e.get(qn('w:numId'))) for e in root.findall(qn('w:num'))]
-    nid = (max(nids) + 1) if nids else 100
-    num_el = _OE('w:num'); num_el.set(qn('w:numId'), str(nid))
-    aref = _OE('w:abstractNumId'); aref.set(qn('w:val'), str(aid))
-    num_el.append(aref)
-    root.append(num_el)
+    key = list_key or '_default'
+    if key in _NUM_LIST_STATE:
+        aid, nid = _NUM_LIST_STATE[key]
+    else:
+        _NUM_COUNTER[0] += 1
+        aid = nid = _NUM_COUNTER[0]
+        abs_el = _OE('w:abstractNum'); abs_el.set(qn('w:abstractNumId'), str(aid))
+        m0 = _OE('w:nsid'); m0.set(qn('w:val'), f'{aid:08X}')
+        tmpl = _OE('w:multiLevelType'); tmpl.set(qn('w:val'), 'singleLevel')
+        lvl0 = _OE('w:lvl'); lvl0.set(qn('w:ilvl'), '0')
+        start = _OE('w:start'); start.set(qn('w:val'), '1')
+        fmt = _OE('w:numFmt'); fmt.set(qn('w:val'), 'decimal')
+        ltxt = _OE('w:lvlText'); ltxt.set(qn('w:val'), '(%1)')
+        lvlj = _OE('w:lvlJc'); lvlj.set(qn('w:val'), 'left')
+        ppr = _OE('w:pPr')
+        ind = _OE('w:ind'); ind.set(qn('w:left'), '420'); ind.set(qn('w:hanging'), '420')
+        ppr.append(ind)
+        for el in (start, fmt, ltxt, lvlj, ppr):
+            lvl0.append(el)
+        abs_el.append(m0); abs_el.append(tmpl); abs_el.append(lvl0)
+        # schema 顺序: abstractNum* 必须全部位于 num* 之前 → 插到第一个 num 前面
+        first_num = root.find(qn('w:num'))
+        if first_num is not None:
+            first_num.addprevious(abs_el)
+        else:
+            root.append(abs_el)
+        num_el = _OE('w:num'); num_el.set(qn('w:numId'), str(nid))
+        aref = _OE('w:abstractNumId'); aref.set(qn('w:val'), str(aid))
+        num_el.append(aref)
+        root.append(num_el)
+        _NUM_LIST_STATE[key] = (aid, nid)
     p = doc.add_paragraph()
     pPr = p._p.get_or_add_pPr()
     numpr = _OE('w:numPr')
@@ -215,11 +231,6 @@ def _numbered_para(doc, text: str, font: str, size: float):
     r = p.add_run(text)
     _set_font(r, font, size)
     pf = p.paragraph_format
-    pf.left_indent = _Pt(15)
-    pf.first_line_indent = _Pt(-15)
-    return p
-
-
 def _ensure_numbering_part(doc):
     """编号定义累积在内存 root (不建 OPC Part — python-docx 对自建 Part 会双写 zip);
     docx 保存后由 _inject_numbering() post-process 注入 numbering.xml"""
@@ -265,13 +276,19 @@ def _inject_numbering(docx_path):
         names = zin.namelist()
         items = {n: zin.read(n) for n in names}
     if 'word/numbering.xml' in items:
-        # 默认模板自带 numbering.xml: 把我们的 abstractNum/num 追加进去 (id 从100起, 不冲突)
+        # 默认模板自带 numbering.xml: 把我们的定义插进去 (id 从100起, 不冲突)
+        # schema 顺序: abstractNum* 必须全部位于 num* 之前 — 违反时 Word 会重置编号(全变1)
         existing = items['word/numbering.xml'].decode('utf-8')
         ours = num_bytes.decode('utf-8')
-        # 提取我们 root 的子元素
-        extra = ''.join(re.findall(r'<w:abstractNum .*?</w:abstractNum>|<w:num .*?</w:num>', ours, re.S))
-        if extra:
-            existing = existing.replace('</w:numbering>', extra + '</w:numbering>')
+        extra_abs = ''.join(re.findall(r'<w:abstractNum .*?</w:abstractNum>', ours, re.S))
+        extra_num = ''.join(re.findall(r'<w:num .*?</w:num>', ours, re.S))
+        if extra_abs or extra_num:
+            m_first_num = re.search(r'<w:num [^>]*/>|<w:num .*?</w:num>', existing, re.S)
+            if m_first_num:
+                existing = existing[:m_first_num.start()] + extra_abs + existing[m_first_num.start():]
+            else:
+                existing = existing.replace('</w:numbering>', extra_abs + '</w:numbering>')
+            existing = existing.replace('</w:numbering>', extra_num + '</w:numbering>')
             items['word/numbering.xml'] = existing.encode('utf-8')
     else:
         items['word/numbering.xml'] = num_bytes
@@ -346,9 +363,13 @@ def add_units_section(doc, units: list[dict]):
 
 
 def export_docx(project: dict, assess: dict, out_path: Path, section_states: dict | None = None):
-    global _USED_TABLES, _TABLE_SEQ
+    global _USED_TABLES, _TABLE_SEQ, _NUM_LIST_STATE, _NUM_COUNTER
     _USED_TABLES = set()  # 每次导出重置去重
     _TABLE_SEQ = {}  # 表编号计数器重置 (表{二级}-{序号})
+    _NUM_LIST_STATE = {}  # 自动编号清单状态重置 (1.3.1 laws / 1.3.2 stds)
+    _NUM_COUNTER = [99]
+    global _NUM_ROOT
+    _NUM_ROOT = None  # numbering root 重置 (防跨导出重复定义)
     conn = connect()
     doc = Document()
     # 页面 A4 + 边距
@@ -427,20 +448,25 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                 if _fx:
                     fixed_lines = [ln.strip() for ln in _fx.split("\n") if ln.strip()]
             if sn in ("1.3.1", "1.3.2") and fixed_lines:
+                _lkey = "laws" if sn == "1.3.1" else "stds"
                 for ln in fixed_lines:
                     if ln.startswith("《"):
-                        _numbered_para(doc, ln, FANGSONG, 12)
+                        _numbered_para(doc, ln, FANGSONG, 12, list_key=_lkey)
                     elif not ln.startswith("#"):
                         _para(doc, ln, FANGSONG, 14, indent=0.74)
-            elif sub_text and sub_meta.get("state") == "generated" and not has_sub3:
-                for line in sub_text.split("\n"):
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        if re.match(r"^\d+(\.\d+)*\s+\S", line) and len(line) < 40:
-                            continue
-                        if _is_llm_table_title(line):
-                            continue
-                        _para(doc, line, FANGSONG, 14, indent=0.74)
+            elif sub_text and sub_meta.get("state") == "generated":
+                # 父子章节规律 (原报告 30 个父节取证): 27 个纯标题, 5 个有 ≤150 字短引导语
+                # (1.6 评价方法/3.5 工艺综述/4.1 类比选择/5.1.1 识别方法/5.2 健康影响概述)
+                # → 通用规则: 中间层级仅当正文 ≤150 字 (短引导语) 时输出; 超长正文与子节重复, 不输出
+                if len(sub_text.strip()) <= 150:
+                    for line in sub_text.split("\n"):
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            if re.match(r"^\d+(\.\d+)*\s+\S", line) and len(line) < 40:
+                                continue
+                            if _is_llm_table_title(line):
+                                continue
+                            _para(doc, line, FANGSONG, 14, indent=0.74)
             # 内嵌表格: 该小节对应的数据表 (跟真实报告一致, 表格在正文对应位置)
             # 若该二级节有三级子节: 不在二级挂表 (表跟随叶子三级节, 原报告如此; 防同表×2)
             if not has_sub3:
@@ -460,16 +486,18 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                     from web.llm_draft import _fixed_text as _ftx3
                     _fx3 = _ftx3(sub3)
                     if _fx3:
+                        _lkey3 = "laws" if sub3 == "1.3.1" else "stds"
                         for ln in [x.strip() for x in _fx3.split("\n") if x.strip()]:
                             if ln.startswith("《"):
-                                _numbered_para(doc, ln, FANGSONG, 12)
+                                _numbered_para(doc, ln, FANGSONG, 12, list_key=_lkey3)
                             elif not ln.startswith("#"):
                                 _para(doc, ln, FANGSONG, 14, indent=0.74)
                     sub3_tables = _tables_for_sub(conn, sec, sub3, assess)
                     if sub3_tables:
                         _write_tables_named(doc, sub3, sub3_tables)
                     continue
-                if sub3_meta.get("state") == "generated" and not has_sub4:
+                if sub3_meta.get("state") == "generated" and (not has_sub4 or len((sub3_meta.get("text", "") or "").strip()) <= 150):
+                    # 父三级 (有四级子节): 仅 ≤150 字短引导语输出 (原报告 5.1.1 有 145 字方法引导)
                     for line in (sub3_meta.get("text", "") or "").split("\n"):
                         line = line.strip()
                         if line and not line.startswith("#"):
@@ -514,7 +542,13 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                     for line in (m.get("text", "") or "").split("\n"):
                         line = line.strip()
                         if line and not line.startswith("#"):
+                            if _is_llm_table_title(line):
+                                continue
                             _para(doc, line, FANGSONG, 14, indent=0.74)
+                # 数据三级表挂载 (3.5.3 工艺检查及评价 = 原表3.5-1)
+                d3_tables = _tables_for_sub(conn, sec, num, assess)
+                if d3_tables:
+                    _write_tables_named(doc, num, d3_tables)
     conn.close()
     doc.save(str(out_path))
     _inject_numbering(out_path)
@@ -531,15 +565,23 @@ _TABLE_SEQ: dict = {}
 
 def _write_tables_named(doc, sn: str, tables: list[dict]):
     """内嵌表格 + 语义化标题: 表{二级节}-{序号} {语义名}
-    原报告编号规则: 表2.1-1 应急药品清单 / 表3.1-2 定员 / 表3.1-3 经济技术指标
-    (3.1.5/3.1.7 的表都编 表3.1-x — 序号在同一二级节内连续)"""
+    编号优先对齐原报告显式表号 (ORIG_TABLE_NOS, 含跳号取证如表3.6-3);
+    无取证的节回退 表{二级}-{序号} 连续计数 (3.1.5/3.1.7 都编 表3.1-x)"""
+    from web.orig_table_map import ORIG_TABLE_NOS, ORIG_CAPTIONS
     cap = ".".join(sn.split(".")[:2]) if "." in sn else sn
-    for t in tables:
+    nos = ORIG_TABLE_NOS.get(sn, [])
+    caps = ORIG_CAPTIONS.get(sn, [])
+    for idx, t in enumerate(tables):
         if not t.get("rows"):
             continue
-        _TABLE_SEQ[cap] = _TABLE_SEQ.get(cap, 0) + 1
+        if idx < len(nos):
+            no = nos[idx]  # 原报告显式编号 (表3.6-3)
+        else:
+            _TABLE_SEQ[cap] = _TABLE_SEQ.get(cap, 0) + 1
+            no = f"表{cap}-{_TABLE_SEQ[cap]}"
+        title = caps[idx] if idx < len(caps) else t.get("name", "相关数据表")  # 原报告标题逐字对齐
         doc.add_paragraph()
-        _para(doc, f"表{cap}-{_TABLE_SEQ[cap]} {t.get('name', '相关数据表')}", HEI, 12, bold=True, align=1)
+        _para(doc, f"{no} {title}", HEI, 12, bold=True, align=1)
         _write_tables(doc, [t])
 
 

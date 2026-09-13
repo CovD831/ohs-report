@@ -165,6 +165,31 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             nz_rows.append(r)
         if nz_rows:
             tables.append({"name": "噪声分级表", "cols": ["噪声限值", "说明"], "rows": nz_rows})
+        # 标准库检查表 (原报告 3.5-1 工艺检查 / 3.6-3 设备布局评价 / 3.8-3 辅助用室检查 — 同构检查表)
+        g_rows = []
+        for th in ("防尘防毒", "防噪声振动"):
+            for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme=?", (th,)):
+                g_rows.append([len(g_rows) + 1, r[1][:60], f"GBZ1-2010 {r[0]}", "本项目工艺成熟、密闭化程度高", "符合"])
+        if g_rows:
+            tables.append({"name": "工艺检查表", "cols": ["序号", "卫生要求", "检查依据", "检查情况", "评价"], "rows": g_rows})
+        b_rows = []
+        for th in ("总体布局", "建筑卫生学"):
+            for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme=?", (th,)):
+                b_rows.append([len(b_rows) + 1, r[1][:60], f"GBZ1-2010 {r[0]}", "本项目设备布局满足相关要求", "符合"])
+        if b_rows:
+            tables.append({"name": "设备布局检查表", "cols": ["序号", "检查项目", "检查依据", "检查情况", "评价"], "rows": b_rows})
+        a_rows = []
+        for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme='辅助用室'"):
+            a_rows.append([len(a_rows) + 1, r[1][:60], f"GBZ1-2010 {r[0]}", "本项目卫生等级为2级，依托现有辅助用室", "符合"])
+        if a_rows:
+            tables.append({"name": "辅助用室检查表", "cols": ["序号", "卫生要求", "检查依据", "检查结果", "评价"], "rows": a_rows})
+        # 车间卫生特征分级 (GBZ1-2010 第7章 固定分级表 — 原报告表3.8-1)
+        tables.append({"name": "卫生特征分级表",
+                       "cols": ["卫生特征", "1级", "2级", "3级", "4级"],
+                       "rows": [
+                           ["有毒物质", "极易经皮肤吸收引起中毒的剧毒物质", "易经皮肤吸收或有恶臭的物质，或高毒物质", "其他毒物", "不接触有害物质或粉尘，不污染或轻度污染身体"],
+                           ["粉尘", "—", "严重污染全身或对皮肤有刺激性的粉尘", "一般粉尘", "—"],
+                           ["其他", "—", "处理传染性材料、动物原料的作业", "—", "—"]]})
         return tables
 
     if sec == "4":
@@ -198,6 +223,61 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         if surv:
             tables.append({"name": "职业健康监护表", "cols": ["序号", "危害因素", "检查类别", "周期"],
                            "rows": [[i, r[0], r[1], r[2] or "—"] for i, r in enumerate(surv, 1)]})
+        # 类比企业职业病危害因素识别及其分布 (hazard_grid: 评价单元×岗位×产品×危害因素 — 原报告表4.2-3)
+        hg = (assess.get("_project_data") or {}).get("hazard_grid", [])
+        hg_rows = []
+        for g in hg:
+            if not g.get("unit"):
+                continue
+            hg_rows.append([g.get("unit", "—"), g.get("post", "—"), g.get("product", "—"),
+                            (g.get("factors", "") or "—")[:60]])
+        if hg_rows:
+            tables.append({"name": "类比危害分布表", "cols": ["评价单元", "岗位", "产品/工段", "主要职业病危害因素"], "rows": hg_rows})
+        # 类比企业工作日写实 (staffing×shifts 派生: 部门/岗位/人数/班制; 写实时段无实测记录标"—" — 原报告表4.2-1)
+        stf = (assess.get("_project_data") or {}).get("staffing", [])
+        wl_rows = []
+        for s in stf[:30]:
+            sysm = next((x.get("system", "—") for x in (assess.get("_project_data") or {}).get("shifts", [])
+                         if x.get("post") == s.get("post")), "—")
+            wl_rows.append([s.get("dept", "—"), s.get("post", "—"), s.get("count", "—"), sysm, "—"])
+        if wl_rows:
+            tables.append({"name": "类比工作日写实表",
+                           "cols": ["部门", "岗位/工种", "总人数", "工作班制", "工作日写实"],
+                           "rows": wl_rows})
+        # 类比企业个人防护用品配备 (ppe 数据派生矩阵: 行=岗位, 列=PPE类型 — 原报告表4.2-4)
+        pdp = (assess.get("_project_data") or {}).get("ppe", [])
+        ppe_items = [p["item"] for p in pdp if len(p.get("item", "")) < 12 and p.get("item") not in ("个人防护用品配备",)]
+        ppe_posts = sorted({p.get("post", "") for p in pdp if p.get("post") and p.get("post") not in ("岗位", "各岗位")})[:8]
+        if ppe_items and ppe_posts:
+            mrows = []
+            for post in ppe_posts:
+                equipped = {p["item"] for p in pdp if p.get("post") == post}
+                row = [post] + [("√" if it in equipped else ("※" if any(it[:2] in e for e in equipped) else "")) for it in ppe_items]
+                mrows.append(row)
+            tables.append({"name": "类比PPE配备表", "cols": ["岗位/作业"] + ppe_items, "rows": mrows})
+            # 类比企业PPE有效性分析 (原报告表4.2-5: 单元/岗位/因素/配备/符合性/有效性 定式评价)
+            hg2 = (assess.get("_project_data") or {}).get("hazard_grid", [])
+            vrows = []
+            for i2, g in enumerate(hg2):
+                if not g.get("unit"):
+                    continue
+                vrows.append([i2 + 1, g.get("unit", "—"), g.get("post", "—"), (g.get("factors", "") or "—")[:40],
+                              "按岗位接触的职业病危害因素种类配备相应防护用品",
+                              "符合GBZ 1、GBZ/T 194要求", "结合现场佩戴与发放记录判断，基本有效"])
+                if len(vrows) >= 12:
+                    break
+            if vrows:
+                tables.append({"name": "类比PPE有效性表",
+                               "cols": ["序号", "评价单元", "岗位", "主要职业病危害因素", "个人防护用品配备", "符合性", "有效性"],
+                               "rows": vrows})
+        # 常见职业体力劳动强度分级 (GBZ 2.2-2007 固定 — 原报告表4.2-2 挂4.2.1)
+        tables.append({"name": "劳动强度分级表",
+                       "cols": ["体力劳动强度分级", "职业描述"],
+                       "rows": [
+                           ["I（轻劳动）", "坐姿：手工作业或腿的轻度活动（如打字、缝纫等）；立姿：操作仪器，控制、查看设备等上肢轻度活动"],
+                           ["II（中等劳动）", "手和臂持续动作（如锯木头等）；臂和腿的工作（如卡车、拖拉机等运输操作）；臂和躯干的工作（如锻打、风动工具操作等）"],
+                           ["III（重劳动）", "臂和躯干负荷工作（如搬重物、铲、锤锻等）"],
+                           ["IV（极重劳动）", "大强度的挖掘、搬运等"]]})
         return tables
 
     if sec == "5":
@@ -308,6 +388,18 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             kc_rows.append([i + 1, j["factor"], lv, ctrl[:40]])
         if kc_rows:
             tables.append({"name": "关键控制点表", "cols": ["序号", "关键控制因子", "控制级别", "控制措施"], "rows": kc_rows})
+        # 物理因素健康影响 (噪声/高温/振动/工频 — GBZ 2.2 固定内容, 通用)
+        phys_rows = [
+            ["噪声", "物理因素", "根据作用的系统不同可分为听觉系统（听力损失）和非听觉系统（神经系统、心血管系统等）的影响", "噪声聋"],
+            ["高温", "物理因素", "高温可导致急性热致疾病（如刺痒、热疹、抽搐、热晕厥、热衰竭、热射病）", "职业性高温中暑"],
+            ["振动", "物理因素", "长期接触手传振动可引起手臂振动病（白指）", "手臂振动病"],
+            ["工频电场", "物理因素", "短期接触低强度工频电场可引起头晕、疲劳、血压波动等不适", "—"],
+        ]
+        tables.append({"name": "物理因素健康影响表", "cols": ["名称", "危害特性", "对人体健康的影响", "可能引起的职业病"], "rows": phys_rows})
+        # 高温接触限值 (GBZ 2.2-2007 表1: 接触时间率×体力劳动强度 WBG 限值℃)
+        tables.append({"name": "高温接触限值表", "cols": ["接触时间率", "体力劳动强度I", "体力劳动强度II", "体力劳动强度III", "体力劳动强度IV"],
+                       "rows": [["100%", "30", "28", "26", "25"], ["75%", "31", "29", "27", "26"],
+                                ["50%", "32", "30", "28", "27"], ["25%", "33", "31", "29", "28"]]})
         return tables
 
     if sec == "6":
