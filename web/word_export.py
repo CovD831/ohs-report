@@ -37,10 +37,10 @@ from web.projects_db import get_project  # noqa: E402
 _SUB_TABLE_MAP = {
     # 全部对齐原报告 40 张表取证 (orig_table_map.py + /tmp/orig_captions.json)
     "2.1.1": ("7", ["应急物资清单"]),  # 表2.1-1/2/3 应急药品/应急物资/洗眼器 (拆3张)
-    "3.1.3": ("3", ["项目概况表"]),  # 表3.1-1 所在地常年主要气象因素
+    "3.1.3": ("3", ["气象因素表"]),  # 表3.1-1 所在地常年主要气象因素
     "3.1.5": ("3", ["班制定员表"]),  # 表3.1-2 生产岗位定员
     "3.1.7": ("3", ["项目概况表"]),  # 表3.1-3 主要经济技术指标
-    "3.2.1": ("3", ["选址检查表"]),  # 表3.2-1 厂区周边环境
+    "3.2.1": ("3", ["周边环境表"]),  # 表3.2-1 厂区周边环境
     "3.2.2": ("3", ["选址检查表"]),  # 表3.2-2 选址检查结果评价一览
     "3.3.3": ("3", ["总体布局检查表"]),  # 表3.3-1 总体布局检查及评价
     "3.4.1": ("3", ["产品产量表"]),  # 表3.4-1 扩建前后产品方案对比
@@ -50,7 +50,7 @@ _SUB_TABLE_MAP = {
     "3.6.3": ("3", ["设备布局检查表"]),  # 表3.6-3 生产设备及布局分析与评价 (原跳过3.6-2)
     "3.7.1": ("3", ["建构筑物表"]),  # 表3.7-1 技改范围建(构)筑物
     "3.7.4": ("3", ["建筑卫生学检查表"]),  # 表3.7-2 建筑物卫生学检查
-    "3.8.1": ("3", ["卫生特征分级表", "辅助用室设置表"]),  # 表3.8-1 卫生特征分级 + 表3.8-2 现有企业辅助用室
+    "3.8.1": ("3", ["卫生特征分级表", "辅助用室设置表"]),  # 表3.8-1 分级 + 表3.8-2 辅助用室设置情况
     "3.8.2": ("3", ["辅助用室检查表"]),  # 表3.8-3 辅助用室检查
     "4.1.1": ("4", ["类比可比性表"]),  # 表4.1-1 类比项目评价参数比较
     "4.2.1": ("4", ["类比工作日写实表", "劳动强度分级表"]),  # 表4.2-1 写实(时段无实测标—) + 表4.2-2 分级
@@ -59,16 +59,16 @@ _SUB_TABLE_MAP = {
     "5.1.1.2": ("5", ["危害因素识别表"]),  # 表5.1-1 危害因素分布一览
     "5.2.1": ("5", ["健康影响表"]),  # 表5.2-1 化学因素健康影响
     "5.2.2": ("5", ["物理因素健康影响表"]),  # 表5.2-2 物理因素健康影响
-    "5.3": ("5", ["接触限值表", "物理因素职业接触限值表(GBZ 2.2)", "高温接触限值表"]),  # 表5.3-1/2/3
+    "5.3": ("5", ["接触限值表", "噪声接触限值表", "高温接触限值表"]),  # 表5.3-1/2/3
     "5.4.3": ("5", ["关键控制点表"]),  # 表5.4-1 关键控制点一览
     "6.2": ("6", ["防护设施检查表"]),  # 表6.2-1 防护设施评价
     "7.1": ("7", ["应急物资清单"]),  # 表7.1-1 现有企业应急救援器材一览 (全量1张不拆)
     "7.2": ("7", ["应急救援检查表"]),  # 表7.2-1 应急措施检查及评价
     "8.1": ("8", ["PPE配备表"]),  # 表8.1-1 本项目PPE配备
-    "8.2": ("8", ["PPE配备表"]),  # 表8.2-1 拟配置检查表
+    "8.2": ("8", ["PPE拟配置检查表"]),  # 表8.2-1 拟配置检查表 (5列)
     "9.1": ("9", ["管理制度检查表"]),  # 表9.1-1 现有企业管理检查
     "9.2": None,  # 原表9.2-1 经费: 材料无明细, 不硬造
-    "10.2": ("10", ["问题与建议表"]),  # 表10.2-1 室内空气质量标准节选
+    "10.2": ("10", ["室内空气质量标准表"]),  # 表10.2-1 室内空气质量标准节选
 }
 
 
@@ -96,12 +96,25 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
                     continue
                 split.append(t)
                 continue
-            eye_rows = [r for r in t["rows"] if "洗眼" in (str(r[1]) + str(r[2]))]
-            med_rows = [r for r in t["rows"] if "洗眼" not in (str(r[1]) + str(r[2])) and str(r[1]) == "应急药品"]
-            oth_rows = [r for r in t["rows"] if "洗眼" not in (str(r[1]) + str(r[2])) and str(r[1]) != "应急药品"]
-            for nm, rows in (("应急药品清单", med_rows), ("应急物资清单", oth_rows), ("洗眼器一览表", eye_rows)):
+            # es行(4列): 类别/名称/数量(如"2瓶")/点位(药品行实为完好程度)
+            eye_rows = [r for r in t["rows"] if "洗眼" in (str(r[0]) + str(r[1]))]
+            med_rows = [r for r in t["rows"] if "洗眼" not in (str(r[0]) + str(r[1])) and str(r[0]) == "应急药品"]
+            oth_rows = [r for r in t["rows"] if "洗眼" not in (str(r[0]) + str(r[1])) and str(r[0]) != "应急药品"]
+            # 表2.1-1 应急药品: 序号/药品名称/单位/数量/完好程度 (数量拆"2瓶"→2+瓶)
+            med_split = []
+            for i2, r in enumerate(med_rows, 1):
+                q = str(r[2] or "")
+                m2 = re.match(r"^(\d+)\s*(.*)$", q)
+                num, unit = (m2.group(1), m2.group(2)) if m2 else (q, "")
+                med_split.append([i2, r[1], unit or "—", num, r[3] or "—"])
+            # 表2.1-3 洗眼器: 序号/部门/规格/位置 (名称→规格, 点位→位置; 部门从点位推断—无数据标"/")
+            eye_split = [[i2, "/", r[1], r[3]] for i2, r in enumerate(eye_rows, 1)]
+            oth4 = [[r[0], r[1], r[2], r[3]] for r in oth_rows]  # 类别/名称/数量/放置点位
+            for nm, cols, rows in (("应急药品清单", ["序号", "药品名称", "单位", "数量", "完好程度"], med_split),
+                                   ("应急物资清单", ["类别", "名称", "数量", "放置点位"], oth4),
+                                   ("洗眼器一览表", ["序号", "部门", "规格", "位置"], eye_split)):
                 if rows:
-                    t2 = dict(t); t2["name"] = nm; t2["rows"] = rows
+                    t2 = dict(t); t2["name"] = nm; t2["cols"] = cols; t2["rows"] = rows
                     split.append(t2)
         return split
     if not wanted:
@@ -591,18 +604,33 @@ def _write_tables_named(doc, sn: str, tables: list[dict]):
 
 
 def _write_tables(doc, tables):
-    """写表格"""
+    """写表格; 支持 t["header2"] 第二行表头 + t["merge_top"] [(c1,c2)] 顶行横向合并(双层表头复刻)"""
     for t in tables:
         if not t["rows"]:
             continue
-        dt = doc.add_table(rows=1, cols=len(t["cols"]))
+        h2 = t.get("header2")
+        nrows_head = 2 if h2 else 1
+        dt = doc.add_table(rows=nrows_head, cols=len(t["cols"]))
         dt.style = "Table Grid"
         dt.alignment = WD_TABLE_ALIGNMENT.CENTER
         for i, c in enumerate(t["cols"]):
             cell = dt.rows[0].cells[i]
             cell.text = ""
-            r = cell.paragraphs[0].add_run(c)
+            r = cell.paragraphs[0].add_run(str(c))
             _set_font(r, SONG, 10.5, True)
+        if h2:
+            for i, c in enumerate(h2):
+                cell = dt.rows[1].cells[i]
+                cell.text = ""
+                r = cell.paragraphs[0].add_run(str(c))
+                _set_font(r, SONG, 10.5, True)
+            # merge_rect: [(r1,c1,r2,c2)] 矩形区合并 — 先清空非首格文本再合并 (python-docx merge 会拼接被并格文本)
+            for r1, c1, r2, c2 in t.get("merge_rect") or []:
+                for rr in range(r1, r2 + 1):
+                    for cc in range(c1, c2 + 1):
+                        if (rr, cc) != (r1, c1):
+                            dt.rows[rr].cells[cc].text = ""
+                dt.rows[r1].cells[c1].merge(dt.rows[r2].cells[c2])
         for row in t["rows"]:
             cells = dt.add_row().cells
             for i, v in enumerate(row):
