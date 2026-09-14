@@ -640,6 +640,8 @@ def api_update_project(pid: str, payload: dict):
             rebuild = True
     if rebuild:
         try:
+            from web.company_profile import build_profile
+            data["profile"] = build_profile(data)
             from web.table_builder import build_all_tables
             data["built_tables"] = build_all_tables(data)
         except Exception:
@@ -681,6 +683,14 @@ def api_import_materials(pid: str):
     merged["equipment"] = data["equipment"]
     merged["detections"] = dets
     merged["process_text"] = data["process_text"]
+    # 企业画像 + 表骨架先行: 数据处理阶段沉淀 (画像=结构化聚合; 骨架表=规则+LLM增强), 导出纯读取
+    try:
+        from web.company_profile import build_profile
+        merged["profile"] = build_profile(merged)
+        from web.table_builder import build_all_tables
+        merged["built_tables"] = build_all_tables(merged)
+    except Exception:
+        pass  # 建表失败不阻断导入 (导出回退现算)
     update_project(pid, p["name"], merged)
     _cache.pop(f"assess:{pid}", None)
     return {"ok": True, "equipment": len(merged["equipment"]),
@@ -1123,6 +1133,7 @@ def api_export(pid: str, request: Request):
                "hazard_grid": data.get("hazard_grid", []),
                "emergency_supplies": data.get("emergency_supplies", []),
                "built_tables": data.get("built_tables", {}),
+               "profile": data.get("profile", {}),
                "location": data.get("location", ""),
                "company": data.get("company", "")}
     assess = assess_project(conn, project)

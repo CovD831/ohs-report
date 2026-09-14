@@ -211,9 +211,15 @@ def build_data_tables(pd: dict) -> dict:
 
 
 def build_all_tables(pd: dict, use_llm: bool = True) -> dict:
-    """建全表骨架 (导入时机调用): 规则表 + LLM增强表 → 存 project.data[built_tables]"""
+    """建全表骨架 (导入时机调用): 规则表 + LLM增强表 → 存 project.data[built_tables]
+    地区来源: 企业画像 pd["profile"]["region"] (数据处理阶段已沉淀); 无画像才现场抽取"""
     out = {}
     out.update(build_data_tables(pd))
-    region = extract_region(pd.get("location") or "", pd.get("company") or "")
+    profile = pd.get("profile") or {}
+    region = str(profile.get("region") or "")
+    if not region:
+        from web.company_profile import build_profile
+        profile = build_profile(pd)
+        region = str(profile.get("region") or "")
     out["气象因素表"] = build_weather_table(region) if use_llm else build_weather_table("")
     return out
