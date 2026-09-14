@@ -84,7 +84,12 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     if not m:
         return []
     fill_ch, wanted = m
+    # 表骨架先行: 项目数据里已沉淀的表 (导入时建) 优先, 其余回退现算
+    pd_data = assess.get("_project_data") or {}
+    built = pd_data.get("built_tables") or {}
     tables = fill_section(conn, fill_ch, assess)
+    tables = [dict(built[w]) | {"name": w} if w in built else t
+              for t in tables for w in [t["name"]]]
     # 应急物资三表拆分 (原报告: 表2.1-1应急药品/表2.1-2应急物资/表2.1-3洗眼器; 7.1应急救援器材)
     if "应急物资清单" in wanted and fill_ch == "7" and sub == "2.1.1":
         # 仅 2.1.1 拆3张 (原报告表2.1-1/2/3 应急药品/应急物资/洗眼器)

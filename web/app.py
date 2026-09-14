@@ -629,9 +629,21 @@ def api_update_project(pid: str, payload: dict):
     if not p:
         return JSONResponse({"error": "not found"}, status_code=404)
     data = p["data"]
+    rebuild = False
     for k in ("industry", "equipment", "detections", "processes", "process_text"):
         if k in payload:
             data[k] = payload[k]
+    # 影响骨架表的字段变了 → 重建 (location/company/investment/staffing/shifts)
+    for k in ("location", "company", "investment", "capacity", "staffing", "shifts"):
+        if k in payload:
+            data[k] = payload[k]
+            rebuild = True
+    if rebuild:
+        try:
+            from web.table_builder import build_all_tables
+            data["built_tables"] = build_all_tables(data)
+        except Exception:
+            pass
     update_project(pid, payload.get("name", p["name"]), data)
     _cache.pop(f"assess:{pid}", None)  # 失效缓存
     return {"ok": True}
@@ -1109,7 +1121,10 @@ def api_export(pid: str, request: Request):
                "health_check": data.get("health_check", []),
                "management": data.get("management", ""),
                "hazard_grid": data.get("hazard_grid", []),
-               "emergency_supplies": data.get("emergency_supplies", [])}
+               "emergency_supplies": data.get("emergency_supplies", []),
+               "built_tables": data.get("built_tables", {}),
+               "location": data.get("location", ""),
+               "company": data.get("company", "")}
     assess = assess_project(conn, project)
     # 把完整项目数据塞进 assess._project_data, 供 fill_section 内嵌表格取数
     assess["_project_data"] = dict(project)
