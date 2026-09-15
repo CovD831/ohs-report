@@ -8,8 +8,8 @@ services:
       - .env
     environment:
       - SEED_DEMO=${SEED_DEMO:-}
-      - LLM_BASE_URL=https://api.deepseek.com/v1/chat/completions
-      - LLM_MODEL=deepseek-v4-flash-vision-exp
+      - LLM_BASE_URL=https://workbuddy2api.henryai.top/v1/chat/completions
+      - LLM_MODEL=deepseek-v4.1-flash
       - LLM_KEY_ENV=DEEPSEEK_API_KEY
     volumes:
       - ./data:/app/data

@@ -25,6 +25,21 @@ def _rows_of(conn, sql, args=()):
     return [list(r) for r in conn.execute(sql, args).fetchall()]
 
 
+def _ppe_matrix_table() -> dict | None:
+    """标准作业类型×装备配备矩阵表 (表4.2-4 类比配备 与 表8.1-1 本项目拟配置 共用)
+
+    来源: knowledge/ppe_matrix_loader.py → ppe_work_matrix
+    (GB 39800.1-2020 + 江苏省劳动防护用品配备标准2007, √=应配/※=按需)
+    原报告取证: 4.2-4 与 8.1-1 逐格相同 (类比推定), 行=15作业类型, 列=15装备;
+    表头显示文本逐字取自原报告 (窄列真实换行).
+    """
+    try:
+        from knowledge.ppe_matrix_loader import matrix_table
+        return matrix_table("PPE标准配备矩阵表")
+    except Exception:
+        return None
+
+
 def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]:
     """按报告章节 (新11章) 生成表格"""
     if sec == "1":
@@ -370,17 +385,10 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             tables.append({"name": "类比工作日写实表",
                            "cols": ["部门", "岗位/工种", "总人数", "女工数", "工作班制", "工作班制时长（h）", "工作日写实"],
                            "rows": wl7})
-        # 类比企业个人防护用品配备 (ppe 数据派生矩阵: 行=岗位, 列=PPE类型 — 原报告表4.2-4)
-        pdp = (assess.get("_project_data") or {}).get("ppe", [])
-        ppe_items = [p["item"] for p in pdp if len(p.get("item", "")) < 12 and p.get("item") not in ("个人防护用品配备",)]
-        ppe_posts = sorted({p.get("post", "") for p in pdp if p.get("post") and p.get("post") not in ("岗位", "各岗位")})[:8]
-        if ppe_items and ppe_posts:
-            mrows = []
-            for post in ppe_posts:
-                equipped = {p["item"] for p in pdp if p.get("post") == post}
-                row = [post] + [("√" if it in equipped else ("※" if any(it[:2] in e for e in equipped) else "")) for it in ppe_items]
-                mrows.append(row)
-            tables.append({"name": "类比PPE配备表", "cols": ["岗位/作业"] + ppe_items, "rows": mrows})
+        # 类比企业个人防护用品配备 (原报告表4.2-4: 作业类型×装备 标准配备矩阵 — 类比推定共用)
+        _mt = _ppe_matrix_table()
+        if _mt:
+            tables.append({**_mt, "name": "类比PPE配备表"})
             # 类比企业PPE有效性分析 (原报告表4.2-5: 单元/岗位/因素/配备/符合性/有效性 定式评价)
             hg2 = (assess.get("_project_data") or {}).get("hazard_grid", [])
             vrows = []
@@ -647,24 +655,29 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                         if len(parts) >= 2:
                             p_rows.append([len(p_rows) + 1, parts[0].strip(), parts[1].strip(), "GB 39800.1—2020"])
         if p_rows:
-            # 原报告表8.1-1 矩阵: 行=岗位/作业, 列=装备种类, √=配备 — ppe 数据派生 (列数=数据种类数, 通用)
-            posts8 = sorted({str(p.get("post") or p.get("岗位") or "") for p in (pd.get("ppe") or [])
-                             if isinstance(p, dict) and (p.get("post") or p.get("岗位"))})
-            items8 = []
-            for p in (pd.get("ppe") or []):
-                if isinstance(p, dict):
-                    it = str(p.get("item") or p.get("name") or p.get("防护用品") or "")
-                    if it and it not in items8 and len(it) < 10:
-                        items8.append(it)
-            if posts8 and items8:
-                m8 = []
-                for po in posts8:
-                    equipped = {str(p.get("item") or p.get("name") or "") for p in (pd.get("ppe") or [])
-                                if isinstance(p, dict) and (p.get("post") or p.get("岗位")) == po}
-                    m8.append([po] + [("√" if it in equipped else "") for it in items8])
-                tables8 = [{"name": "PPE配备表", "cols": ["安全装备项目／工作性质、内容"] + items8, "rows": m8}]
+            # 原报告表8.1-1: 作业类型×装备 标准配备矩阵 (GB39800.1+江苏省标准2007, 类比推定与4.2-4同源)
+            _mt8 = _ppe_matrix_table()
+            if _mt8:
+                tables8 = [{**_mt8, "name": "PPE配备表"}]
             else:
-                tables8 = [{"name": "PPE配备表", "cols": ["序号", "岗位/作业", "防护装备", "配备标准"], "rows": p_rows[:60]}]
+                # 矩阵库缺失时回退: ppe 数据派生 (行=岗位, 列=装备种类)
+                posts8 = sorted({str(p.get("post") or p.get("岗位") or "") for p in (pd.get("ppe") or [])
+                                 if isinstance(p, dict) and (p.get("post") or p.get("岗位"))})
+                items8 = []
+                for p in (pd.get("ppe") or []):
+                    if isinstance(p, dict):
+                        it = str(p.get("item") or p.get("name") or p.get("防护用品") or "")
+                        if it and it not in items8 and len(it) < 10:
+                            items8.append(it)
+                if posts8 and items8:
+                    m8 = []
+                    for po in posts8:
+                        equipped = {str(p.get("item") or p.get("name") or "") for p in (pd.get("ppe") or [])
+                                    if isinstance(p, dict) and (p.get("post") or p.get("岗位")) == po}
+                        m8.append([po] + [("√" if it in equipped else "") for it in items8])
+                    tables8 = [{"name": "PPE配备表", "cols": ["安全装备项目／工作性质、内容"] + items8, "rows": m8}]
+                else:
+                    tables8 = [{"name": "PPE配备表", "cols": ["序号", "岗位/作业", "防护装备", "配备标准"], "rows": p_rows[:60]}]
         else:
             tables8 = []
         # 表8.2-1 拟配置检查表 (GB 39800—2020 通用配备要求, 检查表定式: 通用规则非项目编造)

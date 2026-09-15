@@ -791,20 +791,75 @@ def parse_report_file(path) -> dict:
 
     # ===== 应急物资表 (类别|名称|数量|放置点位 — 表56) 通用: 表头含(放置点位+类别+名称) =====
     emg_s = []
+    seen_es = set()
     for tb in tables:
         if not tb or not tb[0]:
             continue
         head = [str(c).replace("\n", " ").strip() for c in tb[0]]
         hjoins = " ".join(head)
         if "放置点位" in hjoins and "类别" in hjoins and "名称" in hjoins:
+            # 应急物资常分多张表 (消防/医疗/药品/洗眼器...), 全量收集去重, 不截断
             for row in tb[1:]:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
                 if len(cells) >= 2 and cells[1] and cells[1] not in ("名称", "类别"):
-                    emg_s.append({"类别": cells[0], "名称": cells[1],
-                                  "数量": cells[2] if len(cells) > 2 else "",
-                                  "点位": cells[3] if len(cells) > 3 else ""})
-            break
+                    key = (cells[0], cells[1], cells[2] if len(cells) > 2 else "",
+                           cells[3] if len(cells) > 3 else "")
+                    if key in seen_es:
+                        continue
+                    seen_es.add(key)
+                    emg_s.append({"类别": key[0], "名称": key[1],
+                                  "数量": key[2], "点位": key[3]})
     if emg_s:
-        out["emergency_supplies"] = emg_s[:60]
+        out["emergency_supplies"] = emg_s
+
+    # ===== 洗眼器独立表 (序号|部门|规格|位置 — 原报告表2.1-3 数据源) =====
+    # 独立洗眼器表 (规格/位置表头) 优先: 命中即替换物资表里零散的洗眼器类别行 (更全更准)
+    eye_rows_new = []
+    for tb in tables:
+        if not tb or not tb[0]:
+            continue
+        head = [str(c).replace("\n", " ").strip() for c in tb[0]]
+        hj = " ".join(head)
+        if "洗眼" in hj or not (("规格" in hj or "型号" in hj) and "位置" in hj and "序号" in hj):
+            continue
+        for row in tb[1:]:
+            cells = [str(c).replace("\n", " ").strip() for c in row]
+            if len(cells) >= 3 and cells[0] not in ("", "序号"):
+                # 序号|部门|规格|位置 → 规格→名称, 位置→点位
+                spec = cells[2] if len(cells) > 2 else ""
+                pos = cells[3] if len(cells) > 3 else ""
+                eye_rows_new.append({"类别": "洗眼器", "名称": spec,
+                                     "数量": "", "点位": pos})
+        break
+    if eye_rows_new:
+        emg_s = [e for e in emg_s if "洗眼" not in str(e.get("类别", "")) + str(e.get("名称", ""))]
+        emg_s.extend(eye_rows_new)
+        out["emergency_supplies"] = emg_s
+
+    # ===== 应急药品独立表 (序号|药品名称|单位|数量|完好程度 — 原报告表2.1-1 数据源) =====
+    has_med = any(str(e.get("类别", "")) == "应急药品" for e in emg_s)
+    if not has_med:
+        for tb in tables:
+            if not tb or not tb[0]:
+                continue
+            head = [str(c).replace("\n", " ").strip() for c in tb[0]]
+            hj = " ".join(head)
+            if not ("药品名称" in hj and "完好程度" in hj):
+                continue
+            ui = head.index("单位") if "单位" in head else -1
+            qi = head.index("数量") if "数量" in head else -1
+            ni = head.index("药品名称")
+            wi = head.index("完好程度")
+            for row in tb[1:]:
+                cells = [str(c).replace("\n", " ").strip() for c in row]
+                if len(cells) > ni and cells[ni] and cells[ni] != "药品名称":
+                    qty = str(cells[qi]) if qi >= 0 and len(cells) > qi else ""
+                    unit = str(cells[ui]) if ui >= 0 and len(cells) > ui else ""
+                    emg_s.append({"类别": "应急药品", "名称": cells[ni],
+                                  "数量": (qty + unit).strip() or "—",
+                                  "点位": cells[wi] if wi < len(cells) else "—"})
+            break
+        if emg_s:
+            out["emergency_supplies"] = emg_s
 
     return out
