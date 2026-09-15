@@ -293,7 +293,19 @@ async function importMaterials() {
   const r = await fetch(`/api/projects/${pid}/import-materials`, { method: 'POST' });
   const d = await r.json();
   if (d.ok) {
-    alert(`已导入: 设备 ${d.equipment} 台, 检测 ${d.detections} 条, 材料 ${d.materials} 个`);
+    let msg = `已导入: 设备 ${d.equipment} 台, 检测 ${d.detections} 条, 材料 ${d.materials} 个`;
+    if (d.quality) {
+      const q = d.quality;
+      if (q.errors && q.errors.length) {
+        msg += `\n\n⛔ 数据问题 ${q.errors.length} 项 (会产出错误内容):\n` + q.errors.map(s => '· ' + s).join('\n');
+      }
+      if (q.warns && q.warns.length) {
+        msg += `\n\n⚠️ 待核实 ${q.warns.length} 项:\n` + q.warns.slice(0, 5).map(s => '· ' + s).join('\n')
+             + (q.warns.length > 5 ? `\n… 共 ${q.warns.length} 项` : '');
+      }
+      if (!(q.errors || []).length && !(q.warns || []).length) msg += '\n\n✅ 数据质检通过';
+    }
+    alert(msg);
     closeDataEditor();
     await loadOverview();
     loadSection(SEC);

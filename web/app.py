@@ -651,6 +651,21 @@ def api_update_project(pid: str, payload: dict):
     return {"ok": True}
 
 
+@app.get("/api/projects/{pid}/quality", response_class=JSONResponse)
+async def api_quality(pid: str):
+    """数据质检结果 (导入时沉淀; 无则现算一次)"""
+    p = get_project(pid)
+    data = p["data"]
+    qr = data.get("quality_report")
+    if not qr:
+        try:
+            from web.data_quality import quality_check
+            qr = quality_check(pid, data)
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e)[:100]})
+    return JSONResponse({"ok": True, "quality": qr})
+
+
 @app.get("/api/materials", response_class=JSONResponse)
 def api_materials():
     """已上传的材料文件清单 (附录A分类)"""
@@ -683,6 +698,16 @@ def api_import_materials(pid: str):
     merged["equipment"] = data["equipment"]
     merged["detections"] = dets
     merged["process_text"] = data["process_text"]
+    # 重新导入 = 材料重新解析: 解析出的全部字段覆盖旧值 (否则提取修复永远落不到库)
+    for _k in ("materials", "staffing", "shifts", "ppe", "emergency", "buildings",
+               "facilities", "products", "public_works", "health_check", "management",
+               "hazard_grid", "emergency_supplies", "equipment_detail",
+               "investment", "ohy_investment", "area", "capacity", "nature", "location",
+               "company", "founded", "registered_capital", "registered_capital_all",
+               "legal_rep", "investor", "protection"):
+        _v = data.get(_k)
+        if _v not in (None, "", [], {}):  # 材料没给的键不覆盖 (保留旧值/手填值)
+            merged[_k] = _v
     # 企业画像 + 表骨架先行: 数据处理阶段沉淀 (画像=结构化聚合; 骨架表=规则+LLM增强), 导出纯读取
     try:
         from web.company_profile import build_profile
@@ -691,10 +716,24 @@ def api_import_materials(pid: str):
         merged["built_tables"] = build_all_tables(merged)
     except Exception:
         pass  # 建表失败不阻断导入 (导出回退现算)
+    # 数据质检: 导入后自动跑, 结果沉淀 (前端/导出前可查; error 不阻断但醒目提示)
+    qr = None
+    try:
+        from web.data_quality import quality_check
+        qr = quality_check(pid, merged)
+        merged["quality_report"] = {"summary": qr["summary"], "items": qr["items"],
+                                    "checked_at": int(time.time())}
+    except Exception:
+        pass
     update_project(pid, p["name"], merged)
     _cache.pop(f"assess:{pid}", None)
-    return {"ok": True, "equipment": len(merged["equipment"]),
+    resp = {"ok": True, "equipment": len(merged["equipment"]),
             "detections": len(dets), "materials": data.get("material_count", 0)}
+    if qr:
+        resp["quality"] = {"summary": qr["summary"],
+                           "errors": [i["message"] for i in qr["items"] if i["level"] == "error"],
+                           "warns": [i["message"] for i in qr["items"] if i["level"] == "warn"]}
+    return resp
 
 
 def import_materials_from_dir(pid: str) -> dict:

@@ -473,7 +473,8 @@ def parse_report_file(path) -> dict:
         head0 = " ".join(str(c).replace("\n", "").strip() for c in tb[0])
         flat = " | ".join(str(c).replace("\n", " ") for r in tb for c in r)
         # 定员表 (部门|岗位|总人数|班制) — 兼容表头变体: 岗位/工种, 按表头定位列
-        if ("岗位" in head0 or "工种" in head0) and ("总人数" in flat or "人数" in flat):
+        _is_contact_tbl = "接触人数" in flat and "总人数" not in flat  # 接触人数表(岗位|接触人数|...)非定员表
+        if not _is_contact_tbl and ("岗位" in head0 or "工种" in head0) and ("总人数" in flat or "人数" in flat):
             hcells2 = [str(c).replace("\n", " ").strip() for c in tb[0]]
             def _lc(kws):
                 for i, h in enumerate(hcells2):
@@ -495,8 +496,10 @@ def parse_report_file(path) -> dict:
                     continue
                 if not cnt:
                     cnt = next((c for c in reversed(cells) if re.fullmatch(r"\d+", c)), "")
-                if post and cnt:
-                    nh = {"post": post, "count": cnt, "dept": dept}
+                # 行级防脏: 人数必须纯数字 (表头行/说明行/合并格说明 天然滤除; '8人'剥单位)
+                cnt_num = re.sub(r"[^0-9.]", "", str(cnt))
+                if post and cnt_num and cnt_num != ".":
+                    nh = {"post": post, "count": cnt_num, "dept": dept}
                     if nh["post"] not in [s.get("post") for s in staffing]:
                         staffing.append(nh)
         # 班制 (工作班制列)
@@ -714,8 +717,23 @@ def parse_report_file(path) -> dict:
                 def _pg(i):
                     return cells[i] if (i >= 0 and i < len(cells)) else ""
                 item = _pg(i_item)
+                # 行级防脏: 表头行/分节标题行跳过 (item=表头名 或 post=岗位/工种 等表头字样)
+                if item and (item in ("防护用品", "个人防护用品配备", "个人防护") or _pg(i_post) in ("岗位", "工种", "生产岗位")):
+                    continue
                 if item:
-                    ppe.append({"item": item, "post": _pg(i_post), "frequency": _pg(i_freq), "count": _pg(i_cnt)})
+                    # 单元格多装备 (顿号/换行分隔) → 拆成多条, 列信息(岗位/周期/数量)整行继承
+                    # (修复: 拟配置矩阵按装备分列时拼接长串对不上列)
+                    _parts = [p.strip() for p in re.split(r"[、\n]|(?<=[）)])\s*/\s*", item) if p.strip()]
+                    if len(_parts) > 1:
+                        _freq, _cnt, _post = _pg(i_freq), _pg(i_cnt), _pg(i_post)
+                        # '等，详细见9.1'这类引用行不拆, 整条保留
+                        if "详细见" in item or "等" in _parts[-1]:
+                            _parts = [item]
+                        for _p in _parts:
+                            if _p not in [x.get("item") for x in ppe if x.get("post") == _post]:
+                                ppe.append({"item": _p, "post": _post, "frequency": _freq, "count": _cnt})
+                    else:
+                        ppe.append({"item": item, "post": _pg(i_post), "frequency": _pg(i_freq), "count": _pg(i_cnt)})
         # 体检表 (岗位|体检项目|周期)
         if "体检" in flat or "健康检查" in flat:
             for row in tb[1:]:
