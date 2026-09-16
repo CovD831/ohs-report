@@ -667,6 +667,17 @@ async def api_quality(pid: str):
     return JSONResponse({"ok": True, "quality": qr})
 
 
+@app.get("/api/projects/{pid}/coverage", response_class=JSONResponse)
+async def api_coverage(pid: str):
+    """数据完整度: 40张取证表骨架×数据沉淀状态 (覆盖度面板)"""
+    p = get_project(pid)
+    if not p:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    from web.coverage import coverage_report
+    cov = coverage_report(p["data"])
+    return JSONResponse({"ok": True, "coverage": cov})
+
+
 @app.get("/api/materials", response_class=JSONResponse)
 def api_materials():
     """已上传的材料文件清单 (附录A分类)"""

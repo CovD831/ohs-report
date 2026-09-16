@@ -219,6 +219,20 @@ table td.col-method { min-width: 100px; }
       <div class="row"><span class="label">风险分类</span><span class="value mono" id="navRisk">—</span></div>
       <div class="row"><span class="label">作业分级</span><span class="value mono" id="navGrades">—</span></div>
     </div>
+
+    <div class="nav-card" id="covCard" style="cursor:pointer;" onclick="toggleCovDetail()">
+      <div class="row" style="justify-content:space-between;">
+        <span class="label">数据完整度</span>
+        <span class="value mono" id="covSummary">—</span>
+      </div>
+      <div style="height:4px;background:var(--border);border-radius:2px;margin:8px 0 4px;overflow:hidden;">
+        <div id="covBar" style="height:100%;width:0;background:var(--primary);border-radius:2px;transition:width .3s;"></div>
+      </div>
+      <div id="covDetail" style="display:none;font-size:11.5px;line-height:1.8;max-height:220px;overflow-y:auto;">
+        <div id="covPendingList"></div>
+        <div id="covQuality" style="margin-top:6px;"></div>
+      </div>
+    </div>
   </div>
 
   <!-- 中栏: 内容 -->
@@ -375,6 +389,34 @@ async function loadOverview() {
   const rb = document.getElementById('riskBadge');
   rb.textContent = overview.has_data ? `风险分类: ${overview.risk_level}` : '风险分类: 待上传材料';
   rb.className = 'badge ' + (overview.has_data ? 'badge-standard' : 'badge-gray');
+  refreshCoverage();
+}
+
+async function refreshCoverage() {
+  try {
+    const r = await fetch(`/api/projects/${pid}/coverage`);
+    const d = await r.json();
+    if (!d.ok) return;
+    const c = d.coverage, s = c.summary, q = c.quality || {errors: 0, warns: 0};
+    document.getElementById('covSummary').textContent = `${s.ready}/${s.total}`;
+    document.getElementById('covBar').style.width = (s.ready * 100 / s.total) + '%';
+    const pend = c.tables.filter(t => t.status === 'pending');
+    let h = pend.length
+      ? `<div style="color:var(--tertiary);margin-bottom:2px;">待数据 ${pend.length} 张:</div>` +
+        pend.map(t => `<div><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--tertiary);margin-right:6px;vertical-align:1px;"></span>${t.name} <span class="mono" style="color:var(--text-muted);">§${t.section}</span></div>`).join('')
+      : `<div style="color:var(--success);">全部就绪 ✓</div>`;
+    if (q.errors || q.warns) {
+      h += `<div style="color:var(--danger);">⛔ 质检错误 ${q.errors}</div>` +
+           (q.warns ? `<div style="color:var(--tertiary);">⚠️ 待核实 ${q.warns}</div>` : '');
+    }
+    document.getElementById('covPendingList').innerHTML = h;
+    document.getElementById('covQuality').innerHTML = '';
+  } catch (e) { /* 面板失败不阻断主流程 */ }
+}
+
+function toggleCovDetail() {
+  const el = document.getElementById('covDetail');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 function statCards(d) {

@@ -50,6 +50,45 @@ RULES = [
 ]
 
 
+# ===== 历史数据修补: "系统标准库提升"行 check_point 曾错装为条款号 (与 clause 同值) =====
+# 正确语义: check_point = 该条对应的符合性检查要点短句 (参照正常行风格: 措施要点分号分隔)
+# 幂等: 只修 check_point=clause 的行, 按 measure 前20字匹配 (id 在 DELETE/重插后会漂移, 不能按 id)
+_CHECKPOINT_FIX = {
+    "排风罩罩口吸风气流应保证罩口平均控制": "罩口平均控制风速实测达标; 柜式罩柜面风速0.25~0.5m/s",
+    "罩型选择：应优先采用密闭罩；不能密闭": "优先密闭罩; 外部罩靠近散发源且气流从人员侧流向有害物侧",
+    "风管风速：除尘管道内风速应保证粉尘不沉": "除尘/排毒风管设计风速达标; 粉尘不沉积、毒物不短路",
+    "系统布置：同一排风系统所排有害物混合后": "混合后燃爆/腐蚀/增毒的排风已分设系统",
+    "无毒代毒：生产工艺应优先采用无毒或低毒": "原辅材料低毒化替代落实; 设备密闭化/管道化/自动化",
+    "隔离布置：产生职业病危害因素的工序应与": "危害工序与无害工序隔开; 隔离操作室+观察窗设置",
+    "危害因数选型：应根据危害因数(浓度/限值)": "按危害因数选型正确: ≤10过滤式, >10或不明供气式",
+    "面罩指定防护因数：半面罩APF=10、全面罩": "所选呼吸防护装备APF大于实际危害因数",
+    "过滤元件更换：过滤式呼吸防护装备应按更": "过滤元件按周期更换; 失效征兆立即更换撤离",
+    "首次使用某型号密合型面罩时应进行适合性": "密合型面罩首次适合性检验; 每次佩戴气密性检查",
+    "应急呼吸器配置：可能发生急性中毒的场所": "正压自给式空气呼吸器配置到位且定期检查维护",
+    "使用培训：使用呼吸防护用品前应经专门培": "使用前专门培训且记录; 覆盖佩戴/维护/失效识别",
+}
+
+
+def fix_checkpoints() -> int:
+    """修补 check_point 错装为条款号的行 (幂等, 按 measure 前缀匹配)"""
+    conn = connect()
+    rows = conn.execute(
+        "SELECT id, measure FROM protection_rule "
+        "WHERE check_point=clause AND source LIKE '系统标准库提升%'").fetchall()
+    n = 0
+    for rid, measure in rows:
+        for pre, cp in _CHECKPOINT_FIX.items():
+            if (measure or "").startswith(pre[:20]):
+                conn.execute("UPDATE protection_rule SET check_point=? WHERE id=?", (cp, rid))
+                n += 1
+                break
+        else:
+            print(f"  ⚠ 未匹配 measure: id={rid} {measure[:30]}")
+    conn.commit()
+    conn.close()
+    return n
+
+
 def main():
     conn = connect()
     conn.execute("""
@@ -75,6 +114,9 @@ def main():
     for r in conn.execute("SELECT hazard_category, measure, std_code, clause FROM protection_rule LIMIT 10"):
         print(f"  {r[0]:6s} {r[1]:8s} | {r[2]} {r[3]}")
     conn.close()
+    # 历史修补: "系统标准库提升"行 check_point 错装条款号 → 检查点描述
+    fixed = fix_checkpoints()
+    print(f"修补 check_point: {fixed} 条")
 
 
 if __name__ == "__main__":

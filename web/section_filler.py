@@ -480,10 +480,11 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 continue
             seen_l.add(fac)
             oels = dict(conn.execute("SELECT oel_type, value FROM oel_limit WHERE factor_name LIKE ?", (fac + "%",)).fetchall())
-            if not oels:
-                continue
+            # GBZ 2.1—2019 未收录的物质 (如新戊二醇/多元醇/二元酸类) 不静默丢行:
+            # 行保留+值"—"+备注注明, 避免"识别表列了、限值表没有"的覆盖断裂 (缺数据不硬造)
             lim_rows.append([fac, oels.get("PC-MAC", "—"), oels.get("PC-TWA", "—"),
-                             oels.get("PC-STEL", "—"), oels.get("PE", "—"), ""])
+                             oels.get("PC-STEL", "—"), oels.get("PE", "—"),
+                             "" if oels else "未制定职业接触限值"])
         if lim_rows:
             tables.append({"name": "接触限值表",
                            "cols": ["种类", "职业接触限值（mg/m3）", "职业接触限值（mg/m3）", "职业接触限值（mg/m3）", "职业接触限值（mg/m3）", "备注"],
