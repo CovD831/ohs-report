@@ -90,6 +90,13 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     tables = fill_section(conn, fill_ch, assess)
     tables = [dict(built[w]) | {"name": w} if w in built else t
               for t in tables for w in [t["name"]]]
+    # 骨架补插: built 里已沉淀但现算缺失的表 (filler 因空数据跳过) 按原节内顺序插入 —
+    # 骨架永远在, 数据待补充; 表名顺序依 wanted 名单 (导出编号顺序)
+    have = {t["name"] for t in tables}
+    for w in wanted:
+        if w in built and w not in have:
+            tables.append(dict(built[w]) | {"name": w})
+            have.add(w)
     # 应急物资三表拆分 (原报告: 表2.1-1应急药品/表2.1-2应急物资/表2.1-3洗眼器; 7.1应急救援器材)
     if "应急物资清单" in wanted and fill_ch == "7" and sub == "2.1.1":
         # 仅 2.1.1 拆3张 (原报告表2.1-1/2/3 应急药品/应急物资/洗眼器)

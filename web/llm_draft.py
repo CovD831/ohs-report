@@ -512,6 +512,9 @@ def _assess_cached(pid: str, _cache: dict | None = None):
                "company": d.get("company", ""), "founded": d.get("founded", ""),
                "registered_capital": d.get("registered_capital", ""),
                "legal_rep": d.get("legal_rep", ""), "investor": d.get("investor", ""),
+               "hazard_grid": d.get("hazard_grid", []),
+               "emergency_supplies": d.get("emergency_supplies", []),
+               "profile": d.get("profile", {}),
                "built_tables": d.get("built_tables", {}), "location": d.get("location", "")}
     assess = assess_project(conn, project)
     conn.close()

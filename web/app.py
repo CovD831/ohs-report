@@ -634,7 +634,8 @@ def api_update_project(pid: str, payload: dict):
         if k in payload:
             data[k] = payload[k]
     # 影响骨架表的字段变了 → 重建 (location/company/investment/staffing/shifts)
-    for k in ("location", "company", "investment", "capacity", "staffing", "shifts"):
+    for k in ("location", "company", "investment", "capacity", "staffing", "shifts",
+              "materials", "products", "equipment_detail", "buildings", "hazard_grid"):
         if k in payload:
             data[k] = payload[k]
             rebuild = True

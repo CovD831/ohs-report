@@ -166,7 +166,11 @@ if __name__ == "__main__":
 
 
 def build_data_tables(pd: dict) -> dict:
-    """数据规则表 (数字全走规则, 不经LLM) — 与 fill_section 同源逻辑, 建表时沉淀"""
+    """数据规则表 (数字全走规则, 不经LLM) — 与 fill_section 同源逻辑, 建表时沉淀
+
+    ⚠ 同源维护: 各表构建逻辑与 web/section_filler.py sec3(产品/原辅材料/设备明细/建构筑物/定员)
+    及 sec4(类比危害分布) 逐字同源; 改任一侧表结构必须两处同步 (否则导出 built 覆盖后与回退现算漂移)。
+    """
     tables = {}
     # 班制定员表 (表3.1-2): staffing+shifts
     staffs = pd.get("staffing") or []
@@ -207,6 +211,94 @@ def build_data_tables(pd: dict) -> dict:
                               ["3", "项目投资总额", "万元", invest or "—", ""],
                               ["4", "职业病防治经费概算", "万元", "待补充（需企业核实）", ""],
                           ]}
+
+    # ===== 原辅材料表 (表3.4-2) ← materials — 同源 section_filler sec3 =====
+    mats2 = pd.get("materials") or []
+    if mats2:
+        m_rows = []
+        for i, m in enumerate(mats2, 1):
+            if isinstance(m, dict):
+                # 原报告列序: 名称/物料性状/年耗量/存放地点/最大储存量/包装方式·规格
+                m_rows.append([i, m.get("name", ""), m.get("物态", ""),
+                               m.get("年用量", ""), m.get("储存地点", ""),
+                               m.get("最大储量", ""), m.get("规格", "")])
+            else:
+                m_rows.append([i, str(m), "—", "—", "—", "—", "—"])
+        tables["原辅材料表"] = {
+            "cols": ["序号", "原辅材料名称", "物料性状", "年耗量(t/a)", "存放地点", "最大储存量（t）", "包装方式/规格"],
+            "rows": m_rows}
+
+    # ===== 产品产量表 (表3.4-1, 9列双层) ← products — 同源 section_filler sec3 =====
+    prods = pd.get("products") or []
+    if prods:
+        p2_rows = []
+        for p in prods:
+            if not isinstance(p, dict):
+                continue
+            nm = p.get("name", "")
+            if "（" in nm:  # "不饱和聚酯树脂（通用型）" → 产品/类型两列
+                prod, typ = nm.split("（", 1)
+                typ = typ.rstrip("）")
+            else:
+                prod, typ = nm, ""
+            before = p.get("output", "")
+            after = p.get("delta_num")
+            try:
+                after = str(int(float(str(before).replace(",", ""))) + int(float(after))) if after else ""
+            except (TypeError, ValueError):
+                after = ""
+            _delta = str(p.get("delta", "") or p.get("变化量", "") or "").replace(" ", "")
+            p2_rows.append([prod, typ, "吨/年", p.get("成分", "—"), before, after,
+                            _delta, "产品"])
+        if p2_rows:
+            tables["产品产量表"] = {
+                "cols": ["序号", "名称", "名称", "单位", "主要成分", "年产量吨/年", "年产量吨/年", "变化量", "备注"],
+                "header2": ["序号", "名称", "名称", "单位", "主要成分", "扩产前", "扩产后", "变化量", "备注"],
+                "merge_rect": [(0, 1, 0, 2), (0, 5, 0, 6)],
+                "rows": [[i] + r for i, r in enumerate(p2_rows, 1)]}
+
+    # ===== 设备明细表 (表3.6-1, 9列双层) ← equipment_detail — 同源 section_filler sec3 =====
+    eq_d = pd.get("equipment_detail") or []
+    if eq_d:
+        ed9 = [[d.get("车间", ""), d.get("位号", ""),
+                d.get("name", "") if isinstance(d, dict) else d,
+                d.get("spec", ""), d.get("qty", ""), d.get("qty", ""), "—",
+                d.get("材质", ""), ""] for d in eq_d if isinstance(d, dict)]
+        tables["设备明细表"] = {
+            "cols": ["车间", "位号", "设备名称", "规格型号", "数量", "数量", "数量", "材质", "备注"],
+            "header2": ["车间", "位号", "设备名称", "规格型号", "现有", "扩建后全厂", "变化", "材质", "备注"],
+            "merge_rect": [(0, 4, 0, 6)],
+            "rows": ed9}
+
+    # ===== 建构筑物表 (表3.7-1) ← buildings — 同源 section_filler sec3 =====
+    blds = pd.get("buildings") or []
+    if blds:
+        b_rows = [[b.get("功能区", ""), b.get("name", ""), b.get("火灾危险类别", ""),
+                   b.get("耐火等级", ""), b.get("floors", ""), b.get("area", ""),
+                   b.get("floor_area", ""), ""] for b in blds if isinstance(b, dict)]
+        # 原报告表3.7-1: 功能区/建构筑物名称/火灾危险类别/耐火等级/层数/占地/建筑/备注 (无序号无高度)
+        tables["建构筑物表"] = {
+            "cols": ["功能区", "建构筑物名称", "火灾危险类别", "耐火等级", "层数", "占地面积(㎡)", "建筑面积(㎡)", "备注"],
+            "rows": b_rows}
+
+    # ===== 类比危害分布表 (表4.2-3, 8列双层) ← hazard_grid — 同源 section_filler sec4 =====
+    hg = pd.get("hazard_grid") or []
+    hg_rows = []
+    for g in hg:
+        if not g.get("unit") and not g.get("post"):
+            continue
+        # 原报告表4.2-3 8列双层: 单元|岗位|接触途径(产品·工段)|因素|作业方式|人数|频次
+        hg_rows.append([g.get("unit") or "生产车间主厂房", g.get("post", "—"),
+                        g.get("product", "—"), g.get("stage") or "—",
+                        (g.get("factors", "") or "—")[:80],
+                        "计量、投料、巡检", "/", "/"])
+    if hg_rows:
+        tables["类比危害分布表"] = {
+            "cols": ["评价单元", "岗位", "接触途径", "接触途径", "主要职业病危害因素", "作业方式", "接触人数", "接触频次"],
+            "header2": ["评价单元", "岗位", "产品", "工段", "主要职业病危害因素", "作业方式", "接触人数", "接触频次"],
+            "merge_rect": [(0, 2, 0, 3)],
+            "rows": hg_rows}
+
     return tables
 
 
