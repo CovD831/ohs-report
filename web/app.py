@@ -1162,7 +1162,12 @@ def import_materials_from_dir(pid: str) -> dict:
             # (修复: 05_类比检测文件 实为体检总结报告(康检字第20251354号), "危害因素|CTWA"列
             #  实为体检项目/接触因素标注 → 误提取成检测值 → LLM 写进结论'聚乙烯粉尘超标')
             if "检测" in name and not any(k in name for k in ("职业健康检查", "体检", "检查总结", "健康监护", "检查报告", "健康检查")):
-                for r in _dict_rows(_read_rows(f)):
+                # ⚠ .pdf 不能走 _read_rows: 它对 PDF 会用 latin-1 解码二进制 → 返回**几万行垃圾**
+                #   (实测 125 页扫描件 → 78700 行), 不报错也不为空, 会污染检测数据。
+                #   PDF 一律交给 report_parser(有文本层) 或 vision_extract(扫描件), 不走表格读。
+                _is_pdf = f.suffix.lower() == ".pdf"
+                _rows = [] if _is_pdf else _dict_rows(_read_rows(f))
+                for r in _rows:
                     fac = _get(r, "危害因素", "因子", "检测项目")
                     ctwa_raw = _get(r, "CTWA(mg/m3)", "CTWA", "PC-TWA", "检测值")
                     if fac and fac not in seen_det:
@@ -1173,6 +1178,47 @@ def import_materials_from_dir(pid: str) -> dict:
                             try: ctwa_f = float(ctwa_raw)
                             except ValueError: ctwa_f = None
                         dets.append({"factor": fac, "ctwa": ctwa_f})
+                # ---- PDF 检测报告: 有文本层走 report_parser, 扫描件走视觉模型 ----
+                # 实测: 05_类比检测报告 125页纯扫描件 (0 字符), 含作业分级必需的游离二氧化硅。
+                # 沿用**同一体检排除名单**(不把体检表当检测表 — 历史 bug)。
+                # 结果标 source="vision": 机器识别 ≠ 确定提取, 供溯源面板提示人工核对。
+                if _is_pdf:
+                    try:
+                        from web.vision_extract import _is_scanned, vision_detections
+                        _scan, _np = _is_scanned(f)
+                        if _scan:
+                            _vr = vision_detections(f, verbose=False)
+                            # 索引已有条目: 同一 factor 可能多次出现(表型B 汇总 + 表型D 二氧化硅)
+                            # ⚠ 不能简单"见过就跳过": 表型B 的 '游离二氧化硅' 无 sio2_percent,
+                            #   先入会把表型D 里真正的 3.39 **当重复丢掉** —— 正是要捡回的字段。
+                            #   → 改为"合并补全": 已存在则补齐缺失字段, 不新增重复行。
+                            _idx = {str(d.get("factor")): d for d in dets
+                                    if d.get("source") == "vision"}
+                            for _it in (_vr.get("detections") or []):
+                                fac = str(_it.get("factor") or "").strip()
+                                if not fac:
+                                    continue
+                                _new = {
+                                    "factor": fac,
+                                    "ctwa": _it.get("ctwa") or None,
+                                    "results": _it.get("results") or [],
+                                    "sio2": _it.get("sio2_percent") or None,
+                                    "judgement": _it.get("judgement") or "",
+                                    "source": "vision",
+                                    "_page": _it.get("_page"),
+                                    "_file": _it.get("_file", f.name),
+                                }
+                                if fac in seen_det:
+                                    # 补全: 只填空值, 不覆盖已有非空数据
+                                    _old = _idx.get(fac)
+                                    if _old is not None and not _old.get("sio2") and _new["sio2"]:
+                                        _old["sio2"] = _new["sio2"]
+                                    continue
+                                seen_det.add(fac)
+                                _idx[fac] = _new
+                                dets.append(_new)
+                    except Exception:
+                        pass  # 视觉提取失败不应中断导入 (文本层数据已拿到)
             # 工艺
             if "工艺" in name:
                 proc = proc + "\n" + f.read_text(encoding="utf-8", errors="ignore")

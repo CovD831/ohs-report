@@ -226,16 +226,53 @@ def extract_pages(pdf_path: Path, page_nos: list[int], dpi: int = 180,
             "types": types}
 
 
-def vision_detections(pdf_path: Path, index: dict | None = None,
-                      dpi: int = 180, verbose: bool = True) -> dict:
-    """主入口: 扫描件 → detections 风格的结构化数据
+def _cache_path(pdf_path: Path) -> Path:
+    """视觉提取结果缓存路径: data/vision_cache/<key>.json
 
-    返回 {detections:[...], sio2:{...}, cost:{credit,elapsed}, index}
+    ⚠ 必须缓存: 125 页扫描件跑一次 ≈17 分钟 / ¥5.5, 而同一份检测报告
+      在导入/重导/校验流程里会被反复读到。不缓存 = 每次都等 17 分钟。
+    键含 size+mtime → 报告文件更新后自动失效, 不会拿旧结果。
+    """
+    import hashlib
+    try:
+        st = pdf_path.stat()
+        raw = f"{pdf_path.resolve()}|{st.st_size}|{int(st.st_mtime)}|{MODEL}"
+    except OSError:
+        return Path("/dev/null")
+    cd = _data_dir() / "vision_cache"
+    cd.mkdir(parents=True, exist_ok=True)
+    return cd / f"{hashlib.sha1(raw.encode()).hexdigest()[:16]}.json"
+
+
+def _data_dir() -> Path:
+    """数据目录 (本地 data/ 或容器 /app/data)"""
+    root = next((p for p in (Path("/app"), Path(__file__).resolve().parent.parent)
+                 if (p / "data").exists()), Path.cwd())
+    return root / "data"
+
+
+def vision_detections(pdf_path: Path, index: dict | None = None,
+                      dpi: int = 180, verbose: bool = True,
+                      use_cache: bool = True, force: bool = False) -> dict:
+    """主入口: 扫描件 → detections 风格的结构化数据 (带缓存)
+
+    返回 {detections:[...], sio2:{...}, cost:{credit,elapsed}, index, cached:bool}
     detections 每项:
       {factor, sampling_point, ctwa, cstel, results, judgement, sio2_percent,
        source:'vision', _page, _file}
     """
     pdf_path = Path(pdf_path)
+    cp = _cache_path(pdf_path)
+    if use_cache and not force and cp.exists():
+        try:
+            d = json.loads(cp.read_text(encoding="utf-8"))
+            d["cached"] = True
+            if verbose:
+                print(f"命中视觉缓存: {cp.name} ({len(d.get('detections') or [])} 条)")
+            return d
+        except Exception:
+            pass  # 缓存损坏 → 重跑
+
     if index is None:
         if verbose:
             print(f"索引遍 (150dpi): {pdf_path.name}")
@@ -277,7 +314,7 @@ def vision_detections(pdf_path: Path, index: dict | None = None,
             sio2[rec["sampling_point"] or f] = sp
         dets.append(rec)
 
-    return {
+    result = {
         "detections": dets,
         "sio2": sio2,
         "cost": {"credit": index["credit"] + res["credit"],
@@ -285,7 +322,16 @@ def vision_detections(pdf_path: Path, index: dict | None = None,
                  "index_pages": index["scanned_pages"],
                  "read_pages": len(key_pages)},
         "index": index,
+        "cached": False,
     }
+    if use_cache:
+        try:
+            cp.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+            if verbose:
+                print(f"已缓存 → {cp}")
+        except Exception:
+            pass
+    return result
 
 
 # ============ 来源标记: 标 vision, 不冒领 rule ============
@@ -309,6 +355,7 @@ def main():
     ap.add_argument("--extract", action="store_true", help="索引+精读 → JSON")
     ap.add_argument("--limit", type=int, default=None, help="只处理前 N 页 (试跑)")
     ap.add_argument("--out", default="", help="结果 JSON 输出路径")
+    ap.add_argument("--no-cache", action="store_true", help="跳过缓存, 强制重跑")
     args = ap.parse_args()
 
     p = Path(args.pdf)
@@ -330,7 +377,7 @@ def main():
             print(f"→ {args.out}")
         return 0
 
-    r = vision_detections(p)
+    r = vision_detections(p, use_cache=not args.no_cache)
     c = r["cost"]
     print(f"\n完成: {len(r['detections'])} 条检测记录 | "
           f"索引{c['index_pages']}页+精读{c['read_pages']}页 | "

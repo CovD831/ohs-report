@@ -32,7 +32,8 @@ from knowledge.oel import connect  # noqa: E402
 from knowledge.identify_demo import split_materials  # noqa: E402
 from knowledge.judge_cli import (judge_chemical, judge_physical, judge_bio,  # noqa: E402
                                  get_oel, level_of)
-from knowledge.grade_engine import grade_chemical, grade_dust, grade_heat  # noqa: E402
+from knowledge.grade_engine import (grade_chemical, grade_dust, grade_heat,  # noqa: E402
+                                    WM_TABLE)
 
 # 物理因素→作业分级函数映射 (注意: 物理因素用 229 无单独函数, 高温/噪声走特殊)
 PHYSICAL_FACTORS = ("噪声", "高温", "手传振动", "工频电场", "微波辐射",
@@ -68,6 +69,36 @@ def _parse_ctwa(v) -> float | None:
         return float(s)
     except ValueError:
         return None
+
+
+def _sio2_band(v) -> str | None:
+    """游离SiO2含量(%) → GBZ/T 229.1 表4 的分档键。
+
+    ⚠ 关键: WM_TABLE 的键是**分档**("<10"/"10-50"/"50-80"/">80"),
+      而检测报告(尤其视觉提取)给的是**原始百分数**(如 3.39)。
+      直接把 "3.39" 传进 WM_TABLE.get() 会取默认值 4 = **最坏分档** → 分级偏高。
+      必须先分档。
+
+    分档依据 GBZ/T 229.1 表4: <10 / 10-50 / 50-80 / >80 (%)
+    """
+    if v is None:
+        return None
+    s = str(v).strip()
+    # ① 已是分档键 → 原样返回 (必须先判, 否则 "<10"/">80" 会被 lstrip 改写)
+    if s in WM_TABLE:
+        return s
+    # ② 原始百分数 → 分档
+    try:
+        n = float(s.lstrip("<>＜≤").strip())
+    except (TypeError, ValueError):
+        return None
+    if n < 10:
+        return "<10"
+    if n < 50:
+        return "10-50"
+    if n <= 80:
+        return "50-80"
+    return ">80"
 
 
 def merge_process_materials(conn, hazards: dict, process_text: str) -> dict:
@@ -505,7 +536,19 @@ def assess_project(conn, project: dict) -> dict:
         if "高温" in f:
             g = grade_heat(labor, d.get("rate_pct", 100), d.get("wbgt", 30))
         elif d.get("sio2"):
-            g = grade_dust(d["sio2"], d.get("btw", 0.5), labor)
+            # sio2 可能是原始百分数(3.39) 或已分档("<10") → 统一分档后再查表
+            # ⚠ 不分档直接传数会命中 WM_TABLE 默认值 4(最坏分档) → 分级偏高
+            _band = _sio2_band(d["sio2"])
+            if _band:
+                # b = C/PC-TWA; ctwa 缺失时用 btw(接触比值) 兜底, 再退 0.5
+                _b = _parse_ctwa(d.get("ctwa"))
+                if _b is None:
+                    _b = d.get("btw")
+                if _b is None:
+                    _b = 0.5
+                g = grade_dust(_band, float(_b), labor)
+            else:
+                g = None
         elif d.get("wd") or d.get("b"):
             g = grade_chemical(d.get("wd", "中度危害"), d.get("b", 0.5), labor)
         else:
