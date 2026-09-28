@@ -7,11 +7,24 @@ set -o pipefail   # 关键: 让管道返回 docker build 的真实退出码 (否
 SRV="ohs"
 REMOTE_DIR='~/ohs-report'
 
-echo "=== 1. 打源码包 (排除数据/venv, ~2MB) ==="
+echo "=== 1. 打源码包 (排除数据/venv/标准PDF, ~2MB) ==="
 # docker-compose.yml 不上送: LLM 端点/key 等运行时配置只在服务器本地维护, 避免部署覆盖
-tar czf /tmp/ohs_src.tgz --exclude '.git' --exclude '.venv' --exclude 'raw' \
-    --exclude 'data' --exclude '__pycache__' --exclude '*.docx' \
-    --exclude '.env*' --exclude 'docker-compose.yml' knowledge web tools acquire requirements.txt Dockerfile
+# ⚠ 排除模式必须能匹配**嵌套**目录: `--exclude 'raw'` 只匹配顶层 raw/,
+#   抓不到 acquire/raw/ → acquire 有 2.8GB 标准PDF 被整个打包(实测 45MB),
+#   传输必断。用 '*/raw' + 'raw' 覆盖任意层级。
+# knowledge/ 45MB 是词库/标准数据, 服务器已有, 不随每次部署重传
+# (如某次确实改了 knowledge/, 用 --with-knowledge 或不加该 exclude 手工传)
+_EXCL=(--exclude '.git' --exclude '.venv' --exclude 'raw' --exclude '*/raw'
+       --exclude 'data' --exclude '*/data' --exclude '__pycache__'
+       --exclude '*/__pycache__' --exclude '*.docx' --exclude '*.pdf'
+       --exclude '.env*' --exclude 'docker-compose.yml')
+_SRC=(web tools acquire requirements.txt Dockerfile)
+[ "$WITH_KNOWLEDGE" = "1" ] && _SRC=(knowledge "${_SRC[@]}")
+tar czf /tmp/ohs_src.tgz "${_EXCL[@]}" "${_SRC[@]}"
+
+_sz=$(du -m /tmp/ohs_src.tgz | cut -f1)
+echo "    包大小: ${_sz}MB"
+[ "$_sz" -gt 20 ] && echo "  ⚠ 包偏大(${_sz}MB) — 检查是否漏排大目录, 大包易传断"
 
 echo "=== 2. 上送并解压 ==="
 # SSH 在本机网络下偶发中途断连 (Connection closed by remote host / lost connection)。
