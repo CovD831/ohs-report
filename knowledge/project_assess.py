@@ -38,6 +38,37 @@ from knowledge.grade_engine import grade_chemical, grade_dust, grade_heat  # noq
 PHYSICAL_FACTORS = ("噪声", "高温", "手传振动", "工频电场", "微波辐射",
                     "超高频辐射", "高频电磁场", "紫外辐射")
 
+# 未检出标记: 检测报告里 "<0.33" / "＜0.33" / "ND" / "未检出" 表示低于检出限
+_LT_MARK = ("<", "＜", "≤", "≤")
+
+
+def _parse_ctwa(v) -> float | None:
+    """解析 CTWA 浓度 → float。
+
+    ⚠ 关键(2026-09 修复): 检测报告大量使用**未检出**写法 `<0.33`。
+      旧实现 `float(d["ctwa"])` 直接抛 ValueError → ctwa=None → **作业分级被静默丢弃**。
+      "<0.33" 是**有效检测结果**(低于检出限), 语义 = 浓度极小 → 取检出限本身做保守估计,
+      这样 b=C/PC-TWA 趋近 0 → 正确判为 0 级"相对无害作业"。
+
+    实测: 长兴项目 6 个粉尘(滑石/其他/聚乙烯/电焊烟尘…)全部是 `<0.33`,
+      修复前 grades=0 条(整章无作业分级), 修复后有分级。
+    """
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip().replace("＜", "<").replace("≤", "<")
+    if not s:
+        return None
+    # 未检出: 去掉比较符, 用检出限数值 (保守估计, 见 docstring)
+    s = s.lstrip("<").strip()
+    if s in ("ND", "nd", "未检出", "—", "-", "/"):
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
 
 def merge_process_materials(conn, hazards: dict, process_text: str) -> dict:
     """工艺描述层: 段落文本 → 物质名 → 合并入 hazards (source=工艺描述)
@@ -481,10 +512,7 @@ def assess_project(conn, project: dict) -> dict:
             # 化学物默认: 用检出浓度/限值 比例 + 中度危害
             b = None
             if d.get("ctwa") is not None:
-                try:
-                    ctwa = float(d["ctwa"])  # ctwa可能是字符串(提取数据), 转float
-                except (TypeError, ValueError):
-                    ctwa = None
+                ctwa = _parse_ctwa(d["ctwa"])
                 oel = get_oel(conn, f)
                 if oel and ctwa is not None:
                     b = ctwa / float(oel[0]["value"]) if float(oel[0]["value"]) > 0 else None
