@@ -1188,12 +1188,38 @@ def import_materials_from_dir(pid: str) -> dict:
                         _scan, _np = _is_scanned(f)
                         if _scan:
                             _vr = vision_detections(f, verbose=False)
-                            # 索引已有条目: 同一 factor 可能多次出现(表型B 汇总 + 表型D 二氧化硅)
-                            # ⚠ 不能简单"见过就跳过": 表型B 的 '游离二氧化硅' 无 sio2_percent,
-                            #   先入会把表型D 里真正的 3.39 **当重复丢掉** —— 正是要捡回的字段。
-                            #   → 改为"合并补全": 已存在则补齐缺失字段, 不新增重复行。
+                            # 索引已有条目: 同一 factor 可能多次出现(表型B 汇总 + 表型D 二氧化硅),
+                            # 且不同页可能有**同名但信息量不同**的条目 (p16 汇总无浓度 / p30 有浓度)。
+                            # ⚠ 不能"先到先占": 无浓度的条目先入会把有浓度的**当重复丢掉**。
+                            #   (实测 聚乙烯粉尘 p16 无 ctwa 占位 → p30 的 <0.33 被丢)
+                            #   → 策略: 同 factor 保留**信息更全**的那条, 其余只做字段补全。
                             _idx = {str(d.get("factor")): d for d in dets
                                     if d.get("source") == "vision"}
+
+                            def _score(x: dict) -> int:
+                                """信息量打分: 有浓度/结果/判定即加分 (用于择优保留)"""
+                                s = 0
+                                if x.get("ctwa"):
+                                    s += 4
+                                if x.get("results"):
+                                    s += 2
+                                if x.get("sio2"):
+                                    s += 4
+                                if x.get("judgement"):
+                                    s += 1
+                                return s
+
+                            def _near_dup(a: str, b: str) -> bool:
+                                """近似同名判定: 一方是另一方的前缀且长度差<=2。
+
+                                实测 OCR/视觉会把 '电焊烟尘' 截成 '电焊烟' → 同一因素两条。
+                                只判前缀 + 长度接近, 避免把 '苯' 与 '苯乙烯'(真不同) 合并。
+                                """
+                                if a == b:
+                                    return True
+                                lo, hi = (a, b) if len(a) <= len(b) else (b, a)
+                                return len(hi) - len(lo) <= 2 and len(lo) >= 2 and hi.startswith(lo)
+
                             for _it in (_vr.get("detections") or []):
                                 fac = str(_it.get("factor") or "").strip()
                                 if not fac:
@@ -1208,11 +1234,22 @@ def import_materials_from_dir(pid: str) -> dict:
                                     "_page": _it.get("_page"),
                                     "_file": _it.get("_file", f.name),
                                 }
-                                if fac in seen_det:
-                                    # 补全: 只填空值, 不覆盖已有非空数据
-                                    _old = _idx.get(fac)
-                                    if _old is not None and not _old.get("sio2") and _new["sio2"]:
-                                        _old["sio2"] = _new["sio2"]
+                                # 先找精确同名, 再找近似同名(截断) → 归并到更完整的那条
+                                _hit = fac if fac in _idx else next(
+                                    (k for k in _idx if _near_dup(k, fac)), None)
+                                if _hit is not None and _hit in seen_det:
+                                    _old = _idx[_hit]
+                                    # 名字更长(更完整)的一侧获胜
+                                    if len(fac) > len(_hit):
+                                        _old["factor"] = fac
+                                        _idx.pop(_hit, None)
+                                        _idx[fac] = _old
+                                    if _score(_new) > _score(_old):
+                                        _old.update({k: v for k, v in _new.items() if v})
+                                    else:
+                                        for k, v in _new.items():
+                                            if v and not _old.get(k):
+                                                _old[k] = v
                                     continue
                                 seen_det.add(fac)
                                 _idx[fac] = _new
