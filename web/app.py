@@ -974,8 +974,16 @@ def import_materials_from_dir(pid: str) -> dict:
                         if s not in shifts:
                             shifts.append(s)
                 if rp.get("detections"):
+                    # 判重需**归一化**: 全角/半角括号 '（树脂）'/' (树脂)' 是同一因素。
+                    # 原实现用精确字符串比对 → 同一因素存两条 (实测 其他粉尘（环氧树脂）)。
+                    _nm = lambda s: (str(s or "").replace("（", "(").replace("）", ")")
+                                     .replace(" ", "").strip())  # noqa: E731
+                    _have = {_nm(x.get("factor")) for x in dets}
                     for dt in rp["detections"]:
-                        if dt.get("factor") and dt.get("factor") not in [x.get("factor") for x in dets if x.get("factor")]:
+                        _f = _nm(dt.get("factor"))
+                        if _f and _f not in _have:
+                            _have.add(_f)
+                            seen_det.add(str(dt.get("factor")).strip())
                             # dt 键: factor/ctwa/cste/cme (parse_report_file 检测表提取)
                             dets.append({"factor": dt.get("factor"), "ctwa": dt.get("ctwa", ""), "factory": dt.get("factory", "")})
                 if rp.get("buildings"):
@@ -1209,15 +1217,25 @@ def import_materials_from_dir(pid: str) -> dict:
                                     s += 1
                                 return s
 
-                            def _near_dup(a: str, b: str) -> bool:
-                                """近似同名判定: 一方是另一方的前缀且长度差<=2。
+                            def _norm_name(s: str) -> str:
+                                """因素名归一: 全角/半角括号、空格统一 (用于判重)。
 
-                                实测 OCR/视觉会把 '电焊烟尘' 截成 '电焊烟' → 同一因素两条。
+                                实测同一因素会以 '其他粉尘(树脂)' / '其他粉尘（树脂）' 两种
+                                写法出现 (不同页 OCR 结果) → 不归一会存成两条重复项。
+                                """
+                                return (str(s).replace("（", "(").replace("）", ")")
+                                        .replace(" ", "").strip())
+
+                            def _near_dup(a: str, b: str) -> bool:
+                                """近似同名判定: 归一后相等, 或一方是另一方前缀且长度差<=2。
+
+                                实测视觉/OCR 会把 '电焊烟尘' 截成 '电焊烟' → 同一因素两条。
                                 只判前缀 + 长度接近, 避免把 '苯' 与 '苯乙烯'(真不同) 合并。
                                 """
-                                if a == b:
+                                na, nb = _norm_name(a), _norm_name(b)
+                                if na == nb:
                                     return True
-                                lo, hi = (a, b) if len(a) <= len(b) else (b, a)
+                                lo, hi = (na, nb) if len(na) <= len(nb) else (nb, na)
                                 return len(hi) - len(lo) <= 2 and len(lo) >= 2 and hi.startswith(lo)
 
                             for _it in (_vr.get("detections") or []):
@@ -1239,8 +1257,9 @@ def import_materials_from_dir(pid: str) -> dict:
                                     (k for k in _idx if _near_dup(k, fac)), None)
                                 if _hit is not None and _hit in seen_det:
                                     _old = _idx[_hit]
-                                    # 名字更长(更完整)的一侧获胜
-                                    if len(fac) > len(_hit):
+                                    # 名字更完整的一侧获胜 (按**归一后**长度比较,
+                                    # 全角/半角括号不算"更完整")
+                                    if len(_norm_name(fac)) > len(_norm_name(_hit)):
                                         _old["factor"] = fac
                                         _idx.pop(_hit, None)
                                         _idx[fac] = _old
@@ -1254,6 +1273,26 @@ def import_materials_from_dir(pid: str) -> dict:
                                 seen_det.add(fac)
                                 _idx[fac] = _new
                                 dets.append(_new)
+                            # 丢弃"碎片": 名字被另一条**完整因素名**包含, 且自身无任何数据。
+                            # 实测 '酸酐'(p12) 是 '邻苯二甲酸酐' 的截断 → 无浓度无结果,
+                            # 属 OCR 误切; 而 '碳酸钙'/'照度'(真因素只是未测) 不满足"被包含"故保留。
+                            def _is_fragment(x: dict, pool: list) -> bool:
+                                nm = _norm_name(x.get("factor"))
+                                if not nm or len(nm) > 4:
+                                    return False
+                                if x.get("ctwa") or x.get("sio2") or x.get("results"):
+                                    return False
+                                for o in pool:
+                                    if o is x:
+                                        continue
+                                    on = _norm_name(o.get("factor"))
+                                    if len(on) > len(nm) and nm in on:
+                                        return True
+                                return False
+
+                            dets[:] = [d for d in dets if not _is_fragment(d, dets)]
+                            seen_det.clear()
+                            seen_det.update(str(d.get("factor")) for d in dets)
                     except Exception:
                         pass  # 视觉提取失败不应中断导入 (文本层数据已拿到)
             # 工艺
