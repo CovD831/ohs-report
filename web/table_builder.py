@@ -312,12 +312,25 @@ def build_data_tables(pd: dict) -> dict:
             "merge_rect": [(0, 2, 0, 3)],
             "rows": hg_rows}
 
-    # 数字溯源: 本函数全部表都由规则/正则建 (数字绝不经 LLM) → 统一标 rule。
-    # 数字来源: project.data 里的提取字段 (pdfplumber/正则/表单), 出处在材料文件。
+    # 数字溯源: 各表数字都来自 project.data 提取字段 (非 LLM 在"建表"环节生成)。
+    # ⚠ 但"建表不用 LLM" ≠ "数字可信": 上游提取器可能本身是 LLM 拼出来的
+    #   (用户实证: investment=5000 就是 LLM 拼的)。故逐个字段声明可信度:
+    #   - TRACEABLE: 直接从材料规则/正则取出, 能指回材料 (materials/equipment_detail/
+    #     buildings/staffing/hazard_grid/products 等, 走 pdfplumber/正则/表单)
+    #   - 其余 (如从自由文本 summarise 出来的 investment) → traceable=False,
+    #     标 untraced, 审计判 unverified, 逼人工核实出处
     _RULE_EV = {"file": "材料提取字段 (规则/正则)", "page": None,
                 "text": "该表数字来自 project.data 提取字段, 非 LLM 生成"}
-    for _t in tables.values():
-        if isinstance(_t, dict):
+    # 可为 None: 上游自由文本聚合, 无法在材料里指到确定出处 → 不许盖 rule 章
+    _UNTRACED_FIELDS = {"investment"}
+    _UNTRACED_EV = {"file": "project.data.investment", "page": None, "text": ""}
+    for _tname, _t in tables.items():
+        if not isinstance(_t, dict):
+            continue
+        if _tname == "项目概况表":
+            _t.setdefault("prov", {"_default": prov_rule(_RULE_EV)})
+            _t["prov"]["2_3"] = prov_rule(_UNTRACED_EV, field="investment", traceable=False)
+        else:
             _t.setdefault("prov", prov_rule(_RULE_EV))
     return tables
 

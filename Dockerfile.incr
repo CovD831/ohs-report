@@ -1,0 +1,7 @@
+# 增量重建: 复用已装好依赖的现镜像作 base, 只覆盖源码层 (依赖未变, 免 pip 重装)
+FROM ohs-report:latest
+WORKDIR /app
+COPY knowledge/ knowledge/
+COPY web/ web/
+COPY tools/ tools/
+COPY acquire/ acquire/

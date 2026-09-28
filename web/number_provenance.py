@@ -212,7 +212,8 @@ def audit_tables(built_tables: dict) -> dict:
                         source = default.get("source")
                         evidence = _norm_evidence(default.get("evidence"))
                     source = (source or "unknown").lower()
-                    # 表头数字 (序号列 1,2,3 之类) 不算材料数据: 靠 rule 默认放行
+                    # 有据判定: rule/std 是可信来源 (rule 已由 prov_rule 保证"带出处才叫 rule");
+                    # untraced/llm/unknown 必须自带 evidence, 否则判 unverified
                     ok = _evidence_ok(evidence) or source in ("rule", "std")
                     if ok:
                         t_ev += 1
@@ -253,9 +254,27 @@ def audit_project(data: dict) -> dict:
 
 # ============ 供建表侧使用的标记助手 ============
 
-def prov_rule(evidence=None) -> dict:
-    """规则/正则抽取所得 (带材料出处)"""
-    return {"source": "rule", "evidence": _norm_evidence(evidence)}
+def prov_rule(evidence=None, field: str = "", traceable: bool = True) -> dict:
+    """规则/正则抽取所得。
+
+    ⚠ 关键诚实性约束: 只有该值能在材料里指到出处时才叫 rule。
+    上游提取器若本身不可信 (例如 investment 字段可能是 LLM 从报告里"拼"出来的),
+    必须传 traceable=False → 降级为 untraced, 审计时判 unverified。
+    宁可说"我证不了", 也不能给可疑数字盖上"非 LLM 生成"的章。
+    """
+    ev = _norm_evidence(evidence)
+    if traceable and _evidence_ok(ev):
+        d: dict = {"source": "rule", "evidence": ev}
+    else:
+        # 规则路径但无出处 → 标记为 untraced (审计会判 unverified, 逼人补出处)
+        d = {"source": "untraced"}
+        if field:
+            d["field"] = field
+        if ev:
+            d["evidence"] = ev
+    if field:
+        d["field"] = field
+    return d
 
 
 def prov_std(ref: str = "") -> dict:
