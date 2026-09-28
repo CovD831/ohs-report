@@ -678,6 +678,29 @@ async def api_coverage(pid: str):
     return JSONResponse({"ok": True, "coverage": cov})
 
 
+@app.get("/api/projects/{pid}/provenance", response_class=JSONResponse)
+async def api_provenance(pid: str):
+    """数字溯源审计: 每个数字的来源 (rule/std/llm) + 无据清单
+
+    用户红线: 不信任 LLM 提取/合成的数字。本端点把"这个数字哪来的"变成可审计事实。
+    built_tables 缺失时现场用规则建一次 (只读, 不落盘), 保证面板始终有数据。
+    """
+    p = get_project(pid)
+    if not p:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    data = p["data"]
+    bt = data.get("built_tables") or {}
+    live = False
+    if not bt:
+        from web.table_builder import build_data_tables
+        bt = build_data_tables(data)
+        live = True
+    from web.number_provenance import audit_tables
+    rep = audit_tables(bt)
+    rep["live"] = live          # True=表为现场规则生成 (项目还没导入沉淀)
+    return JSONResponse({"ok": True, "provenance": rep})
+
+
 @app.get("/api/materials", response_class=JSONResponse)
 def api_materials():
     """已上传的材料文件清单 (附录A分类)"""

@@ -26,8 +26,9 @@ from knowledge.project_assess import assess_project  # noqa: E402
 from knowledge.oel import connect  # noqa: E402
 from web.projects_db import get_project  # noqa: E402
 
-BASE = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/v1/chat/completions")
-MODEL = os.environ.get("LLM_MODEL", "deepseek-v4-flash-vision-exp")
+# provider 统一: workbuddy2api 中转 (勿改回官方直连 — 全项目单一口径)
+BASE = os.environ.get("LLM_BASE_URL", "https://workbuddy2api.henryai.top/v1/chat/completions")
+MODEL = os.environ.get("LLM_MODEL", "deepseek-v4.1-flash")
 KEY_ENV = os.environ.get("LLM_KEY_ENV", "DEEPSEEK_API_KEY")
 
 
@@ -43,7 +44,7 @@ _NARR_SYSTEM = (
 
 
 def _llm(prompt: str, system: str = _NARR_SYSTEM) -> str:
-    """调用 LLM (DeepSeek 官方, key 从环境变量) — 3 次重试"""
+    """调用 LLM (workbuddy2api 中转, model=deepseek-v4.1-flash; key 从环境变量) — 3 次重试"""
     key = os.environ.get(KEY_ENV) or _load_env_key(KEY_ENV)
     if not key:
         raise RuntimeError(f"{KEY_ENV} 未配置")

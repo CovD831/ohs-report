@@ -23,6 +23,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from web.number_provenance import prov_llm, prov_rule  # noqa: E402
+
 TABLES_KEY = "built_tables"  # 存在 project.data 里
 
 _CACHE_PATH = Path(__file__).resolve().parent.parent / "data" / "llm_tables_cache.json"
@@ -153,7 +155,18 @@ def build_weather_table(region: str) -> dict:
         ["10", "大气环境", "待补充（以项目环评资料为准）", ""],
         ["11", "积雪", f"往年最大积雪量 {W('snow_max')}", ""],
     ]
-    return {"cols": ["序号", "项目", "情况和数据", "备注"], "rows": rows,
+    # 数字溯源标记: 地质/水文/大气环境 = 代码写死"待补充"(规则);
+    # 其余行的气象值来自 LLM 公开资料 → 标 llm 并附来源说明 (审计要求带 evidence)
+    llm_ev = {"file": f"公开气候资料:{region}", "page": None,
+              "text": f"地区 {region} 公开气候常年统计值 (LLM 获取, 需人工核实)"}
+    _RULE_ROWS = {1, 2, 8, 9}      # 索引(0基): 地质/地震/水文/大气环境 — 代码固定
+    prov = {"_default": prov_rule({"file": "build_weather_table 固定规则",
+                                   "text": "代码固定值/待补充 (非LLM生成)"})}
+    for i in range(len(rows)):
+        if i in _RULE_ROWS:
+            continue
+        prov[f"{i}_2"] = prov_llm(llm_ev, field="气象常年值")
+    return {"cols": ["序号", "项目", "情况和数据", "备注"], "rows": rows, "prov": prov,
             "note": f"气象数据来源: {region}公开气候资料" if any("待补充" not in r[2] for r in rows) else ""}
 
 
@@ -299,6 +312,13 @@ def build_data_tables(pd: dict) -> dict:
             "merge_rect": [(0, 2, 0, 3)],
             "rows": hg_rows}
 
+    # 数字溯源: 本函数全部表都由规则/正则建 (数字绝不经 LLM) → 统一标 rule。
+    # 数字来源: project.data 里的提取字段 (pdfplumber/正则/表单), 出处在材料文件。
+    _RULE_EV = {"file": "材料提取字段 (规则/正则)", "page": None,
+                "text": "该表数字来自 project.data 提取字段, 非 LLM 生成"}
+    for _t in tables.values():
+        if isinstance(_t, dict):
+            _t.setdefault("prov", prov_rule(_RULE_EV))
     return tables
 
 

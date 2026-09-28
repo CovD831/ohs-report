@@ -233,6 +233,20 @@ table td.col-method { min-width: 100px; }
         <div id="covQuality" style="margin-top:6px;"></div>
       </div>
     </div>
+
+    <div class="nav-card" id="provCard" style="cursor:pointer;" onclick="toggleProvDetail()">
+      <div class="row" style="justify-content:space-between;">
+        <span class="label">数字来源</span>
+        <span class="value mono" id="provSummary">—</span>
+      </div>
+      <div style="height:4px;background:var(--border);border-radius:2px;margin:8px 0 4px;overflow:hidden;">
+        <div id="provBar" style="height:100%;width:0;background:var(--success);border-radius:2px;transition:width .3s;"></div>
+      </div>
+      <div id="provHint" style="font-size:11px;color:var(--text-muted);"></div>
+      <div id="provDetail" style="display:none;font-size:11.5px;line-height:1.8;max-height:240px;overflow-y:auto;margin-top:6px;">
+        <div id="provList"></div>
+      </div>
+    </div>
   </div>
 
   <!-- 中栏: 内容 -->
@@ -390,6 +404,62 @@ async function loadOverview() {
   rb.textContent = overview.has_data ? `风险分类: ${overview.risk_level}` : '风险分类: 待上传材料';
   rb.className = 'badge ' + (overview.has_data ? 'badge-standard' : 'badge-gray');
   refreshCoverage();
+  refreshProvenance();
+}
+
+async function refreshProvenance() {
+  try {
+    const r = await fetch(`/api/projects/${pid}/provenance`);
+    const d = await r.json();
+    if (!d.ok) return;
+    const p = d.provenance, s = p.summary;
+    document.getElementById('provSummary').textContent = s.ok
+      ? `${s.numbers} 个数字`
+      : `${s.unverified} 个存疑`;
+    const bar = document.getElementById('provBar');
+    bar.style.width = (s.numbers ? (s.with_evidence * 100 / s.numbers) : 100) + '%';
+    bar.style.background = s.ok ? 'var(--success)' : 'var(--danger)';
+
+    const hint = document.getElementById('provHint');
+    if (p.live) {
+      hint.textContent = '表为现场规则生成 (尚未导入沉淀)';
+    } else if (s.ok) {
+      hint.textContent = `全部可溯源 ✓ (${s.tables} 张表)`;
+    } else {
+      hint.textContent = `${s.unverified} 个数字无出处 — 点击查看`;
+    }
+
+    // 明细: 优先列无据数字 (这些才是风险), 其次列 LLM 来源数字
+    let h = '';
+    const bad = p.tables.filter(t => t.unverified > 0);
+    if (bad.length) {
+      h += `<div style="color:var(--danger);margin-bottom:4px;">⛔ 无出处数字 (LLM 可能合成):</div>`;
+      bad.forEach(t => {
+        h += `<div style="margin-bottom:4px;"><b>${t.name}</b> <span class="mono" style="color:var(--text-muted);">${t.unverified} 个</span></div>`;
+        t.unverified_samples.forEach(s => {
+          h += `<div style="padding-left:10px;color:var(--text-muted);">` +
+               `<span class="mono" style="color:var(--danger);">${s.value}</span> ` +
+               `← ${escapeHtml(s.cell)} <span style="opacity:.7;">(${s.source})</span></div>`;
+        });
+      });
+    }
+    if (!bad.length) {
+      h += `<div style="color:var(--success);">规则/标准库来源, 无 LLM 合成数字 ✓</div>`;
+    }
+    h += `<div style="margin-top:6px;color:var(--text-muted);font-size:11px;">` +
+         `来源分布: rule/std ${s.with_evidence} · 存疑 ${s.unverified} · 合计 ${s.numbers}</div>`;
+    document.getElementById('provList').innerHTML = h;
+  } catch (e) { /* 面板失败不阻断主流程 */ }
+}
+
+function toggleProvDetail() {
+  const el = document.getElementById('provDetail');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 async function refreshCoverage() {

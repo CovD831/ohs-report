@@ -27,13 +27,16 @@ if not DEEPSEEK_KEY:
             if ln.startswith("DEEPSEEK_API_KEY="):
                 DEEPSEEK_KEY = ln.split("=", 1)[1].strip()
                 break
-DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions"
+# provider 统一: workbuddy2api 中转 (勿改回官方直连 — 全项目单一口径)
+DEEPSEEK_URL = os.environ.get(
+    "LLM_BASE_URL", "https://workbuddy2api.henryai.top/v1/chat/completions")
+DEEPSEEK_MODEL = os.environ.get("LLM_MODEL", "deepseek-v4.1-flash")
 
 
 def _llm(prompt: str, system: str, provider: str = "deepseek") -> str:
     import urllib.request
     body = json.dumps({
-        "model": "deepseek-v4-flash-vision-exp",
+        "model": DEEPSEEK_MODEL,
         "messages": [{"role": "system", "content": system},
                      {"role": "user", "content": prompt}],
         "temperature": 0.2, "max_tokens": 2000,
