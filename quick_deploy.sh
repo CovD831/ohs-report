@@ -14,8 +14,19 @@ tar czf /tmp/ohs_src.tgz --exclude '.git' --exclude '.venv' --exclude 'raw' \
     --exclude '.env*' --exclude 'docker-compose.yml' knowledge web tools acquire requirements.txt Dockerfile
 
 echo "=== 2. 上送并解压 ==="
-scp -q /tmp/ohs_src.tgz $SRV:/tmp/
-ssh $SRV "mkdir -p $REMOTE_DIR && cd $REMOTE_DIR && tar xzf /tmp/ohs_src.tgz && rm /tmp/ohs_src.tgz"
+# SSH 在本机网络下偶发中途断连 (Connection closed by remote host / lost connection)。
+# scp 加保活参数 + 重试, 避免 2MB 传输半途失败要手工重来。
+SCP_OPTS="-q -o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=6"
+SSH_OPTS="-o ConnectTimeout=25 -o ServerAliveInterval=15 -o ServerAliveCountMax=6"
+_ok=0
+for _try in 1 2 3; do
+  if scp $SCP_OPTS /tmp/ohs_src.tgz $SRV:/tmp/ && \
+     ssh $SSH_OPTS $SRV "cd $REMOTE_DIR && tar xzf /tmp/ohs_src.tgz && rm -f /tmp/ohs_src.tgz"; then
+    _ok=1; break
+  fi
+  echo "  ⚠ 上送失败(第 $_try 次), 5s 后重试…"; sleep 5
+done
+[ "$_ok" = 1 ] || { echo "❌ 源码上送 3 次均失败 — 检查网络/SSH"; exit 1; }
 
 echo "=== 3. 远端构建 (服务器2核, 约5-8分钟) ==="
 # --network host: 容器build时Docker bridge出网受限, 必须用host网络才能pip install
