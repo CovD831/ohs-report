@@ -271,7 +271,12 @@ def build_data_tables(pd: dict) -> dict:
                 "rows": [[i] + r for i, r in enumerate(p2_rows, 1)]}
 
     # ===== 设备明细表 (表3.6-1, 9列双层) ← equipment_detail — 同源 section_filler sec3 =====
+    # 回退: 无 equipment_detail 时用 equipment (提取层两套字段并存, 老项目只有 equipment)
     eq_d = pd.get("equipment_detail") or []
+    if not eq_d:
+        eq_d = [{"name": e} if isinstance(e, str) else e
+                for e in (pd.get("equipment") or [])]
+        eq_d = [x for x in eq_d if isinstance(x, dict)]
     if eq_d:
         ed9 = [[d.get("车间", ""), d.get("位号", ""),
                 d.get("name", "") if isinstance(d, dict) else d,

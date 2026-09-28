@@ -643,8 +643,15 @@ def api_update_project(pid: str, payload: dict):
         try:
             from web.company_profile import build_profile
             data["profile"] = build_profile(data)
-            from web.table_builder import build_all_tables
-            data["built_tables"] = build_all_tables(data)
+            try:
+                from web.derived_fields import derive_fields
+                for _k, _v in derive_fields(data).items():
+                    if _v:
+                        data[_k] = _v
+            except Exception:
+                pass
+            from web.table_skeleton import build_skeletons
+            data["built_tables"] = build_skeletons(data)
         except Exception:
             pass
     update_project(pid, payload.get("name", p["name"]), data)
@@ -747,8 +754,17 @@ def api_import_materials(pid: str):
     try:
         from web.company_profile import build_profile
         merged["profile"] = build_profile(merged)
-        from web.table_builder import build_all_tables
-        merged["built_tables"] = build_all_tables(merged)
+        # 派生字段 (纯规则): 辐射源项 / 工作制度 — 真实报告1.1基本情况必备字段
+        try:
+            from web.derived_fields import derive_fields
+            for _k, _v in derive_fields(merged).items():
+                if _v:                       # 材料没给的派生项不覆盖旧值
+                    merged[_k] = _v
+        except Exception:
+            pass
+        # 表骨架先行: 36 张表全部建出来 (能填的填, 缺的标待补充/待评估)
+        from web.table_skeleton import build_skeletons
+        merged["built_tables"] = build_skeletons(merged)
     except Exception:
         pass  # 建表失败不阻断导入 (导出回退现算)
     # 数据质检: 导入后自动跑, 结果沉淀 (前端/导出前可查; error 不阻断但醒目提示)
