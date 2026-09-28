@@ -765,8 +765,18 @@ def api_import_materials(pid: str):
         # 表骨架先行: 36 张表全部建出来 (能填的填, 缺的标待补充/待评估)
         from web.table_skeleton import build_skeletons
         merged["built_tables"] = build_skeletons(merged)
+        _ext_pid = pid
+        _ext_data = dict(merged)
     except Exception:
-        pass  # 建表失败不阻断导入 (导出回退现算)
+        _ext_pid, _ext_data = None, None
+    # 外部取数表 (气象等需联网/LLM): 后台异步补齐, 不阻塞导入返回
+    # (用户设计: "异步联网请求, 同时也可以开始建表了")
+    if _ext_pid and _ext_data is not None:
+        try:
+            from web.external_tables import fill_external_async
+            fill_external_async(_ext_pid, _ext_data)
+        except Exception:
+            pass
     # 数据质检: 导入后自动跑, 结果沉淀 (前端/导出前可查; error 不阻断但醒目提示)
     qr = None
     try:

@@ -471,12 +471,28 @@ async function refreshCoverage() {
     document.getElementById('covSummary').textContent = `${s.ready}/${s.total}`;
     document.getElementById('covBar').style.width = (s.ready * 100 / s.total) + '%';
     const pend = c.tables.filter(t => t.status === 'pending');
-    let h = pend.length
-      ? `<div style="color:var(--tertiary);margin-bottom:2px;">待数据 ${pend.length} 张:</div>` +
-        pend.map(t => `<div><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--tertiary);margin-right:6px;vertical-align:1px;"></span>${t.name} <span class="mono" style="color:var(--text-muted);">§${t.section}</span></div>`).join('')
-      : `<div style="color:var(--success);">全部就绪 ✓</div>`;
+    const filling = c.tables.filter(t => t.status === 'filling');
+    const awaitA = c.tables.filter(t => t.status === 'await_assess');
+    let h = '';
+    if (filling.length) {
+      h += `<div style="color:var(--primary);margin-bottom:2px;">⟳ 取数中 ${filling.length} 张 (后台联网):</div>` +
+        filling.map(t => `<div><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--primary);margin-right:6px;vertical-align:1px;"></span>${t.name} <span class="mono" style="color:var(--text-muted);">§${t.section}</span></div>`).join('');
+    }
+    if (pend.length) {
+      h += `<div style="color:var(--tertiary);margin:4px 0 2px;">待数据 ${pend.length} 张:</div>` +
+        pend.map(t => `<div><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--tertiary);margin-right:6px;vertical-align:1px;"></span>${t.name} <span class="mono" style="color:var(--text-muted);">§${t.section}</span></div>`).join('');
+    }
+    if (awaitA.length) {
+      h += `<div style="color:var(--text-muted);margin:4px 0 2px;">骨架已建 ${awaitA.length} 张 (待评估填充):</div>` +
+        `<div style="color:var(--text-muted);padding-left:12px;opacity:.8;">` +
+        awaitA.slice(0, 6).map(t => t.name).join('、') +
+        (awaitA.length > 6 ? ` 等${awaitA.length}张` : '') + `</div>`;
+    }
+    if (!filling.length && !pend.length && !awaitA.length) {
+      h += `<div style="color:var(--success);">全部就绪 ✓</div>`;
+    }
     if (q.errors || q.warns) {
-      h += `<div style="color:var(--danger);">⛔ 质检错误 ${q.errors}</div>` +
+      h += `<div style="color:var(--danger);margin-top:4px;">⛔ 质检错误 ${q.errors}</div>` +
            (q.warns ? `<div style="color:var(--tertiary);">⚠️ 待核实 ${q.warns}</div>` : '');
     }
     document.getElementById('covPendingList').innerHTML = h;

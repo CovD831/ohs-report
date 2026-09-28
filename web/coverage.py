@@ -43,6 +43,12 @@ def coverage_report(data: dict) -> dict:
             if bt and bt.get("rows"):
                 row["status"] = "ready"
                 row["rows"] = len(bt["rows"])
+            elif bt and bt.get("status") == "filling":
+                # 外部取数表: 后台联网填充中 (异步, 不阻塞导入)
+                row["status"] = "filling"
+            elif bt and bt.get("status") == "await_assess":
+                # 评估链路表: 骨架已建, 待危害判定后填充
+                row["status"] = "await_assess"
             elif name not in _DATA_DRIVEN:
                 # 标准库/评估链路必产: 导出时 filler 现算兜底
                 row["status"] = "ready"
@@ -50,9 +56,17 @@ def coverage_report(data: dict) -> dict:
             tables.append(row)
 
     ready = sum(1 for t in tables if t["status"] == "ready")
+    filling = sum(1 for t in tables if t["status"] == "filling")
+    await_assess = sum(1 for t in tables if t["status"] == "await_assess")
     qr = data.get("quality_report") or {}
     return {
-        "summary": {"ready": ready, "pending": len(tables) - ready, "total": len(tables)},
+        "summary": {
+            "ready": ready,
+            "filling": filling,           # 后台联网填充中
+            "await_assess": await_assess,  # 待评估后填充 (骨架已建)
+            "pending": len(tables) - ready - filling - await_assess,
+            "total": len(tables),
+        },
         "tables": tables,
         "quality": {
             "errors": len(qr.get("errors") or []),

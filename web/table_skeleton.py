@@ -71,9 +71,10 @@ def build_skeletons(data: dict, assess: dict | None = None) -> dict:
     """按骨架名单建全部表 (能填的填, 缺的占位)
 
     复用 build_data_tables 已建好的表 (不重复建), 只补缺失的骨架。
+    外部取数表 (气象) 放"filling"占位, 由 external_tables 后台补齐 — 不阻塞导入。
     """
     from web.table_builder import build_data_tables
-    from web.field_projection import AGGREGATORS  # noqa: F401 (保持导入一致性)
+    from web.external_tables import EXTERNAL_TABLES, placeholder as _ext_ph
 
     built = dict(build_data_tables(data))
     dd = _data_driven()
@@ -84,6 +85,13 @@ def build_skeletons(data: dict, assess: dict | None = None) -> dict:
             t = dict(built[name])
             t.setdefault("status", "filled" if t.get("rows") else "await_data")
             out[name] = t
+            continue
+
+        # 外部取数表 (需联网/LLM): 占位, 后台填 (用户设计: 异步联网 + 同时建表)
+        if name in EXTERNAL_TABLES:
+            ph = _ext_ph(name)
+            ph["section"] = section
+            out[name] = ph
             continue
 
         if name in dd:
