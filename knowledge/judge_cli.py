@@ -130,6 +130,12 @@ def judge_physical(conn, factor_name: str, value: float, **cond) -> dict:
                 break
         if match:
             limit = to_float(match["value"])
+            # ⚠ value 可能为 None (项目有该危害因素但**未检测/未给值**)。
+            #   原实现直接 value <= limit → TypeError 崩整条评估链 (实测 视觉数据带入
+            #   "高温" 无值时触发)。无值应判"待检测"而非崩。
+            if value is None:
+                return {"factor": factor_name, "pass": None, "checks": [],
+                        "error": "无检测值 (待补充接触水平)"}
             ok = value <= limit
             return {"factor": factor_name, "pass": ok,
                     "checks": [{"rule": f"GBZ2.2表8 WBGT({rate},{labor}级)", "value": value,
@@ -143,6 +149,10 @@ def judge_physical(conn, factor_name: str, value: float, **cond) -> dict:
         match = next((r for r in oels if r["oel_type"] == oel_type), None)
         if match:
             limit = to_float(match["value"])
+            # 同 高温: 无检测值时应判"待检测", 不能 value <= limit (None 比较崩)
+            if value is None:
+                return {"factor": factor_name, "pass": None, "checks": [],
+                        "error": "无检测值 (待补充接触水平)"}
             ok = value <= limit
             return {"factor": factor_name, "pass": ok,
                     "checks": [{"rule": f"GBZ2.2 11.2.1 {oel_type}≤{limit}dB(A)",
