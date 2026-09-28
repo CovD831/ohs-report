@@ -27,12 +27,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # 评估链路驱动表 → 需 assess (危害判定/限值), 导入时未算则占位
 _ASSESS_DRIVEN = {
     "危害因素识别表", "健康影响表", "物理因素健康影响表", "关键控制点表",
-    "接触限值表", "噪声接触限值表", "高温接触限值表", "室内空气质量标准表",
+    "接触限值表", "室内空气质量标准表",
     "类比可比性表", "类比PPE配备表", "类比PPE有效性表", "类比工作日写实表",
     "劳动强度分级表", "卫生特征分级表", "周边环境表", "应急物资清单",
 }
-# 注: 应急物资清单 在 2.1.1/7.1 两处出现; 数据来自 emergency_supplies 提取字段,
-#     但 2.1.1 处常为现状应急物资 → 归评估/数据混合, 导入时能填则填
+# 注1: 应急物资清单 在 2.1.1/7.1 两处出现; 数据来自 emergency_supplies 提取字段,
+#      但 2.1.1 处常为现状应急物资 → 归评估/数据混合, 导入时能填则填
+# 注2: 噪声/高温接触限值表 已移出本集 → 数据源是 oel_limit 标准库 (GBZ 2.2),
+#      由 build_standard_tables 直接建 (真实报告里这张表列国标限值, 与项目检测无关)
+
+# 检查表类: 数据源 = GBZ 1 标准库条款 (_CHECK_COLS 四列), 不依赖项目评估结果。
+# 2026-09 修正: 原先归 await_assess → 面板显示"待评估填充", 但实测 18 张里
+# 绝大多数的数据源是 gbz1_rule 标准库 (纯查表), 导入时即可建 → status='standard'.
+# 只有"结果/评价"两列需人工把关, 与真实报告一致 (真实报告这两列也多为"待确认")。
 _STANDARD_DRIVEN = {
     "选址检查表", "总体布局检查表", "建筑卫生学检查表", "辅助用室检查表",
     "辅助用室设置表", "管理制度检查表", "防护设施检查表",
@@ -43,6 +50,111 @@ _STANDARD_DRIVEN = {
 
 # 检查表统一样板 (4 列; 结果/评价列留人工把关 — 与 fill_section 同构)
 _CHECK_COLS = ["卫生要求", "检查依据", "检查结果", "评价"]
+
+# 检查表 → gbz1_rule.theme (标准库查询键)
+# 数据源单一: 标准库条款 (含 GBZ 1 条款号, 真实可追溯), 不硬编码要求文本
+_CHECK_THEME = {
+    "选址检查表": ["选址"],
+    "总体布局检查表": ["总体布局"],
+    "建筑卫生学检查表": ["建筑卫生学"],
+    "辅助用室检查表": ["辅助用室"],
+    "工艺检查表": ["防尘防毒", "防毒"],
+    "设备布局检查表": ["总体布局", "防噪声振动"],
+    "防护设施检查表": ["防尘防毒", "防噪声振动", "防暑防寒", "防腐", "通风"],
+    "应急救援检查表": ["应急救援"],
+    "管理制度检查表": [],          # 管理制度无 GBZ1 theme → 由项目 management 字段填
+    "PPE拟配置检查表": [],
+    "PPE配备表": [],
+    "辅助用室设置表": ["辅助用室"],
+}
+
+
+def _build_check_table(name: str, conn) -> dict | None:
+    """从 gbz1_rule 标准库建检查表 (结果/评价列留空 = 人工把关, 同真实报告)
+
+    标准库是单一数据源: 条款换版只改库, 不改代码 (与 MUST_COVER 同原则)。
+    """
+    themes = _CHECK_THEME.get(name)
+    if not themes:
+        return None
+    rows = []
+    for th in themes:
+        for r in conn.execute(
+                "SELECT clause, rule FROM gbz1_rule WHERE theme=? ORDER BY clause", (th,)):
+            clause, rule = str(r[0] or ""), str(r[1] or "")
+            if not rule:
+                continue
+            rows.append([rule, f"GBZ 1—2010 {clause}", "待确认", "待评价"])
+    if not rows:
+        return None
+    from web.number_provenance import prov_std
+    return {"cols": list(_CHECK_COLS), "rows": rows,
+            "prov": prov_std(f"gbz1_rule:{'/'.join(themes)}")}
+
+
+# 物理因素接触限值表 → oel_limit 库 (GBZ 2.2) 的因子名
+# 2026-09: 数据源是**标准库**不是项目检测 — 真实报告里这张表列的是国标限值表,
+# 与项目是否做过检测无关 (项目没测也要列限值供比对)。
+_PHYS_LIMIT_FACTOR = {
+    "噪声接触限值表": ["噪声", "脉冲噪声"],
+    "高温接触限值表": ["高温"],
+}
+
+
+def _build_phys_limit_table(name: str, conn) -> dict | None:
+    """从 oel_limit 建物理因素接触限值表 (GBZ 2.2 条款, 可追溯)"""
+    factors = _PHYS_LIMIT_FACTOR.get(name)
+    if not factors:
+        return None
+    rows = []
+    for f in factors:
+        for r in conn.execute(
+                "SELECT factor_name, oel_type, value, unit, conditions, source_standard "
+                "FROM oel_limit WHERE factor_name=? ORDER BY oel_type", (f,)):
+            nm, otype, val, unit, cond, src = (str(x or "") for x in r)
+            rows.append([nm, otype, f"{val} {unit}".strip(), cond, src or "GBZ 2.2"])
+    if not rows:
+        return None
+    from web.number_provenance import prov_std
+    return {"cols": ["危害因素", "接触限值类型", "限值", "适用条件", "依据标准"],
+            "rows": rows, "prov": prov_std(f"oel_limit:{'/'.join(factors)}")}
+
+
+def build_standard_tables(data: dict, conn=None,
+                          section_of: dict | None = None) -> dict:
+    """建"标准库驱动"的表 (检查表类 + 物理限值表) —— 导入时即可填
+
+    用户定: 表=报告骨架, 拿到材料就该建好。这类表的数据源是标准库, 与项目无关,
+    所以不该等到"评估完成"才出现。
+
+    ⚠ 失败不静默: 单表建失败记入 _errors 并打印 (排查期), 不整体吞异常。
+      (曾因 except 全吞 + SQL 列名写错(source vs source_standard), 表现为"表空")
+    """
+    out: dict = {}
+    so = section_of or {}
+    errs: list[str] = []
+    try:
+        if conn is None:
+            from knowledge.oel import connect as _c
+            conn = _c()
+    except Exception as e:
+        print(f"[table_skeleton] 标准库连接失败: {e}")
+        return out
+    jobs = ([(n, _build_check_table) for n in sorted(_STANDARD_DRIVEN)]
+            + [(n, _build_phys_limit_table) for n in sorted(_PHYS_LIMIT_FACTOR)])
+    for name, fn in jobs:
+        try:
+            t = fn(name, conn)
+        except Exception as e:
+            errs.append(f"{name}: {type(e).__name__}: {e}")
+            continue
+        if t:
+            t["status"] = "filled"
+            t["section"] = so.get(name, "")
+            out[name] = t
+    if errs:
+        print(f"[table_skeleton] 标准库表建失败 {len(errs)} 张: " + "; ".join(errs[:5]))
+    return out
 
 
 def _skeleton_names() -> list[tuple[str, str]]:
@@ -77,6 +189,10 @@ def build_skeletons(data: dict, assess: dict | None = None) -> dict:
     from web.external_tables import EXTERNAL_TABLES, placeholder as _ext_ph
 
     built = dict(build_data_tables(data))
+    # 标准库驱动表 (检查表类): 导入时即填 (GBZ1 条款查表, 与项目无关)
+    names_map = dict(_skeleton_names())
+    std_tables = build_standard_tables(data, section_of=names_map)
+    built.update(std_tables)
     dd = _data_driven()
     out: dict[str, dict] = {}
 

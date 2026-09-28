@@ -140,6 +140,51 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
                     if f:
                         h = hazards.setdefault(f, {"sources": set(), "via": set()})
                         h["sources"].add(f"工序[{u}/{p}]")
+    # 2.5) 设备/工序→物理因素 (噪声/高温/工频电场) —— 2026-09 新增
+    # 依据 (8份真实报告调研): 物理因素在报告里是**因子级**, 挂在"评价单元|工序|岗位",
+    #   从不点名具体设备 (7/8 报告只用泛化表述"高噪声设备集中布置")。
+    #   表格形态示例: "水泵组件生产单元 | 机加工 | 设备运行过程中产生 | 油雾、噪声"
+    # 故: 用 physical_factors(设备) 作机制, 但按"工序/单元"归因 (sources 记工序),
+    #   不把设备名塞进 sources —— 与真实报告口径一致。
+    # 物理因素有 GBZ 2.2 限值 (库内含噪声 LEX,8h=85dB / 高温 WBGT), 走法规表不靠 LLM。
+    try:
+        from web.hazard_grid import physical_factors
+        _phys_src: dict[str, set] = {}
+        _pairs = []
+        if processes:
+            for pu in processes:
+                u, p = str(pu.get("unit") or ""), str(pu.get("process") or "")
+                if u or p:
+                    _pairs.append((u, p, f"{u}{p}"))
+        if not _pairs and equipment:
+            # 无结构化工序时退化为"设备→工序"关键词规则 (process_from_equipment)
+            # ⚠ process_from_equipment 返回 str 或 list, 需归一 (否则按字符迭代 → 工序[/反])
+            from web.hazard_grid import process_from_equipment
+            for eq in equipment:
+                if not isinstance(eq, str):
+                    continue
+                prs = process_from_equipment(eq) or []
+                if isinstance(prs, str):
+                    prs = [prs]
+                for pr in prs:
+                    pr = str(pr).strip()
+                    if pr:
+                        _pairs.append(("", pr, f"{eq}{pr}"))
+        for u, p, blob in _pairs:
+            for pf in (physical_factors(blob) or []):
+                _phys_src.setdefault(pf, set()).add(f"工序[{u}/{p}]" if u or p else "设备运行")
+        # 直接对设备名扫一遍 (兜底: 泵/釜/锅炉等物理源), 但仍以"生产过程"归因
+        for eq in (equipment or []):
+            if not isinstance(eq, str):
+                continue
+            for pf in (physical_factors(eq) or []):
+                _phys_src.setdefault(pf, set()).add("生产设备运行")
+        for pf, srcs in _phys_src.items():
+            h = hazards.setdefault(pf, {"sources": set(), "via": set()})
+            h["sources"].update(srcs)
+    except Exception:
+        pass  # 物理因素识别失败不阻断化学主链路
+
     # 2.5) 工艺描述层: 段落文本 → 物质 (碳酸钠/三羟甲基丙烷/1,6-己二醇...)
     if process_text:
         merge_process_materials(conn, hazards, process_text)
@@ -396,7 +441,15 @@ def assess_project(conn, project: dict) -> dict:
                     risk = {"code": r2[0], "name": r2[1], "level": r2[2]}
     chain = industry_chain(conn, ind) if ind else None
     # 2) 危害识别
-    hazards = identify_hazards(conn, project.get("equipment", []),
+    # 设备字段归一: 提取层两套并存 (equipment / equipment_detail), 老项目只有后者。
+    # (同 table_builder 的回退口径 — 设备明细表也用 equipment_detail or equipment)
+    _eq = project.get("equipment") or []
+    if not _eq:
+        _eq = [str(x.get("name") or "").strip() if isinstance(x, dict) else str(x)
+               for x in (project.get("equipment_detail") or [])]
+        # 剔除表头残留行 (提取脏数据: name=设备名称)
+        _eq = [e for e in _eq if e and e not in ("设备名称", "名称")]
+    hazards = identify_hazards(conn, _eq,
                                project.get("processes"),
                                project.get("process_text", ""),
                                project.get("materials", []))
@@ -449,13 +502,19 @@ def assess_project(conn, project: dict) -> dict:
         if j.get("level") and isinstance(j["level"], dict):
             lv = j["level"]["level"]
             levels.setdefault(lv, []).append(j["factor"])
-    # 危害因素源头过滤: 只保留能回溯项目数据的因子 (物料精确/检测/grid/通用物理)
+    # 危害因素源头过滤: 只保留能回溯项目数据的因子
     # (修复: v10/v11 报告'硫酸二甲酯/苯醌/石蜡烟' — assess从行业模板/检查表带入, 项目data无此物料)
     _proj_mats = set()
     for m in (project.get("materials") or []):
         nm = (str(m.get("name") if isinstance(m, dict) else m)).split("|")[0].strip()
         if nm:
             _proj_mats.add(nm)
+    # ⚠ Q1 收紧 (2026-09): hazard_grid 存的是**类比企业**的危害分布, 不是本项目的。
+    #   原先 _real_factor() 把 _grid_factors 全量放行 → 类比企业的因素被当成本项目事实
+    #   (实测: 树脂厂因类比数据混入 聚乙烯粉尘/电焊烟尘 等非本厂工艺因素)。
+    #   现在: grid 因素只有在**本项目也能独立印证**时才放行 ——
+    #     ① 出现在本项目物料清单 (_proj_mats) ② 或属于本项目设备派生的物理因素
+    #   纯 grid 独有的因素 → 保留但标 grid_only, 不进 hazards 主表 (由类比章节引述)。
     _grid_factors = set()
     for g in (project.get("hazard_grid") or []):
         if isinstance(g, dict):
@@ -468,10 +527,13 @@ def assess_project(conn, project: dict) -> dict:
                     "氮氧化物", "锰及其无机化合物", "三氧化铬", "金属镍与难溶性镍化合物"}
 
     def _real_factor(f):
+        """只有能回溯到本项目自身证据的因子才算真实危害"""
         if not f:
             return False
-        return (f in _det_factors or f in _grid_factors or f in _keep_common
-                or f in _proj_mats)
+        return (f in _det_factors        # 本项目检测数据
+                or f in _proj_mats       # 本项目物料
+                or f in _keep_common)    # 通用物理/粉尘 (任何项目都需评)
+        # 注: 不再因 f in _grid_factors 放行 —— 类比数据不构成本项目事实
 
     hazards = [h for h in hazards if isinstance(h, dict) and _real_factor(h.get("factor", ""))]
     # 去重 (同名因子合并)
