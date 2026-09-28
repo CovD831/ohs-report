@@ -40,8 +40,12 @@ MODEL = os.environ.get("LLM_MODEL", "deepseek-v4.1-flash")
 KEY_ENV = os.environ.get("LLM_KEY_ENV", "DEEPSEEK_API_KEY")
 
 # 索引遍: 极简提问 (省 token)
+# ⚠ 必须区分"本页有 SiO2 测定**数值**" vs "本页某因素**名字里**含 SiO2":
+#   实测 p58/p59 因素名有"矽尘(游离SiO2含量>10%)" → 旧 prompt 误判为"有"
 _INDEX_ASK = ("本页是职业病危害检测报告的一页。用一行回答: "
-              "①本页检测项目(危害因素名, 若无写'无') ②是否含'游离二氧化硅'百分比数值(有/无)。"
+              "①本页检测项目(危害因素名, 若无写'无') "
+              "②本页是否有游离二氧化硅的**检测结果数值(%)**(注意: 因素名称里带SiO2字样不算, "
+              "必须是表格里测出的百分比数值)。"
               "格式: `检测项目=X; 二氧化硅=有/无`。不要输出其它内容。")
 
 # 精读遍: 结构化转录
@@ -66,7 +70,9 @@ _EXTRACT_ASK = (
     '"judgement":"符合/不符合/判定(有则填)"}]}\n'
     "硬性规则: ①数字与单位逐字准确, 不推测不补全 ②本页字段没有的留空字符串 "
     "③页面只有封面/目录/说明且无任何检测数值时才用 C ④'<1.7'这类未检出值原样保留 "
-    "⑤合并单元格的车间/岗位要补全到行上 ⑥表型D 必填 factor='游离二氧化硅'"
+    "⑤合并单元格的车间/岗位要补全到行上 ⑥表型D 必填 factor='游离二氧化硅' "
+    "⑦**results 只放数值**(如 ['0.5','0.4','0.3'] 或 ['<1.7'])；"
+    "'定点短时间'/'直读'/'个体采样'属**检测方式**, 不是检测结果, 不要放进 results\n"
 )
 
 
@@ -234,9 +240,13 @@ def vision_detections(pdf_path: Path, index: dict | None = None,
         if verbose:
             print(f"索引遍 (150dpi): {pdf_path.name}")
         index = build_index(pdf_path, dpi=150, verbose=verbose)
-    # 关键页 = 有检测项目的页 (SiO2 页必含)
-    key_pages = [p["page"] for p in index["pages"]
-                 if p["factor"] and p["factor"] not in ("无", "")]
+    # 关键页 = 有检测项目的页 **或 索引标了含SiO2的页**
+    # ⚠ bug(实测): 原先只按 factor 非空筛, p5(factor='无' 但二氧化硅=有) 被漏读
+    #   → 索引遍说 4 页有 SiO2, 实际只精读 1 页。两条判据要取并集。
+    key_pages = sorted({
+        p["page"] for p in index["pages"]
+        if (p["factor"] and p["factor"] not in ("无", "")) or p.get("has_sio2")
+    })
     if verbose:
         print(f"精读 {len(key_pages)} 页 (180dpi)…")
     res = extract_pages(pdf_path, key_pages, dpi=dpi, verbose=verbose)
