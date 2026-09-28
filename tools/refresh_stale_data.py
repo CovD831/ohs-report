@@ -29,7 +29,8 @@ sys.path.insert(0, str(ROOT))
 DB = ROOT / "data" / "ohs.db"
 
 
-def refresh(pid: str, mdir: str, apply: bool = False) -> int:
+def refresh(pid: str, mdir: str, apply: bool = False,
+            rebuild_skeleton: bool = False) -> int:
     if not DB.exists():
         print(f"db 不存在: {DB}")
         return 1
@@ -66,8 +67,11 @@ def refresh(pid: str, mdir: str, apply: bool = False) -> int:
             changed.append((f, ov, nv))
             print(f"  Δ {f:24} {ov:10} → {nv}")
     if not changed:
-        print("  ✓ 无差异, 无需刷新")
-        return 0
+        print("  ✓ detections 无差异")
+        if not (rebuild_skeleton and apply):
+            print("  (如需仅重建表骨架: 加 --with-skeleton --apply)")
+            return 0
+        print("  → 跳过 detections 替换, 继续重建表骨架")
     print(f"\n共 {len(changed)} 处差异")
 
     if not apply:
@@ -79,15 +83,32 @@ def refresh(pid: str, mdir: str, apply: bool = False) -> int:
     shutil.copy2(DB, bak)
     print(f"\n已备份 → {bak}")
 
-    # 只替换 detections, 其余整块保留
+    # 只替换 detections (默认) + 可选重建表骨架
     new_data = deepcopy(data)
     new_data["detections"] = fresh
+    # 表骨架: 老项目可能没有 built_tables (该逻辑上线前导入的) → 导出会退化到只剩
+    # fill_section 现算的表 (实测 19 张 vs 34 张)。这里一并补建。
+    if rebuild_skeleton:
+        try:
+            from web.table_skeleton import build_skeletons
+            _sk = build_skeletons(new_data)
+            new_data["built_tables"] = _sk
+            _filled = sum(1 for v in _sk.values()
+                          if isinstance(v, dict) and v.get("rows"))
+            print(f"✓ 重建表骨架: {len(_sk)} 张 (有行 {_filled} 张)")
+        except Exception as e:
+            print(f"⚠ 重建表骨架失败 (跳过): {type(e).__name__}: {e}")
     c.execute("UPDATE project SET data=?, updated=? WHERE id=?",
               (json.dumps(new_data, ensure_ascii=False), time.time(), pid))
     c.commit()
-    keys_before, keys_after = set(data), set(new_data)
-    assert keys_before == keys_after, "字段集合被改变! 中止"
-    print(f"✓ 已刷新 detections ({len(old_dets)} → {len(fresh)} 条), 其余 {len(keys_after)-1} 个字段未动")
+    # 安全校验: 除 detections (+ 显式重建的 built_tables) 外, 不得改动/丢失其它字段
+    _allowed = {"detections", "built_tables"} if rebuild_skeleton else {"detections"}
+    _lost = set(data) - set(new_data)
+    _touched = {k for k in set(data) & set(new_data) if data[k] != new_data[k]}
+    assert not _lost, f"字段丢失! {_lost}"
+    assert _touched <= _allowed, f"误改字段! {_touched - _allowed}"
+    print(f"✓ 已刷新 detections ({len(old_dets)} → {len(fresh)} 条)")
+    print(f"  变更字段: {sorted(_touched)} | 其余 {len(set(new_data)) - len(_touched)} 个字段未动")
     return 0
 
 
@@ -97,7 +118,8 @@ def main():
         return 1
     pid, mdir = sys.argv[1], sys.argv[2]
     apply = "--apply" in sys.argv
-    return refresh(pid, mdir, apply)
+    rebuild = "--with-skeleton" in sys.argv
+    return refresh(pid, mdir, apply, rebuild)
 
 
 if __name__ == "__main__":

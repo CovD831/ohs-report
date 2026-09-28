@@ -122,7 +122,12 @@ def _save_project_data(pid: str, data: dict) -> bool:
 
 
 def _get_assess(pid: str) -> dict:
-    """评估结果缓存 (项目数据变化时失效)"""
+    """评估结果缓存 (项目数据变化时失效)
+
+    顺带: 用 assess 结果把"评估链路驱动"的骨架表补填并**落盘**。
+    (2026-09: 这些表原先只有导入时建的空壳 — 那时 assess 还没跑, 永远 0 行;
+     导出只能靠 fill_section 现算, 面板也显示"待评估"。这里跑完评估就回填。)
+    """
     key = f"assess:{pid}"
     if key not in _cache:
         conn = connect()
@@ -132,6 +137,24 @@ def _get_assess(pid: str) -> dict:
         assess["_project_data"] = dict(proj)
         _cache[key] = assess
         conn.close()
+        # 回填骨架表并落盘 (只在确有新增填充时写, 避免无谓 IO)
+        try:
+            from web.table_skeleton import build_skeletons
+            _old = proj.get("built_tables") or {}
+            _new = build_skeletons(proj, assess)
+            _old_rows = sum(len((v or {}).get("rows") or []) for v in _old.values()
+                            if isinstance(v, dict))
+            _new_rows = sum(len((v or {}).get("rows") or []) for v in _new.values()
+                            if isinstance(v, dict))
+            if _new_rows > _old_rows:
+                # ⚠ _save_project_data 是**整体覆盖** data — 必须传完整数据,
+                #   只传 {"built_tables":...} 会把其它字段全清空。
+                _merged = dict(proj)
+                _merged["built_tables"] = _new
+                _save_project_data(pid, _merged)
+                _cache[key] = assess
+        except Exception:
+            pass
     return _cache[key]
 
 

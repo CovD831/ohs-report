@@ -229,7 +229,60 @@ def build_skeletons(data: dict, assess: dict | None = None) -> dict:
                 "status": "await_assess",
                 "prov": _prov("await_assess", "评估链路驱动: 需危害判定/评估结果"),
             }
+
+    # 评估链路驱动表: 传了 assess 就**当场填**, 别留空占位。
+    # (2026-09: 此前 build_skeletons 收了 assess 参数却从不使用 → 这些表永远 0 行,
+    #  导出只能靠 fill_section 现算; 且 assess 数据不落库, 面板显示"待评估"。
+    #  实测: 38 条判定/17 条分级就绪时, 危害因素识别表/健康影响表/接触限值表/
+    #  PPE配备表/管理制度检查表 等都能填, 却全是空壳。)
+    if assess:
+        _fill_assess_tables(out, assess)
     return out
+
+
+# 评估驱动表 → fill_section 的 fill_ch (章号), 按章批量取一次再分发 (避免重复算)
+_ASSESS_FILL_CH = {
+    "5": ("危害因素识别表", "健康影响表", "物理因素健康影响表",
+          "接触限值表", "噪声接触限值表", "高温接触限值表"),
+    "8": ("PPE配备表", "PPE拟配置检查表", "类比PPE配备表", "类比PPE有效性表"),
+    "9": ("管理制度检查表",),
+    "10": ("关键控制点表",),
+    "11": ("室内空气质量标准表",),
+    "4": ("劳动能力分级表", "类比可比性表", "劳动强度分级表"),
+}
+
+
+def _fill_assess_tables(out: dict, assess: dict) -> None:
+    """用 assess 结果填充"评估链路驱动"的骨架表 (就地更新 out)
+
+    只填**当前为空**的表, 不覆盖已有数据 (骨架优先原则)。
+    """
+    try:
+        from knowledge.oel import connect as oc
+        from web.section_filler import fill_section
+        conn = oc()
+    except Exception:
+        return
+    for ch, names in _ASSESS_FILL_CH.items():
+        try:
+            tables = fill_section(conn, ch, assess)
+        except Exception:
+            continue
+        _by = {t.get("name"): t for t in (tables or []) if isinstance(t, dict)}
+        for nm in names:
+            cur = out.get(nm)
+            t = _by.get(nm)
+            if not t or not (t.get("rows") or []):
+                continue
+            if cur and (cur.get("rows") or []):
+                continue          # 已有数据, 不覆盖
+            out[nm] = {
+                "cols": t.get("cols") or [],
+                "rows": t.get("rows") or [],
+                "section": (cur or {}).get("section", ""),
+                "status": "filled",
+                "prov": _prov("rule", f"评估链路产物 (章{ch})"),
+            }
 
 
 def skeleton_summary(tables: dict) -> dict:

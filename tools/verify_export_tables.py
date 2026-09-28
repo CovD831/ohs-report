@@ -31,12 +31,16 @@ CAP_HINT = {
     "辅助用室设置表": ["辅助用室设置"], "辅助用室检查表": ["辅助用室检查"],
     "噪声接触限值表": ["噪声"], "高温接触限值表": ["高温"],
     "防护设施检查表": ["防护设施"], "应急救援检查表": ["应急"],
-    "危害因素识别表": ["危害因素"], "健康影响表": ["健康影响"],
+    # ⚠ 表题措辞与骨架内部名不同, hints 要覆盖真实表题用词 (否则假报"缺失")
+    "危害因素识别表": ["危害因素", "分布一览"], "健康影响表": ["健康影响", "对人体健康的影响"],
+    "物理因素健康影响表": ["物理因素对人类健康", "物理因素对健康", "物理因素对人体"],
+    "PPE配备表": ["个体防护", "PPE", "个人防护用品配备"],
+    "管理制度检查表": ["管理检查", "职业卫生管理"],
     "接触限值表": ["接触限值"], "关键控制点表": ["关键控制点"],
-    "类比可比性表": ["可比性"], "劳动强度分级表": ["劳动强度"],
+    "类比可比性表": ["可比性", "评价参数的比较", "类比项目与本项目"], "劳动强度分级表": ["劳动强度"],
     "类比PPE配备表": ["类比企业", "PPE"], "类比PPE有效性表": ["有效性"],
-    "PPE配备表": ["个体防护", "PPE"], "PPE拟配置检查表": ["拟配置"],
-    "管理制度检查表": ["管理"], "室内空气质量标准表": ["空气质量"],
+    "PPE拟配置检查表": ["拟配置"],
+    "室内空气质量标准表": ["空气质量"],
     "类比工作日写实表": ["写实"], "应急物资清单": ["应急"],
 }
 
@@ -68,21 +72,34 @@ def main():
     from web.word_export import export_docx
 
     data.update({k: v for k, v in derive_fields(data).items() if v})
-    sk = build_skeletons(data)
+
+    # ⚠ 与生产同构: assess 先算, build_skeletons 必须**带 assess** 才能填评估驱动表;
+    #   有存储的 built_tables 就优先用它 (生产走的是 _get_assess 回填后的那份)。
+    try:
+        from knowledge.project_assess import assess_project
+        from knowledge.oel import connect as oc
+        _proj = {"id": pid, "data": data, "name": data.get("name") or "test",
+                 "built_tables": data.get("built_tables", {}),
+                 "hazard_grid": data.get("hazard_grid", []),
+                 "emergency_supplies": data.get("emergency_supplies", []),
+                 "location": data.get("location", ""), "company": data.get("company", "")}
+        assess = assess_project(oc(), _proj)
+        assess["_project_data"] = dict(_proj)
+    except Exception as e:
+        assess = {}
+        print("assess err:", e)
+
+    sk = dict(data.get("built_tables") or {})
+    if not sk:
+        sk = build_skeletons(data, assess or None)
     for n in list(sk):
-        if sk[n].get("status") == "filling":
+        if isinstance(sk[n], dict) and sk[n].get("status") == "filling":
             t = fill_one(n, data)
             if t:
                 sk[n] = t
     data["built_tables"] = sk
-
-    try:
-        from knowledge.project_assess import assess_project
-        from knowledge.oel import connect as oc
-        assess = assess_project(oc(), data)
-    except Exception as e:
-        assess = {}
-        print("assess err:", e)
+    if assess:
+        assess["_project_data"] = dict(data)   # 让 _tables_for_sub 能取到骨架
 
     out = Path("/tmp/verify_export.docx")
     export_docx({"id": pid, "data": data, "name": data.get("name") or "test"}, assess, out)
