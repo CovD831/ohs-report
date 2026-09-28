@@ -716,10 +716,49 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         return tables
 
     if sec == "10":
-        # 补充建议: 问题与建议 (标准条款驱动)
+        # 标准 10.2.10 职业病危害关键控制点分析 (2026-09 从 5.4.3 提为独立章)
+        # 数据源合并两处 (规则产物, 不经 LLM):
+        #   judgements → 是否有 level (化学判定)
+        #   grades     → GBZ/T 229 作业分级 (粉尘/物理的真实分级来源)
+        _grade = {}
+        for g in (assess.get("grades") or []):
+            if isinstance(g, dict) and g.get("factor"):
+                _grade[str(g["factor"])] = g
+        rows = []
+        for j in (assess.get("judgements") or []):
+            if not isinstance(j, dict) or not j.get("factor"):
+                continue
+            f = str(j["factor"])
+            lv = j.get("level") if isinstance(j.get("level"), dict) else {}
+            lv = lv or {}
+            g = _grade.get(f) or {}
+            lvl_txt = str(lv.get("level") or g.get("level") or "—")
+            ctrl = str(lv.get("control") or "")
+            if not ctrl and g.get("name"):
+                ctrl = str(g["name"])            # 如 "中度危害作业"
+            basis = str(lv.get("basis") or g.get("note") or "")
+            rows.append([f, lvl_txt, ctrl[:80] or "—", basis[:60] or "—"])
+        # 物理因素补充 (噪声/高温等, 来自 hazards 里的物理项)
+        _phys = ("噪声", "高温", "工频电场", "振动", "紫外辐射")
+        _has = {str(h.get("factor") or "") for h in (assess.get("hazards") or [])}
+        for pf in _phys:
+            if pf in _has and not any(r[0] == pf for r in rows):
+                g = _grade.get(pf) or {}
+                rows.append([pf, str(g.get("level") or "—"),
+                             str(g.get("name") or "见防护设施/PPE章节"),
+                             "GBZ 2.2—2007"])
+        if not rows:
+            return []
+        rows = [[i] + r for i, r in enumerate(rows, 1)]
+        return [{"name": "关键控制点表",
+                 "cols": ["序号", "关键控制因子", "控制级别", "关键控制措施", "依据标准"],
+                 "rows": rows}]
+
+    if sec == "11":
+        # 标准 10.2.11 补充建议: 问题与建议 (标准条款驱动)
         from web.advice_gen import fill_10211
         built = fill_10211(conn, assess)
-        # 表10.2-1 室内空气质量标准 (GB/T 18883—2002 固定节选, 6列)
+        # 表11.2-1 室内空气质量标准 (GB/T 18883—2002 固定节选, 6列)
         built["tables"].append({"name": "室内空气质量标准表",
                                 "cols": ["序号", "参数", "参数类别", "单位", "标准值", "备注"],
                                 "rows": [
@@ -732,8 +771,8 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                                     [7, "二氧化碳", "化学性", "%", "0.10", "日平均值"]]})
         return built["tables"]
 
-    if sec == "11":
-        # 结论: 结论要素表
+    if sec == "12":
+        # 标准 10.2.12 结论: 结论要素表
         risk = assess.get("industry_risk") or {}
         rows = [["1", "职业病危害类别", risk.get("level", "—") + " (" + risk.get("name", "") + ")"],
                 ["2", "存在的主要问题", f"{len(assess.get('judgements', []))} 条判定记录"],
