@@ -10,9 +10,16 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, "/Users/abaaba/Projects/ohs-report")
+# 路径自适应: 本地 ~/Projects/ohs-report | 容器 /app
+for _cand in (Path("/app"), Path(__file__).resolve().parent.parent):
+    if (_cand / "web" / "app.py").exists() and (_cand / "data").exists():
+        ROOT = _cand
+        break
+else:
+    ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
-SRC = Path("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+SRC = ROOT / "data" / "ohs.db"
 TMP = Path(tempfile.mkdtemp()) / "ohs.db"
 shutil.copy(SRC, TMP)
 for suf in ("-wal", "-shm"):
