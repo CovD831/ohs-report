@@ -175,6 +175,7 @@ def audit_tables(built_tables: dict) -> dict:
     report = []
     total_nums = with_ev = 0
     unver_total = 0
+    review_total = 0
 
     for tname, t in (built_tables or {}).items():
         if not isinstance(t, dict):
@@ -191,7 +192,7 @@ def audit_tables(built_tables: dict) -> dict:
         colnames = [(col2[i] if i < len(col2) and col2[i] else (col1[i] if i < len(col1) else ""))
                     for i in range(max(len(col1), len(col2)))]
 
-        t_nums = t_ev = 0
+        t_nums = t_ev = t_review = 0
         samples = []
         for ri, row in enumerate(rows):
             cells = list(row) if isinstance(row, (list, tuple)) else [row]
@@ -215,6 +216,10 @@ def audit_tables(built_tables: dict) -> dict:
                     # 有据判定: rule/std 是可信来源 (rule 已由 prov_rule 保证"带出处才叫 rule");
                     # untraced/llm/unknown 必须自带 evidence, 否则判 unverified
                     ok = _evidence_ok(evidence) or source in ("rule", "std")
+                    # vision (扫描件视觉识别): 带页码 → 算"有据但需人工核对",
+                    # 单列在 needs_review 里, 不混入 rule (用户红线: 机器识别≠确定提取)
+                    if ok and source == "vision":
+                        t_review += 1
                     if ok:
                         t_ev += 1
                     else:
@@ -225,10 +230,12 @@ def audit_tables(built_tables: dict) -> dict:
                         })
         total_nums += t_nums
         with_ev += t_ev
+        review_total += t_review
         unver = t_nums - t_ev
         unver_total += unver
         report.append({
             "name": tname, "nums": t_nums, "with_evidence": t_ev,
+            "needs_review": t_review,
             "unverified": unver,
             "unverified_samples": samples[:8],
         })
@@ -239,6 +246,8 @@ def audit_tables(built_tables: dict) -> dict:
             "tables": len(report),
             "numbers": total_nums,
             "with_evidence": with_ev,
+            # vision 来源 (扫描件视觉识别): 有据但建议人工核对, 单列不混入 rule
+            "needs_review": review_total,
             "unverified": unver_total,
             "ok": unver_total == 0,
         },
@@ -292,6 +301,29 @@ def prov_llm(evidence=None, field: str = "") -> dict:
     if field:
         d["field"] = field
     ev = _norm_evidence(evidence)
+    if ev:
+        d["evidence"] = ev
+    return d
+
+
+def prov_vision(evidence=None, field: str = "", page=None) -> dict:
+    """**视觉模型**从扫描件识别所得 (2026-09 新增)。
+
+    为什么单独一类, 不并进 rule:
+      扫描件无文本层, 数值是模型"看图读出来的", 存在识别误差
+      (实测 tesseract 会把 5mg/m³ 读成 Smg/ma; 视觉模型好得多但仍非确定提取)。
+      必须与 "pdfplumber/正则确定取出" 区分, 否则溯源面板会把
+      "机器猜的数" 伪装成 "确定提取的数" —— 这正是用户红线要防的。
+
+    审计策略: vision 带 evidence (文件名+页码) → 记为"有据但需人工核对",
+    在面板里单独显示为 vision 来源, 不混入 rule。
+    """
+    d: dict = {"source": "vision", "needs_review": True}
+    if field:
+        d["field"] = field
+    ev = _norm_evidence(evidence)
+    if ev and page is not None:
+        ev["page"] = page
     if ev:
         d["evidence"] = ev
     return d
