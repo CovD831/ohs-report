@@ -205,6 +205,17 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
         except Exception:
             pass
 
+    # 字段投影层 (2026-09): 命中投影表 → 只喂该节需要的关键字段 (清单进表格/摘要进prompt)
+    # 依据: 8份真实报告 1.1 基本情况 = 10字段 metadata 块, 不是原始清单倾倒。
+    # 未命中 → 回退下面的旧逻辑 (按 CHAPTER_INFO_MAPPING 全量字段)。
+    try:
+        from .field_projection import render_for_prompt as _proj
+        _p = _proj(sec, project, assess)
+        if _p:
+            return _p
+    except Exception:
+        pass  # 投影失败不阻断 (回退旧逻辑)
+
     # 从 project/assess 取各字段值
     hazards = assess.get("hazards", [])
     dets = project.get("detections", [])
