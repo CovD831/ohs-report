@@ -27,7 +27,13 @@ import uuid
 from pathlib import Path
 
 MATERIAL_ROOT = Path(__file__).resolve().parent.parent / "data" / "materials"
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+# 单文件上传上限
+# ⚠ 20MB 太小 (实测 2026-09): 类比检测报告是**扫描件 PDF**, 长兴那份 21MB / 125 页
+#   → 被 20MB 拒绝 → 视觉提取跑不到 → detections 全丢 / SiO2 3.39 丢失。
+#   而这份检测报告恰恰是**最关键的材料** (报告 5.3 限值对照全靠它)。
+#   提到 80MB: 覆盖 100+ 页扫描件 (纯图 PDF 约 0.2MB/页); 磁盘与解析成本可接受
+#   (视觉提取按页调模型, 与文件大小无关)。
+MAX_UPLOAD_BYTES = 80 * 1024 * 1024
 
 # 类别定义 (窗口顺序) — 对应机构资料收集单
 CATEGORIES = [

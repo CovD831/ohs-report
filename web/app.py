@@ -632,7 +632,8 @@ async def api_upload(pid: str, cat: str, file: UploadFile):
     from web.uploads import MAX_UPLOAD_BYTES
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
-        return JSONResponse({"error": "文件不能超过 20 MB"}, status_code=413)
+        return JSONResponse({"error": f"文件不能超过 {MAX_UPLOAD_BYTES // (1024*1024)} MB"},
+                            status_code=413)
     try:
         r = save_upload(pid, cat, file.filename or "unnamed", content)
     except ValueError as e:
