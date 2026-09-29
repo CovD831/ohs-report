@@ -91,11 +91,21 @@ def refresh(pid: str, mdir: str, apply: bool = False,
     if rebuild_skeleton:
         try:
             from web.table_skeleton import build_skeletons
-            _sk = build_skeletons(new_data)
+            # ⚠ 必须传 assess: 评估驱动的表 (危害因素识别/接触限值/健康影响/PPE/管理制度…)
+            #   只在有 assess 时才填行; 不传 → 这些表退化成空壳 (实测导出 30 → 19 张)。
+            _as = None
+            try:
+                from knowledge.oel import connect as _oc
+                from knowledge.project_assess import assess_project as _ap
+                _as = _ap(_oc(), new_data)
+            except Exception as _e:
+                print(f"  ⚠ assess 计算失败 (评估驱动表将为空): {type(_e).__name__}: {_e}")
+            _sk = build_skeletons(new_data, _as)
             new_data["built_tables"] = _sk
             _filled = sum(1 for v in _sk.values()
                           if isinstance(v, dict) and v.get("rows"))
-            print(f"✓ 重建表骨架: {len(_sk)} 张 (有行 {_filled} 张)")
+            print(f"✓ 重建表骨架: {len(_sk)} 张 (有行 {_filled} 张)"
+                  + ("" if _as else " ⚠ 无 assess"))
         except Exception as e:
             print(f"⚠ 重建表骨架失败 (跳过): {type(e).__name__}: {e}")
     c.execute("UPDATE project SET data=?, updated=? WHERE id=?",

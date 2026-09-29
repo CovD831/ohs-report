@@ -1008,7 +1008,11 @@ def import_materials_from_dir(pid: str) -> dict:
                             _have.add(_f)
                             seen_det.add(str(dt.get("factor")).strip())
                             # dt 键: factor/ctwa/cste/cme (parse_report_file 检测表提取)
-                            dets.append({"factor": dt.get("factor"), "ctwa": dt.get("ctwa", ""), "factory": dt.get("factory", "")})
+                            # ⚠ 必须带上 _file: 否则表格 provenance 无从标注来源 →
+                            #   prov_rule(traceable=False) 降级 untraced → 审计判 unverified
+                            dets.append({"factor": dt.get("factor"), "ctwa": dt.get("ctwa", ""),
+                                         "factory": dt.get("factory", ""),
+                                         "_file": f.name, "source": "text"})
                 if rp.get("buildings"):
                     _BADB = ("功能区", "建构筑物名称", "名称", "None", "序号")
                     for b in rp["buildings"]:

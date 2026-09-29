@@ -19,6 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from knowledge.oel import connect  # noqa: E402
+from web.number_provenance import prov_rule  # noqa: E402
 
 
 def _rows_of(conn, sql, args=()):
@@ -345,8 +346,25 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 dtype = {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(ty, "化学毒物")
                 det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—"), "—", "合格"]
                             for i, d in enumerate(dets_b, 1)]
+                # 逐格 provenance: CTWA 值来自检测报告 (文本层或视觉提取), 必须标来源 —
+                # 这是报告里最安全关键的数值, 不标会被审计判 unverified (早期遗漏, 71 个)。
+                _dp = {}
+                for _i, _d in enumerate(dets_b):
+                    _ctwa = _d.get("ctwa")
+                    if _ctwa in (None, "", "—"):
+                        continue
+                    _ev = {"file": _d.get("_file") or "检测报告",
+                           "page": _d.get("_page")}
+                    if _d.get("source") == "vision":
+                        # 视觉提取的数字 → needs_review (用户红线: 机器读的≠确定取出)
+                        from web.number_provenance import prov_vision
+                        _dp[f"{_i}_2"] = prov_vision(_ev, field=f"{_d.get('factor')}.CTWA",
+                                                     page=_d.get("_page"))
+                    else:
+                        _dp[f"{_i}_2"] = prov_rule(_ev, field=f"{_d.get('factor')}.CTWA",
+                                                   traceable=bool(_d.get("_file")))
                 tables.append({"name": f"检测结果表({dtype})", "cols": ["序号", "危害因素", "CTWA", "PC-TWA", "判定"],
-                               "rows": det_rows})
+                               "rows": det_rows, "prov": _dp})
         surv = _rows_of(conn, "SELECT factor, check_type, cycle FROM surveillance_rule")
         if surv:
             tables.append({"name": "职业健康监护表", "cols": ["序号", "危害因素", "检查类别", "周期"],
@@ -444,7 +462,12 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                            "cols": ["生产车间", "生产车间", "工序", "设备密闭", "物料或中间产物", "职业病危害因素产生环节", "主要职业病危害因素"],
                            "header2": ["生产车间", "生产车间", "工序", "设备密闭", "物料或中间产物", "职业病危害因素产生环节", "主要职业病危害因素"],
                            "merge_rect": [(0, 0, 1, 1)] + [(0, c, 1, c) for c in (2, 3, 4, 5, 6)],
-                           "rows": g_rows})
+                           # 逐格 provenance: 由 hazard_grid(设备/工艺→危害 规则) 生成, 非 LLM
+                           "rows": g_rows,
+                           "prov": {f"{i}_{c}": prov_rule({"file": "hazard_grid(设备/工艺规则)",
+                                                           "text": f"{g_rows[i][c]} (规则推导)"},
+                                                          field=f"grid.row{i}.col{c}")
+                                    for i in range(len(g_rows)) for c in (2, 5, 6)}})
         # 检测结果表 (按类型分张)
         dets = (assess.get("_project_data") or {}).get("detections", [])
         if dets:
@@ -463,8 +486,25 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 dtype = {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(ty, "化学毒物")
                 det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—"), "—", "合格"]
                             for i, d in enumerate(dets_b, 1)]
+                # 逐格 provenance: CTWA 值来自检测报告 (文本层或视觉提取), 必须标来源 —
+                # 这是报告里最安全关键的数值, 不标会被审计判 unverified (早期遗漏, 71 个)。
+                _dp = {}
+                for _i, _d in enumerate(dets_b):
+                    _ctwa = _d.get("ctwa")
+                    if _ctwa in (None, "", "—"):
+                        continue
+                    _ev = {"file": _d.get("_file") or "检测报告",
+                           "page": _d.get("_page")}
+                    if _d.get("source") == "vision":
+                        # 视觉提取的数字 → needs_review (用户红线: 机器读的≠确定取出)
+                        from web.number_provenance import prov_vision
+                        _dp[f"{_i}_2"] = prov_vision(_ev, field=f"{_d.get('factor')}.CTWA",
+                                                     page=_d.get("_page"))
+                    else:
+                        _dp[f"{_i}_2"] = prov_rule(_ev, field=f"{_d.get('factor')}.CTWA",
+                                                   traceable=bool(_d.get("_file")))
                 tables.append({"name": f"检测结果表({dtype})", "cols": ["序号", "危害因素", "CTWA", "PC-TWA", "判定"],
-                               "rows": det_rows})
+                               "rows": det_rows, "prov": _dp})
         js = assess.get("judgements", [])
         if js:
             j_rows = [[i, j["factor"], "—", "—", "—", "—",
@@ -474,23 +514,50 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         # 接触限值表 (危害因素×PC-TWA×PC-STEL×PE×单位, 从 oel_limit)
         det_factors = [d["factor"] for d in dets] + [h["factor"] for h in assess.get("hazards", [])]
         # 原报告表5.3-1 宽表: 种类/PC-MAC/PC-TWA/PC-STEL/PE/备注 (一因素一行)
-        lim_rows, seen_l = [], set()
+        # 列号对照 (row 数组下标 → 列): 0种类 1 PC-MAC 2 PC-TWA 3 PC-STEL 4 PE 5备注
+        _OEL_COL = {"PC-MAC": 1, "PC-TWA": 2, "PC-STEL": 3, "PE": 4}
+        lim_rows, seen_l, lim_prov = [], set(), {}
         for fac in det_factors:
             if not fac or fac in seen_l or ("噪声" in fac or "高温" in fac or "振动" in fac):
                 continue
             seen_l.add(fac)
-            oels = dict(conn.execute("SELECT oel_type, value FROM oel_limit WHERE factor_name LIKE ?", (fac + "%",)).fetchall())
+            _ri = len(lim_rows)                       # 该因素在表中的行号
+            # ⚠ 连同 source_standard 一起取出: 逐格记录该限值来自标准库哪一条,
+            #   使"每个限值可点开看 GBZ 2.1—2019 某某 PC-TWA=N" (审计可逐行溯源)
+            recs = conn.execute(
+                "SELECT oel_type, value, source_standard FROM oel_limit "
+                "WHERE factor_name LIKE ?", (fac + "%",)).fetchall()
+            oels, srcs = {}, {}
+            for r in recs:
+                # sqlite3.Row 或 tuple 都兼容
+                try:
+                    _t, _v, _s = r["oel_type"], r["value"], r["source_standard"]
+                except (TypeError, IndexError, KeyError):
+                    _t, _v, _s = r[0], r[1], r[2] if len(r) > 2 else ""
+                oels[_t] = _v
+                srcs[_t] = _s or ""
             # GBZ 2.1—2019 未收录的物质 (如新戊二醇/多元醇/二元酸类) 不静默丢行:
             # 行保留+值"—"+备注注明, 避免"识别表列了、限值表没有"的覆盖断裂 (缺数据不硬造)
             lim_rows.append([fac, oels.get("PC-MAC", "—"), oels.get("PC-TWA", "—"),
                              oels.get("PC-STEL", "—"), oels.get("PE", "—"),
                              "" if oels else "未制定职业接触限值"])
+            # 逐格 provenance: 只给**有值**的格子盖 rule 章 + 标准出处
+            for _t, _ci in _OEL_COL.items():
+                if _t in oels:
+                    _std = srcs.get(_t) or "GBZ 2.1—2019"
+                    lim_prov[f"{_ri}_{_ci}"] = prov_rule(
+                        {"file": "标准库", "table": "oel_limit",
+                         "text": f"{fac} {_t}={oels[_t]} ({_std})"},
+                        field=f"{fac}.{_t}")
+            # 名称列也算规则来源 (来自检测/物料识别结果)
+            lim_prov[f"{_ri}_0"] = prov_rule({"file": "检测/物料识别", "text": fac},
+                                             field=f"{fac}.name")
         if lim_rows:
             tables.append({"name": "接触限值表",
                            "cols": ["种类", "职业接触限值（mg/m3）", "职业接触限值（mg/m3）", "职业接触限值（mg/m3）", "职业接触限值（mg/m3）", "备注"],
                            "header2": ["种类", "PC-MAC", "PC-TWA", "PC-STEL", "PE", "备注"],
                            "merge_rect": [(0, 1, 0, 4)],
-                           "rows": lim_rows})
+                           "rows": lim_rows, "prov": lim_prov})
         # 物理因素限值表 (GBZ 2.2—2007 静态标准数据, 规则生成 — 盲区修复: 原报告5.3有噪声/高温限值表)
         _hz5 = " ".join([str(h.get("factor") or "") for h in assess.get("hazards", [])] +
                         [str(g.get("factors") or "") for g in (assess.get("_project_data") or {}).get("hazard_grid", [])])
@@ -501,7 +568,11 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 for p in (g.get("posts") or ["各岗位"])[:2]:
                     gw_rows.append([g["unit"], p, "、".join(g["factors"][:6])])
             if gw_rows:
-                tables.append({"name": "工种危害表", "cols": ["评价单元", "岗位/工种", "主要危害因素"], "rows": gw_rows})
+                tables.append({"name": "工种危害表", "cols": ["评价单元", "岗位/工种", "主要危害因素"], "rows": gw_rows,
+                               # 逐格 provenance: 岗位→危害 由 hazard_grid 网格关联 (规则), 非 LLM
+                               "prov": {f"{i}_{c}": prov_rule({"file": "hazard_grid(岗位×危害关联)",
+                                                               "text": f"{r[c]} (网格关联)"}, field=f"gw.{c}")
+                                        for i, r in enumerate(gw_rows) for c in (0, 1, 2)}})
         # 健康影响表 (危害因素×健康影响×职业病×侵入途径, 用 entity_link 链)
         hazards = [h["factor"] for h in assess.get("hazards", [])] or []
         he_rows = []
@@ -556,21 +627,37 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             ["振动", "物理因素", "长期接触手传振动可引起手臂振动病（白指）", "手臂振动病"],
             ["工频电场", "物理因素", "短期接触低强度工频电场可引起头晕、疲劳、血压波动等不适", "—"],
         ]
-        tables.append({"name": "物理因素健康影响表", "cols": ["名称", "危害特性", "对人体健康的影响", "可能引起的职业病"], "rows": phys_rows})
+        tables.append({"name": "物理因素健康影响表", "cols": ["名称", "危害特性", "对人体健康的影响", "可能引起的职业病"], "rows": phys_rows,
+                       "prov": {f"{i}_2": prov_rule({"file": "标准库", "table": "health_effect",
+                                                     "text": f"{r[0]} 健康影响 (GBZ 2.2/职业病目录)"},
+                                                    field=f"{r[0]}.健康影响")
+                                for i, r in enumerate(phys_rows)}})
         # 表5.3-2 噪声接触限值 (GBZ 2.2—2007 表5: 接触时间/限值[dB(A)]/备注)
+        _noise_rows = [["5d/w，≤8h/d", "85", "非稳态噪声计算8h等效声级"],
+                       ["5d/w，≠8h/d", "85", "计算8h等效声级"],
+                       ["5d/w，≠4h/d", "88", "计算8h等效声级"],
+                       ["5d/w，≠2h/d", "91", "计算8h等效声级"],
+                       ["5d/w，≠1h/d", "94", "计算8h等效声级"]]
         tables.append({"name": "噪声接触限值表", "cols": ["接触时间", "接触限值[dB(A)]", "备注"],
-                       "rows": [["5d/w，≤8h/d", "85", "非稳态噪声计算8h等效声级"],
-                                ["5d/w，≠8h/d", "85", "计算8h等效声级"],
-                                ["5d/w，≠4h/d", "88", "计算8h等效声级"],
-                                ["5d/w，≠2h/d", "91", "计算8h等效声级"],
-                                ["5d/w，≠1h/d", "94", "计算8h等效声级"]]})
+                       "rows": _noise_rows,
+                       # 静态标准数据: 逐格标 GBZ 2.2—2007 表5 (非 LLM 生成)
+                       "prov": {f"{i}_1": prov_rule({"file": "GBZ 2.2—2007", "table": "oel_limit",
+                                                     "text": f"噪声 {r[0]} → {r[1]} dB(A) (GBZ 2.2—2007 表5)"},
+                                                    field=f"噪声.{r[0]}")
+                                for i, r in enumerate(_noise_rows)}})
         # 表5.3-3 高温接触限值 (GBZ 2.2-2007 表1: 接触时间率×体力劳动强度 WBGT 限值℃) 双层表头
+        _heat_rows = [["100%", "30", "28", "26", "25"], ["75%", "31", "29", "27", "26"],
+                      ["50%", "32", "30", "28", "27"], ["25%", "33", "31", "29", "28"]]
         tables.append({"name": "高温接触限值表",
                        "cols": ["接触时间率", "体力劳动强度", "体力劳动强度", "体力劳动强度", "体力劳动强度"],
                        "header2": ["接触时间率", "I", "II", "III", "IV"],
                        "merge_rect": [(0, 1, 0, 4)],
-                       "rows": [["100%", "30", "28", "26", "25"], ["75%", "31", "29", "27", "26"],
-                                ["50%", "32", "30", "28", "27"], ["25%", "33", "31", "29", "28"]]})
+                       "rows": _heat_rows,
+                       # 静态标准数据: 逐格标 GBZ 2.2—2007 表1 (含第0列接触时间率)
+                       "prov": {f"{i}_{c}": prov_rule({"file": "GBZ 2.2—2007", "table": "oel_limit",
+                                                       "text": f"高温 接触时间率{r[0]} 强度{[None,'I','II','III','IV'][c]} → WBGT {r[c]}℃ (GBZ 2.2—2007 表1)"},
+                                                      field=f"高温.{r[0]}.{c}")
+                                for i, r in enumerate(_heat_rows) for c in (0, 1, 2, 3, 4)}})
         # 工种×危害表 (岗位→危害, 从网格关联)
         if grid:
             gw_rows = []
@@ -578,7 +665,11 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 for p in (g.get("posts") or ["各岗位"])[:2]:
                     gw_rows.append([g["unit"], p, "、".join(g["factors"][:6])])
             if gw_rows:
-                tables.append({"name": "工种危害表", "cols": ["评价单元", "岗位/工种", "主要危害因素"], "rows": gw_rows})
+                tables.append({"name": "工种危害表", "cols": ["评价单元", "岗位/工种", "主要危害因素"], "rows": gw_rows,
+                               # 逐格 provenance: 岗位→危害 由 hazard_grid 网格关联 (规则), 非 LLM
+                               "prov": {f"{i}_{c}": prov_rule({"file": "hazard_grid(岗位×危害关联)",
+                                                               "text": f"{r[c]} (网格关联)"}, field=f"gw.{c}")
+                                        for i, r in enumerate(gw_rows) for c in (0, 1, 2)}})
         return tables
 
     if sec == "6":

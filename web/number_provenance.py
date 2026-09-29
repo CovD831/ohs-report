@@ -53,14 +53,27 @@ UNIT_RE = re.compile(
     r"毫米|厘米|千米|公里|平米)"
 )
 # 中文量词/单位跟在数字后 (⚠ 不含"年/月/日" — 那是日期不是量)
+# ⚠ 必须含 ℃/°C/℉: 早缺此项 → "反应釜高温100℃" 被判成"中文紧贴数字"误删真实数据
 CN_UNIT_RE = re.compile(
-    r"^\s*(?:人|台|套|个|次|天|小时|分钟|秒|米|吨|千克|公斤|克|"
+    r"^\s*(?:℃|°C|℉|%|‰|人|台|套|个|次|天|小时|分钟|秒|米|吨|千克|公斤|克|"
     r"立方米|平方米|米/秒|度|分贝|个/班|人/班|班|层|间|座|辆|项|条|种|处|点|万|亿|千瓦|千瓦时|升|毫升|伏|安|赫兹|帕|兆帕|千帕)"
 )
 # 紧贴 ASCII 字母 (型号/编号)
 _LETTER_ADJ = re.compile(r"[A-Za-z]")
 # 化学名位次: 数字 + '-' + 中文 (2-甲基 / 1,2-丙二醇)
 _CHEM_POS = re.compile(r"^\d[\d,]*\s*[-—]\s*[\u4e00-\u9fff]")
+# 设备位号尾号: 中文名 + 数字 (加料槽1 / 反应釜2 / 1号车间)
+# ⚠ 实测把 "加料槽1" 的 1 当数据 → 误报 unverified (危害因素识别表/关键控制点表)
+_EQUIP_TAG = re.compile(r"[\u4e00-\u9fff]\s*\d+\s*(?:$|[、，,；;）)】]|过程中)")
+# 时间/频次表述: 5d/w、4h/d、每班约操作4小时、8h 等效声级
+# (这些是**工况描述**不是检测结果; 值本身来自标准或班制, 不属"待溯源数字")
+_TIME_EXPR = re.compile(
+    r"(?:\d+\s*[dD]\s*/\s*[wW])|"          # 5d/w
+    r"(?:\d+\s*[hH]\s*/\s*[dD])|"          # 8h/d
+    r"(?:每班|每天|每周|每年|工作时|操作)\s*约?\s*\d+\s*(?:小时|分钟|天|周)|"
+    r"(?:\d+\s*h\s*等效)")
+# 标称比例/时间率 (表头属性, 非测量值): 100% / 75% 作为接触时间率
+_NOMINAL_RATIO = re.compile(r"^(?:100|75|50|25)\s*%$")
 
 
 def cell_numbers(text) -> list[str]:
@@ -114,7 +127,22 @@ def cell_numbers(text) -> list[str]:
         # 2. 带单位 或 紧跟中文量词 → 一定是数据
         has_unit = bool(UNIT_RE.search(tok)) or bool(CN_UNIT_RE.match(s[end:end + 6]))
         if has_unit:
+            # 但"标称比例/时间率"除外 (100% 作接触时间率是表头属性, 非测量值)
+            if _NOMINAL_RATIO.match(tok):
+                continue
             out.append(tok)
+            continue
+        # 5. 设备位号: 数字**紧贴**中文名 (中间无空格) 且无单位 → 编号不是数据 (加料槽1/反应釜2)
+        #    ⚠ 判据是"**紧贴**": 用原始 s[start-1] 判, **不能**用跳过空格后的 prev_ch —
+        #       否则 "温度 25℃" 的 25 也会被误判为位号 (前字符是 '度')。
+        #       `加料槽1` 紧贴; `温度 25℃` / `年耗量 2054.4 t/a` 中间有空格 → 是数据。
+        #    ⚠ 且必须在 has_unit 之后判: "反应釜高温100℃" 带单位 → 是数据。
+        _raw_prev = s[start - 1] if start > 0 else ""
+        if _raw_prev and re.match(r"[\u4e00-\u9fff]", _raw_prev) \
+                and not re.match(r"^\s*[.]\d", s[end:end + 6]):
+            continue
+        # 5b. 时间/频次表述 (5d/w、每班约操作4小时) → 工况描述, 非检测结果
+        if _TIME_EXPR.search(s[max(0, start - 8):end + 8]):
             continue
         # 年份: 4位 (19xx/20xx) 紧跟"年" 且无单位 → 不是材料数据 (2024年)
         if _YEAR_RE.match(tok) and re.match(r"^\s*年", s[end:end + 3]):
@@ -146,12 +174,28 @@ def _norm_evidence(ev) -> dict:
 
 
 def _evidence_ok(ev) -> bool:
-    """有据 = 至少给出原文片段或文件名+页码之一; 空 dict 视为无据"""
+    """有据 = 至少给出原文片段 或 可定位的文件名之一; 空 dict 视为无据
+
+    ⚠ 早期要求「file 且 page 非空」→ **docx/xlsx 提取的数据被误判无据**
+      (Word 表格没有"页码"概念, 只有文件名+表格定位), 实测使检测结果表大面积误报 unverified。
+    现放宽: 有 text(原文片段) 或 有 file(**具体的源文件名**) 即算有据;
+      "未命名/检测报告" 这类占位不算 (那是没记来源)。
+    """
     if not ev:
         return False
     ev = _norm_evidence(ev)
-    return bool(str(ev.get("text") or "").strip()) or (
-        bool(str(ev.get("file") or "").strip()) and ev.get("page") is not None)
+    # ① 有原文片段 → 有据
+    if str(ev.get("text") or "").strip():
+        return True
+    # ② 无 text 时: 需要**具体**来源文件名 (占位名不算)
+    f = str(ev.get("file") or "").strip()
+    placeholder = ("", "检测报告", "未知", "—")
+    if f not in placeholder:
+        return True
+    # ③ 标准库类: file 是"标准库"+ table 指明具体表名 → 有据
+    if f == "标准库" and str(ev.get("table") or "").strip():
+        return True
+    return False
 
 
 def _cell_text(v) -> str:
@@ -213,9 +257,16 @@ def audit_tables(built_tables: dict) -> dict:
                         source = default.get("source")
                         evidence = _norm_evidence(default.get("evidence"))
                     source = (source or "unknown").lower()
-                    # 有据判定: rule/std 是可信来源 (rule 已由 prov_rule 保证"带出处才叫 rule");
-                    # untraced/llm/unknown 必须自带 evidence, 否则判 unverified
-                    ok = _evidence_ok(evidence) or source in ("rule", "std")
+                    # 有据判定:
+                    #   ⚠ untraced/unknown **显式判无据** (优先于 evidence 判据) —
+                    #      prov_rule(traceable=False) 的降级语义必须在审计侧也成立,
+                    #      否则放宽 _evidence_ok 后 "untraced + 有file" 会被误判有据 (实测踩过)。
+                    #   rule/std: 可信来源 (prov_rule 已保证"带出处才叫 rule")
+                    #   其余(llm/vision/...): 需自带 evidence
+                    if source in ("untraced", "unknown"):
+                        ok = False
+                    else:
+                        ok = _evidence_ok(evidence) or source in ("rule", "std")
                     # vision (扫描件视觉识别): 带页码 → 算"有据但需人工核对",
                     # 单列在 needs_review 里, 不混入 rule (用户红线: 机器识别≠确定提取)
                     if ok and source == "vision":
