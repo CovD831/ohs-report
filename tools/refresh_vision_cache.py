@@ -111,7 +111,34 @@ print(f"  旧: {len(old.get('detections') or [])} 条 / "
 print(f"  新: {len(dets)} 条 / {len({d.get('_page') for d in dets})} 页产出")
 print(f"  → 找回 {len(dets) - len(old.get('detections') or [])} 条")
 print(f"  重试过: {res.get('retried')}")
-print(f"  重试后仍空: {res.get('empty_after_retry')}")
+
+# ---- 仍然空的页: 按"结构边界"自动分区, 避免每次都要人工重判 ----
+# 这两份 PDF 都带**附件的职业健康检查报告**(有文本层), 那部分本无检测数据。
+# 判据: 文本层起始页 = 报告的扫描区/附件区分界 (fitz 一次抽文本即可)。
+still = res.get("empty_after_retry") or []
+if still:
+    try:
+        import fitz
+        doc = fitz.open(str(pdf))
+        txt_pages = [i + 1 for i in range(doc.page_count)
+                     if str(doc[i].get_text() or "").strip()]
+        boundary = min(txt_pages) if txt_pages else None
+    except Exception:
+        boundary = None
+    if boundary:
+        scan = [p for p in still if p < boundary]
+        att = [p for p in still if p >= boundary]
+        print(f"  重试后仍空: {len(still)} 页")
+        print(f"    ├ 附带件区(p{boundary}+ 体检报告等): {len(att)} 页 —— 本无检测数据, 正常")
+        if scan:
+            print(f"    └ 扫描区: {scan}")
+            print(f"       ⚠ 扫描区仍有空页 → 逐页取证后再决定是否可疑")
+        else:
+            print(f"    └ 扫描区: 无 (全部是附带件, 无需抽查) ✓")
+    else:
+        print(f"  重试后仍空: {still} (无法取文本层边界 → 建议人工抽查)")
+else:
+    print("  重试后仍空: 无 ✓")
 print(f"  始终失败: {res.get('unresolved')}")
 print(f"  耗时 {time.time()-t0:.0f}s | credit {res['credit']:.2f}")
 print(f"  写入 → {cache}")

@@ -302,7 +302,10 @@ def extract_pages(pdf_path: Path, page_nos: list[int], dpi: int = 180,
     if retried and verbose:
         print(f"  [重试过的页] {sorted(set(retried))}")
     if empty2 and verbose:
-        print(f"  [重试后仍空] {sorted(set(empty2))} ← 可疑, 建议人工抽查")
+        # 措辞纠偏: "空"未必可疑 —— 实测(新泰/长兴)扫描件 PDF 常**附带体检报告**
+        # 等无检测数据的页, 模型正确报空。笼统写"可疑"会让每次重建都误报,
+        # 消耗一次人工抽查。这里只陈述事实, 由调用方按结构边界分区判定。
+        print(f"  [重试后仍空] {sorted(set(empty2))} (需按结构分区判断, 见调用方)")
     if unresolved and verbose:
         print(f"  [始终解析失败] {sorted(set(unresolved))}")
 
