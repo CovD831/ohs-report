@@ -592,8 +592,17 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
 
 
 def _is_llm_table_title(line: str) -> bool:
-    """LLM 写进正文的表标题行 (系统会插真正的表+标题, 这些行跳过)"""
-    return bool(re.match(r"^表\d{1,2}(\.\d+)*-\d+", line.strip()))
+    """LLM 写进正文的表标题行 (系统会插真正的表+标题, 这些行跳过)
+
+    ⚠ "表" 与编号间**可能有空格** (实测 LLM 写出 "表 5.3-1 XXX（表格由系统自动插入）"),
+      旧正则 ^表\\d 要求紧跟数字 → 漏网 → 与系统插入的表题**重号** (表5.3-1 出现两次)。
+      同时覆盖全角括号/中文空格/半角空格几种变体。
+    """
+    s = line.strip().replace("\u3000", " ").replace(" ", "")
+    if re.match(r"^表\d{1,2}(\.\d+)*[-—－]\d+", s):
+        return True
+    # 兜底: 明确喊话"表格由系统插入"的行, 无论形态一律丢弃
+    return "表格由系统" in line or "表格由系统自动插入" in line
 
 
 _TABLE_SEQ: dict = {}
