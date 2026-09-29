@@ -1338,6 +1338,16 @@ def import_materials_from_dir(pid: str) -> dict:
                                 fac = str(_it.get("factor") or "").strip()
                                 if not fac:
                                     continue
+                                # Q3: 视觉/OCR 清洗 —— 只做确定性修正(错字/半角逗号/括号),
+                                # 残缺名**只标记不改**(可能是截断, 猜内容 = 编造)
+                                _fac_msgs: list = []
+                                try:
+                                    from web.factor_clean import clean_factor_name
+                                    fac, _fac_msgs = clean_factor_name(fac)
+                                except Exception:
+                                    _fac_msgs = []
+                                if not fac:
+                                    continue
                                 _new = {
                                     "factor": fac,
                                     "ctwa": _it.get("ctwa") or None,
@@ -1348,6 +1358,9 @@ def import_materials_from_dir(pid: str) -> dict:
                                     "_page": _it.get("_page"),
                                     "_file": _it.get("_file", f.name),
                                 }
+                                if _fac_msgs:
+                                    _new["needs_review"] = True
+                                    _new["clean_warnings"] = _fac_msgs
                                 # 先找精确同名, 再找近似同名(截断) → 归并到更完整的那条
                                 _hit = fac if fac in _idx else next(
                                     (k for k in _idx if _near_dup(k, fac)), None)
