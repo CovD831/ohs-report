@@ -787,7 +787,11 @@ def api_import_materials(pid: str):
         return JSONResponse({"ok": False, "error": "请先上传项目材料"}, status_code=400)
     # 只从当前项目材料解析，避免误读全局演示数据。
     data = import_materials_from_dir(pid)
-    dets = [d for d in data["detections"] if d.get("ctwa") is not None]
+    # ⚠ 过滤条件必须包含 sio2/results: 早期只留 ctwa 非空 →
+    #   **游离二氧化硅**记录被丢弃 (它的值在 sio2, 无 ctwa), 实测使 3.39% 进不了报告,
+    #   而粉尘作业分级(GBZ/T 229.1)正依赖它。
+    dets = [d for d in data["detections"]
+            if d.get("ctwa") is not None or d.get("sio2") or d.get("results")]
     merged = dict(p["data"])
     merged["equipment"] = data["equipment"]
     merged["detections"] = dets
