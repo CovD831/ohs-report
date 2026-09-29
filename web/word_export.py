@@ -99,8 +99,21 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     pd_data = assess.get("_project_data") or {}
     built = pd_data.get("built_tables") or {}
     tables = fill_section(conn, fill_ch, assess)
-    tables = [dict(built[w]) | {"name": w} if w in built else t
-              for t in tables for w in [t["name"]]]
+    # 骨架优先 = 复用沉淀的表 (导出纯读取); ⚠ 但**空骨架不得覆盖现算行** ——
+    # 导入时无 assess, 评估驱动骨架恒为空 (rows=[]) 且 status=await_assess;
+    # 若照单全换, 导出会丢掉 fill_section 现算出的真实行。
+    # (实测: 新鲜导入长兴后导出, 17 张表 computed>0 被空骨架抹平 —— 含
+    #  h14「物理因素检测结果表」→ 整张表从 docx 消失; 接触限值表 45 行 → 0。)
+    # 空骨架 → 用现算表兜底; 骨架有行 → 沿用骨架 (原语义)。
+    _merged: list[dict] = []
+    for t in tables:
+        w = t["name"]
+        sk = built.get(w)
+        if isinstance(sk, dict) and (sk.get("rows") or []):
+            _merged.append(dict(sk) | {"name": w})
+        else:
+            _merged.append(t)
+    tables = _merged
     # 骨架补插: built 里已沉淀但现算缺失的表 (filler 因空数据跳过) 按原节内顺序插入 —
     # 骨架永远在, 数据待补充; 表名顺序依 wanted 名单 (导出编号顺序)
     have = {t["name"] for t in tables}

@@ -1292,13 +1292,29 @@ def import_materials_from_dir(pid: str) -> dict:
                         _scan, _np = _is_scanned(f)
                         if _scan:
                             _vr = vision_detections(f, verbose=False)
-                            # 索引已有条目: 同一 factor 可能多次出现(表型B 汇总 + 表型D 二氧化硅),
-                            # 且不同页可能有**同名但信息量不同**的条目 (p16 汇总无浓度 / p30 有浓度)。
+                            # 索引已有条目: 同一 factor **同一采样点**可能多次出现
+                            # (表型B 汇总页无浓度 + 表型A 逐样页有浓度; 且不同页信息量不同)。
                             # ⚠ 不能"先到先占": 无浓度的条目先入会把有浓度的**当重复丢掉**。
-                            #   (实测 聚乙烯粉尘 p16 无 ctwa 占位 → p30 的 <0.33 被丢)
-                            #   → 策略: 同 factor 保留**信息更全**的那条, 其余只做字段补全。
-                            _idx = {str(d.get("factor")): d for d in dets
-                                    if d.get("source") == "vision"}
+                            # ⚠⚠ 也不可按**因素名单独**归并 —— 物理/化学结果均按
+                            #   (因素, 采样点) 逐行成表 (真实报告 表25/表28):
+                            #   按名合并把 61 条噪声点塌成 1 条 (实测新导入长兴:
+                            #   h14 物理表只剩 1 行/因素 + 化学表丢逐点行)。
+                            #   → 合并键 = (归一因素名, 归一采样点); 同名同点择优保留。
+                            def _norm_name(s: str) -> str:
+                                """因素名归一: 全角/半角括号、空格统一 (用于判重)。
+
+                                实测同一因素会以 '其他粉尘(树脂)' / '其他粉尘（树脂）' 两种
+                                写法出现 (不同页 OCR 结果) → 不归一会存成两条重复项。
+                                """
+                                return (str(s).replace("（", "(").replace("）", ")")
+                                        .replace(" ", "").strip())
+
+                            def _vkey(fac: str, pt: str) -> tuple:
+                                """合并键: (归一因素名, 归一采样点) — 逐点成行, 不跨点塌缩"""
+                                return (_norm_name(fac), _norm_name(pt))
+
+                            _idx = {_vkey(d.get("factor"), d.get("sampling_point")): d
+                                    for d in dets if d.get("source") == "vision"}
 
                             def _score(x: dict) -> int:
                                 """信息量打分: 有浓度/结果/判定即加分 (用于择优保留)"""
@@ -1312,15 +1328,6 @@ def import_materials_from_dir(pid: str) -> dict:
                                 if x.get("judgement"):
                                     s += 1
                                 return s
-
-                            def _norm_name(s: str) -> str:
-                                """因素名归一: 全角/半角括号、空格统一 (用于判重)。
-
-                                实测同一因素会以 '其他粉尘(树脂)' / '其他粉尘（树脂）' 两种
-                                写法出现 (不同页 OCR 结果) → 不归一会存成两条重复项。
-                                """
-                                return (str(s).replace("（", "(").replace("）", ")")
-                                        .replace(" ", "").strip())
 
                             def _near_dup(a: str, b: str) -> bool:
                                 """近似同名判定: 归一后相等, 或一方是另一方前缀且长度差<=2。
@@ -1370,26 +1377,30 @@ def import_materials_from_dir(pid: str) -> dict:
                                 if _fac_msgs:
                                     _new["needs_review"] = True
                                     _new["clean_warnings"] = _fac_msgs
-                                # 先找精确同名, 再找近似同名(截断) → 归并到更完整的那条
-                                _hit = fac if fac in _idx else next(
-                                    (k for k in _idx if _near_dup(k, fac)), None)
-                                if _hit is not None and _hit in seen_det:
-                                    _old = _idx[_hit]
+                                # 先找同点条目 (精确同名 → 近似同名截断) → 择优归并
+                                # (⚠ 合并键含采样点: 只并"同因素同点"的重复读, 不跨点塌缩)
+                                _pt = str(_it.get("sampling_point") or "").strip()
+                                _vk = _vkey(fac, _pt)
+                                _hit = _vk if _vk in _idx else next(
+                                    (k for k in _idx if k[1] == _vk[1]
+                                     and _near_dup(k[0], _vk[0])), None)
+                                if _hit is not None:
+                                    _old = _idx.pop(_hit)
                                     # 名字更完整的一侧获胜 (按**归一后**长度比较,
                                     # 全角/半角括号不算"更完整")
-                                    if len(_norm_name(fac)) > len(_norm_name(_hit)):
+                                    if len(_norm_name(fac)) > len(_norm_name(_old.get("factor") or "")):
                                         _old["factor"] = fac
-                                        _idx.pop(_hit, None)
-                                        _idx[fac] = _old
                                     if _score(_new) > _score(_old):
                                         _old.update({k: v for k, v in _new.items() if v})
                                     else:
                                         for k, v in _new.items():
                                             if v and not _old.get(k):
                                                 _old[k] = v
+                                    _idx[_vkey(_old.get("factor") or fac,
+                                               _old.get("sampling_point") or "")] = _old
                                     continue
                                 seen_det.add(fac)
-                                _idx[fac] = _new
+                                _idx[_vk] = _new
                                 dets.append(_new)
                             # 丢弃"碎片": 名字被另一条**完整因素名**包含, 且自身无任何数据。
                             # 实测 '酸酐'(p12) 是 '邻苯二甲酸酐' 的截断 → 无浓度无结果,

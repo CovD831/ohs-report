@@ -572,13 +572,13 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                     continue
                 cat = conn.execute("SELECT category FROM hazard_factor WHERE name LIKE ? LIMIT 1", (fac + "%",)).fetchone()
                 ty = (cat[0] if cat else "化学毒物")
-                if "噪声" in fac:
-                    ty = "噪声"
-                elif "高温" in fac or "WBGT" in fac:
-                    ty = "高温"
-                det_by_type[ty].append(d)
-            for ty, dets_b in det_by_type.items():
+                # ⚠ 分组键必须**先归一为显示用 dtype** 再分桶:
+                #   标准库 category 有 '化学因素'/'粉尘'/未命中(NONE→化学毒物) 多桶,
+                #   按原始 ty 分桶再映射 dtype 会产出**两张同名**「检测结果表(化学毒物)」
+                #   (实测 7 粉尘 + 13/15 两张化学毒物), 导出侧按"节+表名"去重 → 15 行被静默丢弃。
                 dtype = {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(ty, "化学毒物")
+                det_by_type[dtype].append(d)
+            for dtype, dets_b in det_by_type.items():
                 # h11: CTWA 与峰值浓度 双列投影 — ctwa 为空的峰值行值在 cstel 键, 不得塌缩为 '—'
                 # (真实报告双浓度列: 新泰 p37 检测结果[C_TWA|峰值浓度]; 长兴 表25 CTWA|CSTEL)
                 det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—") or "—",
@@ -726,13 +726,13 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                     continue
                 cat = conn.execute("SELECT category FROM hazard_factor WHERE name LIKE ? LIMIT 1", (fac + "%",)).fetchone()
                 ty = (cat[0] if cat else "化学毒物")
-                if "噪声" in fac:
-                    ty = "噪声"
-                elif "高温" in fac or "WBGT" in fac:
-                    ty = "高温"
-                det_by_type[ty].append(d)
-            for ty, dets_b in det_by_type.items():
+                # ⚠ 分组键必须**先归一为显示用 dtype** 再分桶:
+                #   标准库 category 有 '化学因素'/'粉尘'/未命中(NONE→化学毒物) 多桶,
+                #   按原始 ty 分桶再映射 dtype 会产出**两张同名**「检测结果表(化学毒物)」
+                #   (实测 7 粉尘 + 13/15 两张化学毒物), 导出侧按"节+表名"去重 → 15 行被静默丢弃。
                 dtype = {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(ty, "化学毒物")
+                det_by_type[dtype].append(d)
+            for dtype, dets_b in det_by_type.items():
                 # h11: CTWA 与峰值浓度 双列投影 — ctwa 为空的峰值行值在 cstel 键, 不得塌缩为 '—'
                 # (真实报告双浓度列: 新泰 p37 检测结果[C_TWA|峰值浓度]; 长兴 表25 CTWA|CSTEL)
                 det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—") or "—",
@@ -1074,10 +1074,17 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             if isinstance(g, dict) and g.get("factor"):
                 _grade[str(g["factor"])] = g
         rows = []
+        _seen_f: set = set()
         for j in (assess.get("judgements") or []):
             if not isinstance(j, dict) or not j.get("factor"):
                 continue
             f = str(j["factor"])
+            # ⚠ 按**因素**去重: judgements 逐检测行生成 (同一因素多采样点 → 多行),
+            #   而关键控制点表是**因素级** (真实报告表10.1-1 一因素一行)。
+            #   不去重会把 25 条苯乙烯/20 条噪声印 25/20 行 (实测 151 行)。
+            if f in _seen_f:
+                continue
+            _seen_f.add(f)
             lv = j.get("level") if isinstance(j.get("level"), dict) else {}
             lv = lv or {}
             g = _grade.get(f) or {}
