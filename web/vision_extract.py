@@ -347,6 +347,77 @@ def as_provenance(rec: dict) -> dict:
         field=rec.get("factor", ""))
 
 
+# ============ 扫描件: 营业执照 → 企业/项目基本信息 ============
+# 背景: 材料包里的营业执照多为**扫描件**, 现有提取器读不到 →
+#       company/project_name/founded/registered_capital/legal_rep 全是 None
+#       (实测 c8c7ff0a4d 这 5 个字段全空), 而报告 1.1/3.1 正需要这些。
+_LICENSE_ASK = (
+    "这是一张中国企业**营业执照**。请提取以下字段, 用 JSON 返回 (读不到的字段给空串, 不要猜):\n"
+    '{"company":"企业名称(全称)", "credit_code":"统一社会信用代码",\n'
+    ' "legal_rep":"法定代表人", "registered_capital":"注册资本",\n'
+    ' "founded":"成立日期", "address":"住所/注册地址",\n'
+    ' "business_scope":"经营范围", "type":"类型(如有限责任公司)",\n'
+    ' "valid_to":"营业期限至"}\n'
+    "注意: ① 照原样抄写, 不要改写或补全 ② 数字/日期必须与图上一致 ③ 非营业执照页返回 {}"
+)
+
+
+def extract_license(pdf_path: Path, dpi: int = 200, verbose: bool = True,
+                    use_cache: bool = True, force: bool = False) -> dict:
+    """营业执照扫描件 → 企业基本信息 (带缓存)
+
+    ⚠ 与检测数据同规: 视觉读取的结果一律标 source='vision' + needs_review,
+      绝不伪装成"规则确定提取" (用户红线)。
+    """
+    pdf_path = Path(pdf_path)
+    cp = _cache_path(pdf_path).with_name(_cache_path(pdf_path).stem + "_license.json")
+    if use_cache and not force and cp.exists():
+        try:
+            d = json.loads(cp.read_text(encoding="utf-8"))
+            if verbose:
+                print(f"命中执照缓存: {cp.name}")
+            d["cached"] = True
+            return d
+        except Exception:
+            pass
+
+    import fitz
+    doc = fitz.open(str(pdf_path))
+    out: dict = {}
+    credit = 0.0
+    n = min(len(doc), 3)          # 执照通常 1-2 页, 最多读 3 页
+    for i in range(n):
+        try:
+            # ⚠ _render 是 **0-based** (内部 doc[pno]); 传 i 而非 i+1
+            png = _render(pdf_path, i, dpi)
+            txt, cr = _ask(png, _LICENSE_ASK, max_tokens=700)
+            credit += cr
+            d = _parse_json(txt)
+            # 命中任一关键字段即认为这页是执照
+            if any(d.get(k) for k in ("company", "credit_code", "legal_rep")):
+                out.update({k: v for k, v in d.items() if v})
+                out["_page"] = i + 1
+                if verbose:
+                    print(f"  第{i+1}页 提取到: {str(out.get('company', ''))[:30]}")
+                break
+        except Exception as e:
+            if verbose:
+                print(f"  第{i+1}页失败: {type(e).__name__}: {e}")
+    doc.close()
+
+    res = {"fields": out, "source": "vision", "needs_review": True,
+           "cost": {"credit": credit}, "_file": pdf_path.name}
+    # ⚠ 失败结果**不写缓存**: 早期把"0 字段"也缓存了 → 下次直接命中空结果,
+    #   看起来像"提取器不工作" (实测踩过: 页索引 off-by-one 报错后缓存了 {})。
+    if out:
+        try:
+            cp.parent.mkdir(parents=True, exist_ok=True)
+            cp.write_text(json.dumps(res, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+    return res
+
+
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="扫描件视觉提取 (检测报告 → 结构化数据)")

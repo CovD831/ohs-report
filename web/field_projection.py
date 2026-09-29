@@ -48,6 +48,15 @@ BASIC_INFO_FIELDS = [
 FIELD_VIEWS: dict[str, list[tuple[str, str, str]]] = {
     # 1.1 基本情况 = metadata 块 (对标真实报告)
     "1.1": BASIC_INFO_FIELDS,
+    # 3.1.1 基本情况 (2025 版结构下"基本情况"落在 3.1.1) — 与 1.1 同构,
+    # 额外带企业主体信息 (来自营业执照/申请报告: 建设单位/法定代表人/注册资本/成立日期)
+    # ⚠ 这些字段曾长期为 None (执照是扫描件读不到) → 2026-09 接入营业执照视觉提取后可用
+    "3.1.1": BASIC_INFO_FIELDS + [
+        ("法定代表人", "legal_rep", VIEW_RAW),
+        ("注册资本", "registered_capital", VIEW_RAW),
+        ("成立日期", "founded", VIEW_RAW),
+        ("经营/建设主体类型", "company_type", VIEW_RAW),
+    ],
     # 1.2 项目组成/工程内容: 生产装置/辅助装置/三废 → 设备聚合 + 工艺
     "1.2": [
         ("生产装置", "equipment", VIEW_SUMMARY),

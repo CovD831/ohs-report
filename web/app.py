@@ -841,6 +841,8 @@ def import_materials_from_dir(pid: str) -> dict:
     emergency_supplies = []  # 应急物资 (类别|名称|数量|放置点位)
     investment, ohy_investment, area, capacity, nature, location = "", "", "", "", "", ""
     company, founded, reg_cap, reg_cap_all, legal_rep, investor = "", "", "", "", "", ""
+    # 营业执照(扫描件)提取的字段逐项溯源: {字段: {source:vision, needs_review:True, _file, value}}
+    lic_prov: dict = {}
 
     def _read_rows(f):
         """读取表格文件: 兼容 csv/txt/xlsx, 多种分隔符(\x07/\t/,/;), 容错编码"""
@@ -918,6 +920,32 @@ def import_materials_from_dir(pid: str) -> dict:
         if not f.is_file():
             continue
         name = f.name
+        # ---- 营业执照扫描件 → 企业基本信息 (视觉提取, 标 vision) ----
+        # ⚠ 必须**独立于**下方"复合报告解析"分支: 执照文件名(02_营业执照_正本.pdf)
+        #   不含"申请报告/可研/现状评价/报告书" → 放进去永远不会触发。
+        # 背景: 执照多为扫描件, parse_report_file 读不到 →
+        #       company/founded/registered_capital/legal_rep 全空 (实测)。
+        if f.suffix.lower() == ".pdf" and ("营业执照" in name or "执照" in name):
+            try:
+                from web.vision_extract import _is_scanned, extract_license
+                _scan, _ = _is_scanned(f)
+                _lf = (extract_license(f, verbose=False) if _scan else {}).get("fields") or {}
+                if _lf:
+                    # 执照是本项目主体的权威来源 (区别于现状评价报告的存量描述)
+                    company = company or _lf.get("company", "")
+                    founded = founded or _lf.get("founded", "")
+                    reg_cap = reg_cap or _lf.get("registered_capital", "")
+                    legal_rep = legal_rep or _lf.get("legal_rep", "")
+                    location = location or _lf.get("address", "")
+                    _meta = {"source": "vision", "needs_review": True,
+                             "_file": f.name, "_page": _lf.get("_page")}
+                    for _k, _v in (("company", company), ("founded", founded),
+                                   ("registered_capital", reg_cap),
+                                   ("legal_rep", legal_rep)):
+                        if _v:
+                            lic_prov[_k] = dict(_meta, value=_v)
+            except Exception:
+                pass  # 执照提取失败不应中断导入 (其余材料照常)
         # ---- 复合报告解析 (申请报告/可研/现状评价/初步设计 → PDF/docx) ----
         # 从成套报告文档里抽取 概况/工艺/设备/物料/产品 (真实场景企业给的是报告不是拆好的表格)
         if any(k in name for k in ("申请报告", "可研", "现状评价", "现状", "初步设计", "项目申请", "报告书")) \
@@ -1339,6 +1367,8 @@ def import_materials_from_dir(pid: str) -> dict:
             "company": company, "founded": founded, "registered_capital": reg_cap,
             "registered_capital_all": reg_cap_all,
             "legal_rep": legal_rep, "investor": investor,
+            # 营业执照(扫描件)提取字段的逐项溯源 (vision + needs_review)
+            "field_provenance": lic_prov,
             "equipment_detail": eq_detail, "shifts": shifts,
             "health_check": health_checks, "management": management,
             "hazard_grid": hazard_grids, "emergency_supplies": emergency_supplies}
