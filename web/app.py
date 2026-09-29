@@ -109,10 +109,32 @@ def _get_project_data(pid: str) -> dict:
 
 
 def _save_project_data(pid: str, data: dict) -> bool:
-    """保存项目数据回数据库 (import/一键生成后更新)"""
+    """保存项目数据回数据库 (import/一键生成后更新)
+
+    ⚠ 这是**整体覆盖**语义 (UPDATE ... SET data=?), 不是 merge。
+      传不完整的 dict 会**静默清空**其它字段 —— 本项目已因此踩过两次:
+        ① v48 built_tables 回填时只传 {"built_tables": ...}
+        ② 生成 job 里某次保存丢了 equipment/detections (实测 c64c1704bf)
+      故加防呆: 若新数据的字段数**显著少于**库中现存 (丢 >30% 且绝对值 >=3),
+      视为疑似误清空 → 拒绝写入并记 warning (宁可漏存, 不可清空)。
+    """
     p = get_project(pid)
     if not p:
         return False
+    try:
+        _old = p.get("data") or {}
+        if isinstance(_old, dict) and isinstance(data, dict) and _old:
+            _missing = [k for k in _old if k not in data]
+            # section_states 是生成态, 不计入 (允许生成期间为空)
+            _missing = [k for k in _missing if k != "section_states"]
+            if len(_missing) >= 3 and len(_missing) > len(_old) * 0.3:
+                import logging
+                logging.getLogger("ohs").warning(
+                    f"[_save_project_data] 疑似误清空 pid={pid} — 拒绝保存。"
+                    f"将丢失 {len(_missing)}/{len(_old)} 字段: {_missing[:8]}")
+                return False
+    except Exception:
+        pass
     conn = connect()
     conn.execute("UPDATE project SET data=?, updated=? WHERE id=?",
                  (json.dumps(data, ensure_ascii=False), time.time(), pid))
@@ -635,11 +657,17 @@ def api_project_materials(pid: str):
 
 
 @app.post("/api/projects", response_class=JSONResponse)
-def api_create_project(payload: dict):
-    """新建空白项目；材料由用户上传。"""
+def api_create_project(payload: dict, request: Request):
+    """新建空白项目；材料由用户上传。
+
+    ⚠ 必须接 Request 并落 owner_id: 否则非 admin 用户 (含游客) 建完项目后
+      **导出/下载一律 403** (实测踩过)。
+    """
     name = payload.get("name", "未命名项目")
     industry = payload.get("industry", "")
-    p = create_project(name, industry)
+    _u = request.state.user if hasattr(request.state, "user") else None
+    _owner = (_u or {}).get("username", "")
+    p = create_project(name, industry, owner_id=_owner)
     if not p:
         return JSONResponse({"error": "create failed"}, status_code=500)
     return {"id": p["id"], "name": p["name"], "seed_materials": 0}

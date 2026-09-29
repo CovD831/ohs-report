@@ -119,18 +119,41 @@ def fill_external_async(pid: str, data: dict, on_done=None) -> None:
 
 
 def _patch(pid: str, tables: dict) -> None:
-    """把外部表结果并回 project.data.built_tables"""
+    """把外部表结果并回 project.data.built_tables
+
+    ⚠ 竞态修复 (2026-09 实测 c64c1704bf/e518284b03):
+      本函数在**后台线程**里跑, 而导入 (import-materials) 是主线程且耗时数十秒。
+      早期实现 `p = get_project(pid); data = p["data"]; ...; update_project(pid, name, data)`
+      → 读到的是**导入前的旧快照**, 再把 built_tables 并进去整体写回
+      → **覆盖掉导入刚写好的 equipment/detections/materials** (实测全变 0)。
+      修法: 每次**重新读库最新数据**再只改 built_tables 一个键 —— 缩小写入窗口,
+      且绝不携带任何其它字段的旧快照值。
+    """
     try:
-        from web.projects_db import get_project, update_project
+        import json
+        import sqlite3
+        import time as _t
+
+        from web.projects_db import DB, get_project
         p = get_project(pid)
         if not p:
             return
-        data = p["data"]
-        bt = dict(data.get("built_tables") or {})
+        # 用独立连接做"读-改-写", 只改 built_tables, 其余字段原样保留
+        conn = sqlite3.connect(str(DB))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT data FROM project WHERE id=?", (pid,)).fetchone()
+        if not row:
+            conn.close()
+            return
+        cur = json.loads(row["data"] or "{}")
+        bt = dict(cur.get("built_tables") or {})
         for k, v in tables.items():
             bt[k] = v
-        data["built_tables"] = bt
-        update_project(pid, p["name"], data)
+        cur["built_tables"] = bt
+        conn.execute("UPDATE project SET data=?, updated=? WHERE id=?",
+                     (json.dumps(cur, ensure_ascii=False), _t.time(), pid))
+        conn.commit()
+        conn.close()
         # 失效 assess 缓存 (表变了)
         try:
             from web.app import _cache

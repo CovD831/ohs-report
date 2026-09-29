@@ -168,8 +168,13 @@ def list_all_reports() -> list[dict]:
              "owner_id": r["owner_id"], "updated": r["updated"]} for r in rows]
 
 
-def create_project(name: str, industry: str = "") -> dict | None:
-    """创建空白项目；设备、检测和工艺数据由用户材料导入。"""
+def create_project(name: str, industry: str = "", owner_id: str = "") -> dict | None:
+    """创建空白项目；设备、检测和工艺数据由用户材料导入。
+
+    ⚠ owner_id 必须落库: 早期 INSERT 未写此列 → 永远是 '' →
+      _assert_owner 里非 admin 用户 (含创建者本人/游客) **导出与下载一律 403**
+      (实测: 游客建项目后 GET /export → 403 "无权访问")。
+    """
     pid = uuid.uuid4().hex[:10]
     project_data = {
         "industry": industry,
@@ -179,9 +184,9 @@ def create_project(name: str, industry: str = "") -> dict | None:
     }
     conn = _conn()
     now = time.time()
-    conn.execute("INSERT OR REPLACE INTO project (id, name, data, status, created, updated) "
-                 "VALUES (?, ?, ?, 'draft', ?, ?)",
-                 (pid, name, json.dumps(project_data, ensure_ascii=False), now, now))
+    conn.execute("INSERT OR REPLACE INTO project (id, name, data, status, created, updated, owner_id) "
+                 "VALUES (?, ?, ?, 'draft', ?, ?, ?)",
+                 (pid, name, json.dumps(project_data, ensure_ascii=False), now, now, owner_id or ""))
     conn.commit()
     conn.close()
     return get_project(pid)
