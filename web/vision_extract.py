@@ -57,7 +57,7 @@ _INDEX_ASK = ("本页是职业病危害检测报告的一页。用一行回答: 
 _EXTRACT_ASK = (
     "这是中国职业病危害检测报告的扫描页。请先判断表格类型, 再精确转录为 JSON。\n"
     "表型A=逐样结果表(有 C_TWA/C_STEL 浓度值); "
-    "表型B=岗位汇总表(危害因素/检测方式/检测结果 如 '3/1', 无浓度); "
+    "表型B=岗位汇总表(危害因素/检测方式/检测结果, 无浓度); "
     "表型D=游离二氧化硅测定表(列: 车间/采样岗位|采样点|粉尘种类|检测结果(%)|判定); "
     "表型C=其他(无检测数据, 如封面/目录/纯说明页)。\n"
     "只输出 JSON:\n"
@@ -65,14 +65,17 @@ _EXTRACT_ASK = (
     '"items":[{"factor":"危害因素名或检测项目","sampling_point":"采样点或岗位+工作地点",'
     '"exposure_hours":"接触时间h/d","results":["检测值..."],'
     '"ctwa":"C_TWA(仅A)","cstel":"C_STEL/C_PE(仅A)",'
-    '"pass_ratio":"如3/1(仅B)","dust_type":"粉尘种类(仅D)",'
+    '"dust_type":"粉尘种类(仅D)",'
     '"sio2_percent":"游离二氧化硅检测结果%(仅D)",'
     '"judgement":"符合/不符合/判定(有则填)"}]}\n'
     "硬性规则: ①数字与单位逐字准确, 不推测不补全 ②本页字段没有的留空字符串 "
     "③页面只有封面/目录/说明且无任何检测数值时才用 C ④'<1.7'这类未检出值原样保留 "
     "⑤合并单元格的车间/岗位要补全到行上 ⑥表型D 必填 factor='游离二氧化硅' "
     "⑦**results 只放数值**(如 ['0.5','0.4','0.3'] 或 ['<1.7'])；"
-    "'定点短时间'/'直读'/'个体采样'属**检测方式**, 不是检测结果, 不要放进 results\n"
+    "'定点短时间'/'直读'/'个体采样'属**检测方式**, 不是检测结果, 不要放进 results "
+    "⑧**不要臆造字段**: 页面没有的列不要输出 "
+    "⑨**若本页有表格行但读不清数值, 仍要输出 factor/sampling_point 行(值留空), "
+    "不要整页报 C**"
 )
 
 
@@ -183,47 +186,126 @@ def build_index(pdf_path: Path, dpi: int = 150, verbose: bool = True,
 
 
 def _parse_json(txt: str) -> dict:
-    """容错解析模型返回的 JSON (可能带 markdown 围栏)"""
+    """容错解析模型返回的 JSON (可能带 markdown 围栏)
+
+    ⚠ 必须区分"解析失败"与"表里真没数据":
+      原实现两者都返回 {"items": []} → 调用方无法分辨 → 截断的响应被当成空页**静默丢弃**。
+      实测: 长兴 p21/p23、新泰 p44 因 max_tokens=2000 截断 → raw 5000+ 字符
+            但 `{` 多于 `}` → json.loads 抛错 → 返回 {"items":[]} → 数据无声丢失。
+    故: 解析结果带 _parse_ok 标志, 调用方据此决定是否重试。
+    """
     t = txt.strip()
     t = re.sub(r"^```(?:json)?\s*", "", t)
     t = re.sub(r"\s*```$", "", t)
     m = re.search(r"\{.*\}", t, re.S)
     if not m:
-        return {"items": []}
+        return {"items": [], "_parse_ok": False, "_parse_err": "no_json"}
     try:
-        return json.loads(m.group(0))
-    except Exception:
-        return {"items": []}
+        d = json.loads(m.group(0))
+    except Exception as e:
+        return {"items": [], "_parse_ok": False, "_parse_err": f"json:{type(e).__name__}"}
+    if not isinstance(d, dict):
+        return {"items": [], "_parse_ok": False, "_parse_err": "not_dict"}
+    d["_parse_ok"] = True
+    return d
 
 
 def extract_pages(pdf_path: Path, page_nos: list[int], dpi: int = 180,
-                  verbose: bool = True) -> dict:
-    """精读遍: 只读指定页 → 结构化 items (含 table_type)"""
+                  verbose: bool = True, max_tokens: int = 2000,
+                  retries: int = 2) -> dict:
+    """精读遍: 只读指定页 → 结构化 items (含 table_type)
+
+    ⚠ v59 修复: 原实现有两处**静默丢数据**, 且丢完看起来和"这页本来就没数据"一样:
+
+      ① 模型偶发返回 `{"table_type":"C","items":[]}` (实测同页同图同 prompt,
+         连跑 3 次得 [14,0,0] / [12,0,0] —— **非确定性**, temperature=0 也复现)。
+      ② 响应被 max_tokens 截断 → JSON 不闭合 → 解析失败 → 当成空页。
+         实测长兴 p21/p23、新泰 p44 各丢 10~28 条。
+
+    修复: ① 解析失败 或 ② 空返回 时**重试** (换 DPI 重渲染提高可读性);
+          重试后仍空才记为空页, 并在返回里单列 `empty_after_retry` 供审计。
+    宁可多花一点 credit, 不可静默丢页 —— 丢了没人知道。
+    """
     items, credit, t0 = [], 0.0, time.time()
     types: dict[int, str] = {}
+    retried: list[int] = []      # 触发过重试的页
+    empty2: list[int] = []       # 重试后仍空的页 (可疑, 供人工审计)
+    unresolved: list[int] = []   # 解析始终失败
+
+    # 重试时换更高 DPI (实测 240/300dpi 能改善小字表格的可读性)
     for pno in page_nos:                     # pno 为 1-based
-        png = _render(pdf_path, pno - 1, dpi)
-        try:
-            txt, c = _ask(png, _EXTRACT_ASK, max_tokens=2000)
-        except Exception as e:
-            if verbose:
-                print(f"  p{pno} ERR {type(e).__name__}")
-            continue
-        credit += c
-        d = _parse_json(txt)
-        tt = str(d.get("table_type") or "").strip().upper()[:1]
-        types[pno] = tt or "?"
-        got = d.get("items") or []
-        for it in got:
-            if isinstance(it, dict):
+        got_all, tt_final, last_err = [], "", ""
+        for attempt in range(retries + 1):
+            use_dpi = dpi if attempt == 0 else max(240, dpi)
+            png = _render(pdf_path, pno - 1, use_dpi)
+            try:
+                txt, c = _ask(png, _EXTRACT_ASK, max_tokens=max_tokens)
+                credit += c
+            except Exception as e:
+                last_err = f"{type(e).__name__}"
+                if verbose:
+                    print(f"  p{pno} ERR {last_err} (attempt {attempt+1})")
+                time.sleep(1.5 * (attempt + 1))
+                continue
+
+            d = _parse_json(txt)
+            tt = str(d.get("table_type") or "").strip().upper()[:1]
+            ok = bool(d.get("_parse_ok"))
+            got = [it for it in (d.get("items") or []) if isinstance(it, dict)]
+            got = [it for it in got if str(it.get("factor") or "").strip()]
+
+            if not ok:
+                last_err = str(d.get("_parse_err") or "parse_fail")
+                if verbose:
+                    print(f"  p{pno} 解析失败({last_err}) 尝试重试 (attempt {attempt+1})")
+                # 截断是确定性失败的主因 → 提高 max_tokens 再试
+                if max_tokens < 3500:
+                    max_tokens = 3500
+                time.sleep(0.8)
+                continue
+
+            if got:
+                got_all, tt_final, last_err = got, tt, ""
+                break
+
+            # 解析成功但 0 条 → 可能是模型偶发"全 C" → 重试
+            tt_final = tt
+            if attempt < retries:
+                if verbose:
+                    print(f"  p{pno} 空返回, 重试 (attempt {attempt+1})")
+                retried.append(pno)
+                time.sleep(0.8)
+                continue
+            break
+
+        if got_all:
+            types[pno] = tt_final or "?"
+            for it in got_all:
                 it["_page"] = pno
                 it["_source"] = "vision"
                 it["_table_type"] = types[pno]
                 items.append(it)
+        else:
+            types[pno] = tt_final or "?"
+            if last_err:
+                unresolved.append(pno)
+            else:
+                empty2.append(pno)
+
         if verbose:
-            print(f"  p{pno}: 表型{types[pno]} {len(got)} 条")
+            print(f"  p{pno}: 表型{types.get(pno,'?')} {len(got_all)} 条")
+
+    if retried and verbose:
+        print(f"  [重试过的页] {sorted(set(retried))}")
+    if empty2 and verbose:
+        print(f"  [重试后仍空] {sorted(set(empty2))} ← 可疑, 建议人工抽查")
+    if unresolved and verbose:
+        print(f"  [始终解析失败] {sorted(set(unresolved))}")
+
     return {"items": items, "credit": credit, "elapsed": time.time() - t0,
-            "types": types}
+            "types": types, "retried": sorted(set(retried)),
+            "empty_after_retry": sorted(set(empty2)),
+            "unresolved": sorted(set(unresolved))}
 
 
 def _cache_path(pdf_path: Path) -> Path:

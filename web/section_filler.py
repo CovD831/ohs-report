@@ -22,6 +22,35 @@ from knowledge.oel import connect  # noqa: E402
 from web.number_provenance import prov_rule  # noqa: E402
 
 
+def _det_verdict(d: dict) -> str:
+    """检测结果表"判定"列的三态取值 — 禁止无条件写"合格"
+
+    ⚠ 原实现写死 "合格": 只要记录进了 detections 就声称合格。
+      实测 表型B(岗位×多因素) 记录**没有测得值** (值不在 ctwa, 而在无表头的数值列),
+      塞进检测结果表就会**凭空断言合格** = 编造判定结论 (违反红线: 不生成数字/结论)。
+
+    三态:
+      材料自带判定 → 用它 (符合/不合格/或原话)
+      有测得值     → "符合" (材料给了值即已判过)
+      无值无判定   → "—"     (待补充, 绝不冒充合格)
+    """
+    j = str(d.get("judgement") or "").strip()
+    if j in ("符合", "合格"):
+        return "符合"
+    if j in ("不符合", "不合格"):
+        return "不符合"
+    if j:
+        return j                              # 材料原话 (如"浓度或强度相对稳定")
+    _v = str(d.get("ctwa") or "").strip()
+    if _v and _v not in ("—", "-", "/", "无", "未检出"):   # ⚠ 占位符不算测得值
+        return "符合"
+    _rs = [str(x).strip() for x in (d.get("results") or [])
+           if str(x).strip() not in ("", "—", "-", "/")]
+    if _rs:
+        return "符合"
+    return "—"
+
+
 def _rows_of(conn, sql, args=()):
     return [list(r) for r in conn.execute(sql, args).fetchall()]
 
@@ -344,7 +373,8 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 det_by_type[ty].append(d)
             for ty, dets_b in det_by_type.items():
                 dtype = {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(ty, "化学毒物")
-                det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—"), "—", "合格"]
+                det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—") or "—",
+                             "—", _det_verdict(d)]
                             for i, d in enumerate(dets_b, 1)]
                 # 逐格 provenance: CTWA 值来自检测报告 (文本层或视觉提取), 必须标来源 —
                 # 这是报告里最安全关键的数值, 不标会被审计判 unverified (早期遗漏, 71 个)。
@@ -484,7 +514,8 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 det_by_type[ty].append(d)
             for ty, dets_b in det_by_type.items():
                 dtype = {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(ty, "化学毒物")
-                det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—"), "—", "合格"]
+                det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—") or "—",
+                             "—", _det_verdict(d)]
                             for i, d in enumerate(dets_b, 1)]
                 # 逐格 provenance: CTWA 值来自检测报告 (文本层或视觉提取), 必须标来源 —
                 # 这是报告里最安全关键的数值, 不标会被审计判 unverified (早期遗漏, 71 个)。
