@@ -44,10 +44,15 @@ def _det_verdict(d: dict) -> str:
     _v = str(d.get("ctwa") or "").strip()
     if _v and _v not in ("—", "-", "/", "无", "未检出"):   # ⚠ 占位符不算测得值
         return "符合"
-    _rs = [str(x).strip() for x in (d.get("results") or [])
-           if str(x).strip() not in ("", "—", "-", "/")]
-    if _rs:
-        return "符合"
+    # ⚠ results 只有 **表型A(逐样结果表)** 才是检测值。
+    #   表型B 的 results 是误读的其它列 —— 实测长兴 p14 的 0.5/1.5/2
+    #   经 300dpi 取证是 **"采样时间(小时)"** 列; 新泰 p27 是无表头数值列。
+    #   若仅凭 results 断言"符合" = 拿采样时长当合格依据 = 编造。
+    if str(d.get("table_type") or "").strip().upper() == "A":
+        _rs = [str(x).strip() for x in (d.get("results") or [])
+               if str(x).strip() not in ("", "—", "-", "/")]
+        if _rs:
+            return "符合"
     return "—"
 
 
