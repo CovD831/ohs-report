@@ -1,7 +1,12 @@
 """数字分类器单元测试 — 覆盖真实报告里数字 vs 型号/化学名的边界"""
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "/Users/abaaba/Projects/ohs-report")
+# 可移植根定位 (本地 repo 或容器 /app 均可跑)
+ROOT = next((p for p in (Path("/app"), Path(__file__).resolve().parent.parent)
+             if (p / "web" / "number_provenance.py").exists()),
+            Path(__file__).resolve().parent.parent)
+sys.path.insert(0, str(ROOT))
 from web.number_provenance import (  # noqa: E402
     audit_tables, cell_numbers, prov_llm, prov_rule, prov_std,
 )
