@@ -318,9 +318,40 @@ function loadMaterials() {
   });
 }
 async function importMaterials() {
-  const r = await fetch(`/api/projects/${pid}/import-materials`, { method: 'POST' });
-  const d = await r.json();
-  if (d.ok) {
+  // ⚠ 含扫描件时导入是**同步阻塞**的 (实测 125 页扫描件 ≈ 18 分钟: 视觉提取按页调模型)。
+  //   早期无任何进度提示 → 用户以为卡死而反复点击 (会并发重复跑)。
+  //   这里给: ① 按钮禁用防重复 ② 逐秒计时提示 ③ 说明为什么慢。
+  const btn = document.querySelector('button[onclick="importMaterials()"]');
+  const oldTxt = btn ? btn.textContent : '';
+  let sec = 0;
+  let hintEl = document.getElementById('importHint');
+  if (!hintEl) {
+    hintEl = document.createElement('div');
+    hintEl.id = 'importHint';
+    hintEl.style.cssText = 'margin-top:8px;font-size:12px;color:var(--text-muted);line-height:1.6;';
+    if (btn && btn.parentNode) btn.parentNode.appendChild(hintEl);
+  }
+  const timer = setInterval(() => {
+    sec += 1;
+    const m = Math.floor(sec / 60);
+    hintEl.innerHTML = `⏳ 正在解析材料… <b>${m}分${sec % 60}秒</b><br>`
+      + `<span style="opacity:.75">含扫描件 PDF 时需逐页视觉识别，一张 100 页检测报告约需 15-20 分钟，请勿关闭页面。</span>`;
+  }, 1000);
+  if (btn) { btn.disabled = true; btn.style.opacity = '.6'; btn.textContent = '⏳ 解析中…'; }
+  hintEl.innerHTML = '⏳ 正在解析材料… 请稍候';
+
+  let d = null;
+  try {
+    const r = await fetch(`/api/projects/${pid}/import-materials`, { method: 'POST' });
+    d = await r.json();
+  } catch (e) {
+    d = { ok: false, error: String(e) };
+  } finally {
+    clearInterval(timer);
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; btn.textContent = oldTxt; }
+    if (hintEl) hintEl.innerHTML = '';
+  }
+  if (d && d.ok) {
     let msg = `已导入: 设备 ${d.equipment} 台, 检测 ${d.detections} 条, 材料 ${d.materials} 个`;
     if (d.quality) {
       const q = d.quality;
@@ -333,11 +364,14 @@ async function importMaterials() {
       }
       if (!(q.errors || []).length && !(q.warns || []).length) msg += '\n\n✅ 数据质检通过';
     }
+    msg += `\n\n(耗时 ${Math.floor(sec / 60)}分${sec % 60}秒)`;
     alert(msg);
     closeDataEditor();
     await loadOverview();
     loadSection(SEC);
-  } else alert('导入失败');
+  } else {
+    alert('导入失败' + (d && d.error ? ': ' + d.error : ''));
+  }
 }
 function closeDataEditor() { document.getElementById('dataDrawer').classList.remove('show'); }
 async function saveData() {
