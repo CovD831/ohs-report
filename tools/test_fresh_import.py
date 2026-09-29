@@ -128,6 +128,33 @@ def main() -> int:
     ok_dup = not dup_chem
     print(f"  {'✓' if ok_dup else '✗'} 检测结果表名唯一 = {chem_names} (③ 同名冲突守卫)")
 
+    # ④ 单一合并点守卫 (同型第6次事故): 解析结果的每个非空键都必须能落库
+    from web.app import merge_import_into_data
+    _probe = {"name": "年产12000吨X项目", "industry": "C265", "field_provenance": {"company": {"v": 1}},
+              "materials": [{"name": "甲醇"}], "material_count": 45, "equipment": ["反应釜"],
+              "detections": [{"factor": "噪声"}], "process_text": "x", "empty_thing": ""}
+    _merged = merge_import_into_data({}, _probe)
+    _must = all([_merged.get("name") == "年产12000吨X项目", _merged.get("industry") == "C265",
+                 isinstance(_merged.get("field_provenance"), dict), _merged.get("materials"),
+                 "material_count" not in _merged, "equipment" not in _merged,
+                 "detections" not in _merged, "process_text" not in _merged,
+                 "empty_thing" not in _merged])
+    ok_merge = bool(_must)
+    print(f"  {'✓' if ok_merge else '✗'} 单一合并点: name/industry/field_provenance 可落库, "
+          f"计数与直赋键不串 (④ 白名单漂移守卫)")
+
+    # ⑤ 可研解析: name 不得吞后续标签行 (换行压平负向前瞻守卫)
+    PACK3 = PACK / "03_项目申请报告_可研.pdf"
+    ok_name = True
+    if PACK3.exists():
+        from web.report_parser import parse_report_file as _prf
+        _rp = _prf(PACK3)
+        _nm = str(_rp.get("name") or "")
+        ok_name = bool(_nm) and "建设单位" not in _nm and "建设地点" not in _nm and len(_nm) <= 40
+        print(f"  {'✓' if ok_name else '✗'} 可研 name 干净 = {_nm[:48]!r} (⑤ 吞行守卫)")
+    else:
+        print("  - 可研不在材料包, 跳过 ⑤")
+
     # 清理测试项目 (防污染项目列表)
     try:
         from web.projects_db import _conn as _pc
@@ -138,7 +165,7 @@ def main() -> int:
     except Exception:
         pass
 
-    all_ok = ok_noise and ok_cstel and ok_pt and ok_mount and ok_dup
+    all_ok = ok_noise and ok_cstel and ok_pt and ok_mount and ok_dup and ok_merge and ok_name
     print()
     print(f"新鲜导入数据链: {'✓ 通过' if all_ok else '✗ 失败'}")
     return 0 if all_ok else 1

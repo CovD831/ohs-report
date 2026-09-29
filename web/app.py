@@ -334,16 +334,8 @@ def api_report_generate(request: Request):
             data["equipment"] = imported.get("equipment") or data.get("equipment") or []
             data["detections"] = imported.get("detections") or data.get("detections") or []
             data["process_text"] = imported.get("process_text") or data.get("process_text") or ""
-            # 结构化字段: 物料/定员/防护/PPE/应急/建构筑物/设施配置/产品/公辅/概况细节
-            for k in ("materials", "staffing", "protection", "ppe", "emergency",
-                      "buildings", "facilities", "products", "public_works",
-                      "investment", "ohy_investment", "area", "capacity", "nature", "location",
-                      "equipment_detail", "shifts", "health_check", "management",
-                      "hazard_grid", "emergency_supplies",
-                      "company", "founded", "registered_capital", "registered_capital_all",
-                      "legal_rep", "investor"):
-                if imported.get(k):
-                    data[k] = imported[k]
+            # 结构化字段: 单一合并点 (无白名单 — 白名单漂移=同型第6次事故)
+            data = merge_import_into_data(data, imported)
             # 项目名/行业从 C1/C2 概况解析 (避免"未命名报告/待补充")
             if imported.get("industry"):
                 data["industry"] = imported["industry"]
@@ -773,6 +765,28 @@ def api_materials():
     return {"files": files, "count": len(files)}
 
 
+def merge_import_into_data(base: dict, imported: dict) -> dict:
+    """材料解析结果 → 项目数据 (单一合并点).
+
+    原则: 解析出的非空字段覆盖旧值 (材料没给的不覆盖, 保留旧值/手填值)。
+    equipment/detections/process_text 由调用方直接赋值 (detections 需先过滤), 此处跳过。
+    ⚠ 不做键白名单: 白名单漂移 = 同型第6次事故 —— import_materials_from_dir
+      返回 name/industry (可研解析), 但合并白名单漏排 → merged 无这两个键 →
+      质检恒报「必填字段缺: 项目名称/所属行业」, 1.1 概况回退「未命名项目」。
+      现在新字段只要进 return dict 就自动流通到落库 (提取器→持久化→消费端全链)。
+    """
+    out = dict(base)
+    for _k, _v in imported.items():
+        if _k in ("material_count", "equipment", "detections", "process_text"):
+            continue                              # 响应计数 / 调用方直接赋值
+        if _v in (None, "", [], {}):              # 材料没给的键不覆盖 (保留旧值/手填值)
+            continue
+        if _k == "name" and str(_v).strip() in ("", "未命名报告", "未命名项目"):
+            continue
+        out[_k] = _v
+    return out
+
+
 @app.post("/api/projects/{pid}/import-materials", response_class=JSONResponse)
 def api_import_materials(pid: str):
     """从材料文件导入项目数据 (设备/检测/工艺) → 保存+缓存失效
@@ -805,15 +819,9 @@ def api_import_materials(pid: str):
     merged["detections"] = dets
     merged["process_text"] = data["process_text"]
     # 重新导入 = 材料重新解析: 解析出的全部字段覆盖旧值 (否则提取修复永远落不到库)
-    for _k in ("materials", "staffing", "shifts", "ppe", "emergency", "buildings",
-               "facilities", "products", "public_works", "health_check", "management",
-               "hazard_grid", "emergency_supplies", "equipment_detail",
-               "investment", "ohy_investment", "area", "capacity", "nature", "location",
-               "company", "founded", "registered_capital", "registered_capital_all",
-               "legal_rep", "investor", "protection"):
-        _v = data.get(_k)
-        if _v not in (None, "", [], {}):  # 材料没给的键不覆盖 (保留旧值/手填值)
-            merged[_k] = _v
+    # 单一合并点 (无白名单 — 见 merge_import_into_data 注释: 白名单漂移=同型第6次事故)
+    merged = merge_import_into_data(merged, data)
+    _pn = str(data.get("name") or "").strip()   # 行名升级用 (下面 update_project)
     # 企业画像 + 表骨架先行: 数据处理阶段沉淀 (画像=结构化聚合; 骨架表=规则+LLM增强), 导出纯读取
     try:
         from web.company_profile import build_profile
@@ -850,7 +858,12 @@ def api_import_materials(pid: str):
                                     "checked_at": int(time.time())}
     except Exception:
         pass
-    update_project(pid, p["name"], merged)
+    # 行名: 占位名(未命名报告/空)且有解析名 → 升级为真名 (与 generate-all 路径语义一致;
+    # 用户已自定义的行名不覆盖 — 仅占位名升级)
+    _row_name = p["name"]
+    if _pn and (_row_name in ("", "未命名报告", "未命名项目") or not _row_name):
+        _row_name = _pn
+    update_project(pid, _row_name, merged)
     _cache.pop(f"assess:{pid}", None)
     resp = {"ok": True, "equipment": len(merged["equipment"]),
             "detections": len(dets), "materials": data.get("material_count", 0)}
