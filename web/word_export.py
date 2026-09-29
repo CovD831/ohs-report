@@ -349,8 +349,15 @@ def _inject_numbering(docx_path):
 
 def _heading(doc, text: str, level: int = 1):
     """带大纲级别的标题 (Word 导航窗格/自动目录可用)
-    格式规约: 一级=宋体16居中加粗; 二级=黑体14加粗; 三级=宋体13加粗; 四级=宋体12加粗
-    直接用 add_heading 会被 Heading 样式的主题字体覆盖(仿宋13) — 改: 段落+outlineLvl+字体全显式"""
+
+    格式规约 —— **以真实备案稿为准** (2026-09 取证 /tmp/bench_orig/长兴--预评（备案稿7-31）.docx):
+      字体: 各级**统一 仿宋_GB2312** (L1-L4 全部, 实测 187 个标题无一例外)
+      字号: **14pt** (各级统一, 从 Normal 样式继承 sz=28 半磅)
+      加粗: 各级均加粗
+      对齐: 一级居中, 二~四级左对齐
+    早期版本用 "宋体16/黑体14/宋体13/宋体12" 做层级视觉区分, 但**与原报告不符** →
+    用户要求"一切以贴近真实报告为准", 故改为各级统一仿宋14。
+    直接用 add_heading 会被 Heading 样式的主题字体覆盖 — 改: 段落+outlineLvl+字体全显式"""
     from docx.shared import Pt as _Pt
     from docx.oxml.ns import qn as _qn
     from docx.enum.text import WD_ALIGN_PARAGRAPH as _AL
@@ -362,11 +369,12 @@ def _heading(doc, text: str, level: int = 1):
         lvl = pPr.makeelement(_qn('w:outlineLvl'), {})
         pPr.append(lvl)
     lvl.set(_qn('w:val'), str(max(0, level - 1)))
-    fonts = {1: (SONG, 16, True, _AL.CENTER),
-             2: (HEI, 14, True, None),
-             3: (SONG, 13, True, None),
-             4: (SONG, 12, True, None)}
-    fname, size, bold, align = fonts.get(level, (SONG, 13, True, None))
+    # 各级统一仿宋 14pt 加粗 (对齐原报告); 仅对齐方式按层级区分
+    fonts = {1: (FANGSONG, 14, True, _AL.CENTER),
+             2: (FANGSONG, 14, True, None),
+             3: (FANGSONG, 14, True, None),
+             4: (FANGSONG, 14, True, None)}
+    fname, size, bold, align = fonts.get(level, (FANGSONG, 14, True, None))
     r = p.add_run(text)
     _set_font(r, fname, size, bold)
     # 段落字体 (防 Normal 样式干扰)
@@ -626,7 +634,8 @@ def _write_tables_named(doc, sn: str, tables: list[dict]):
             no = f"表{cap}-{_TABLE_SEQ[cap]}"
         title = caps[idx] if idx < len(caps) else t.get("name", "相关数据表")  # 原报告标题逐字对齐
         doc.add_paragraph()
-        _para(doc, f"{no} {title}", HEI, 12, bold=True, align=1)
+        # 表题格式对齐原报告 (取证: 36/48 为 仿宋_GB2312 12pt 不加粗 居中)
+        _para(doc, f"{no} {title}", FANGSONG, 12, bold=False, align=1)
         _write_tables(doc, [t])
 
 
@@ -644,13 +653,15 @@ def _write_tables(doc, tables):
             cell = dt.rows[0].cells[i]
             cell.text = ""
             r = cell.paragraphs[0].add_run(str(c))
-            _set_font(r, SONG, 10.5, True)
+            # 表头: 仿宋_GB2312 10.5pt 加粗 (原报告取证)
+            _set_font(r, FANGSONG, 10.5, True)
         if h2:
             for i, c in enumerate(h2):
                 cell = dt.rows[1].cells[i]
                 cell.text = ""
                 r = cell.paragraphs[0].add_run(str(c))
-                _set_font(r, SONG, 10.5, True)
+                # 表头: 仿宋_GB2312 10.5pt 加粗 (原报告取证)
+                _set_font(r, FANGSONG, 10.5, True)
             # merge_rect: [(r1,c1,r2,c2)] 矩形区合并 — 先清空非首格文本再合并 (python-docx merge 会拼接被并格文本)
             for r1, c1, r2, c2 in t.get("merge_rect") or []:
                 for rr in range(r1, r2 + 1):
@@ -665,7 +676,8 @@ def _write_tables(doc, tables):
                     break
                 cells[i].text = ""
                 r = cells[i].paragraphs[0].add_run(str(v))
-                _set_font(r, SONG, 10.5)
+                # 表格正文: 仿宋_GB2312 10.5pt (原报告取证: FangSong/仿宋 sz=21 半磅)
+                _set_font(r, FANGSONG, 10.5)
         doc.add_paragraph()
 
 
