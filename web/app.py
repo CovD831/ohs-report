@@ -787,6 +787,14 @@ def api_import_materials(pid: str):
         return JSONResponse({"ok": False, "error": "请先上传项目材料"}, status_code=400)
     # 只从当前项目材料解析，避免误读全局演示数据。
     data = import_materials_from_dir(pid)
+    # ⚠ 竞态修复: p 在**请求开始时**读 (上面第 781 行), 而 import_materials_from_dir
+    #   是**同步阻塞**的 (含扫描件实测 12-18 分钟)。期间后台线程 (异步外部表 _patch、
+    #   或并发的 generate-all) 可能已写入新字段。若此时用**旧快照** p["data"] 做基底
+    #   → 把别人写的数据整体覆盖掉 (实测 06ea028767: 导入 20 条检测最终落库 0 条)。
+    #   修法: 解析完成后**重新读**最新数据作基底。
+    _p_fresh = get_project(pid)
+    if _p_fresh:
+        p = _p_fresh
     # ⚠ 过滤条件必须包含 sio2/results: 早期只留 ctwa 非空 →
     #   **游离二氧化硅**记录被丢弃 (它的值在 sio2, 无 ctwa), 实测使 3.39% 进不了报告,
     #   而粉尘作业分级(GBZ/T 229.1)正依赖它。

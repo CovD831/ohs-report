@@ -193,6 +193,35 @@ def create_project(name: str, industry: str = "", owner_id: str = "") -> dict | 
 
 
 def update_project(pid: str, name: str, data: dict) -> dict | None:
+    """整体覆盖项目数据 (name + data + status)
+
+    ⚠ 与 `_save_project_data` 同样是**整体覆盖**语义。本项目多次因"传旧快照"清空数据
+      (实测 c64c1704bf / 06ea028767)。故此处也加同样的防呆:
+      新数据若比库中现存**少 >30% 且 >=3 个字段** → 拒绝写入并记 warning。
+      (调用方若确需删字段, 应先显式从库里读出完整数据再删)
+    """
+    _p = _conn()
+    _p.row_factory = __import__("sqlite3").Row
+    try:
+        _row = _p.execute("SELECT data FROM project WHERE id=?", (pid,)).fetchone()
+        if _row:
+            _old = json.loads(_row["data"] or "{}")
+            if isinstance(_old, dict) and _old and isinstance(data, dict):
+                _missing = [k for k in _old if k not in data and k != "section_states"]
+                if len(_missing) >= 3 and len(_missing) > len(_old) * 0.3:
+                    import logging
+                    logging.getLogger("ohs").warning(
+                        f"[update_project] 疑似误清空 pid={pid} — 拒绝保存。"
+                        f"将丢失 {len(_missing)}/{len(_old)} 字段: {_missing[:8]}")
+                    _p.close()
+                    return get_project(pid)
+    except Exception:
+        pass
+    finally:
+        try:
+            _p.close()
+        except Exception:
+            pass
     conn = _conn()
     conn.execute("UPDATE project SET name=?, data=?, updated=?, status=? WHERE id=?",
                  (name, json.dumps(data, ensure_ascii=False), time.time(),
