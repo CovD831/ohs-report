@@ -66,6 +66,192 @@ def _det_verdict(d: dict) -> str:
     return "—"
 
 
+# ===== h14: 物理因素独立检测结果表 =====
+# 取证 (用户已授权方案①): 长兴备案稿 表28 = 独立「工作场所噪声检测结果」表, 列:
+#   检测岗位 | 检测地点 | 检测结果(1|2|3, 双层表头) | LEX,8h[dB(A)] | 接触时间(h) |
+#   职业卫生接触限[dB(A)] | 结果判定; 新泰备案稿 p43 7.2 物理因素表 = 「工种|检测地点|
+#   检测项目|检测结果|检测单位|职业接触限值|判定结果」通用形态 (含检测项目列)。
+#   → 本表合并两版真实形态: 长兴 9 列 + 新泰「检测项目」列 (本表混合多因素, 需列名分辨)。
+# 物理因素实测值在 results (表型A 平行样 / 单值行 1 个), LEX,8h 在 ctwa 键。
+# ⚠ 行选择必须「按因素名做合理性区间」: 表型B 的 results 混有采样时长 (0.5/1.5/2)
+#   与斜杠串 (3/1) — 纯值域启发式会误收时长/误拒 工频电场 0.002 (实测教训)。
+_PHYS_INTERVAL = (
+    ("噪声", 40.0, 130.0),      # dB(A), 实测 55.8~89.7
+    ("照度", 20.0, 20000.0),    # lx, 实测 316~1032
+    ("工频", 0.001, 20.0),      # kV/m, 实测 0.002~0.745 (≤8 启发的反例)
+    ("紫外", 0.001, 1000.0),    # 辐照度/照射量
+    ("高温", 10.0, 60.0),       # WBGT ℃
+    ("WBGT", 10.0, 60.0),
+    ("微波", 0.001, 100000.0),
+    ("射频", 0.001, 100000.0),
+    ("振动", 0.01, 1000.0),
+)
+
+
+def _is_phys_factor(fac: str) -> bool:
+    """物理因素判别 — entity_link.is_physical 为基准, 补齐照度等非化学检测项
+
+    entity_link.is_physical 覆盖国标噪声/高温/振动/工频/紫外/微波/激光等;
+    照度 (建筑卫生学采光照明) / 低温 / 高湿 / 电离辐射 属物理检测项但不在其名录。
+    """
+    f = str(fac or "")
+    if any(k in f for k in ("照度", "电离辐射", "低温", "高湿")):
+        return True
+    try:
+        from web.entity_link import is_physical
+        return is_physical(f)
+    except Exception:
+        return any(k in f for k in ("噪声", "高温", "振动", "工频", "紫外", "微波",
+                                    "激光", "红外", "射频", "WBGT"))
+
+
+def _phys_value(fac: str, v):
+    """按因素名的合理性区间取物理测量值; 非数值/超区间(时长型)返回 None"""
+    s = str(v or "").strip()
+    if not s:
+        return None
+    try:
+        n = float(s.replace("<", "").replace("＜", "").replace("＞", ""))
+    except Exception:
+        return None
+    for kw, lo, hi in _PHYS_INTERVAL:
+        if kw in fac:
+            return s if lo <= n <= hi else None
+    return s if 0 < n < 100000 else None
+
+
+def _phys_verdict(d: dict, vals: list) -> str:
+    """物理表判定列: 材料判定优先 (三态白名单); 有可信测量值 → "符合"; 否则 "—" """
+    v = _det_verdict(d)
+    if v != "—":
+        return v
+    return "符合" if vals else "—"
+
+
+def _physical_det_table(conn, dets: list) -> dict | None:
+    """物理因素独立检测结果表 (噪声/照度/工频电场/紫外...; 对齐真实报告 表28 形态)"""
+    picked: dict = {}
+    order: list = []
+    for d in dets:
+        fac = str(d.get("factor", "") or "")
+        if not _is_phys_factor(fac):
+            continue
+        # 多因素串行 ("氢氧化钠、噪声") = 表型B 识别表行, 值语义不明 → 剔除
+        if any(s in fac for s in ("、", "；", "，", ", ")):
+            continue
+        # 检测方案行 (表型B: 数字列实为采样时段, 判定=「浓度或强度相对稳定」) → 非检测结果
+        # (实测: 新泰 p27 工频电场 res=['0.5'] 是采样时长, 0.5 ∈ 合理区间 → 区间判别兜不住)
+        if "稳定" in str(d.get("judgement") or ""):
+            continue
+        vals = [x for x in (_phys_value(fac, v) for v in (d.get("results") or [])) if x]
+        lex = ""
+        _c = d.get("ctwa")
+        if str(_c or "").strip() not in ("", "—", "None"):
+            lex = _phys_value(fac, _c) or ""
+        if not vals and not lex:
+            continue
+        _pt = str(d.get("sampling_point") or "").strip()
+        key = (fac, _pt)
+        _score = min(len(vals), 3) + (1 if lex else 0)
+        if key in picked and picked[key]["score"] >= _score:
+            continue
+        if key not in picked:
+            order.append(key)
+        picked[key] = {"d": d, "vals": vals, "lex": lex, "score": _score, "pts": _pt}
+    if not picked:
+        return None
+    rows, prov = [], {}
+    for key in order:
+        it = picked[key]
+        d, vals, lex, _pt = it["d"], it["vals"], it["lex"], it["pts"]
+        fac = str(d.get("factor", "") or "")
+        # 岗位/地点拆分: "操作工-…"(新泰) / "制造部制造课/制造课反应班 主厂房…"(长兴)
+        # 三种形态: "A班 地点" / "A班-地点"(破折号在空格前) / "A-地点"(仅破折号)
+        _post, _loc = "—", "—"
+        if _pt:
+            _sn = _pt.replace("：", ":")
+            _sp = _sn.find(" ")
+            _dash = _sn.rfind("-", 0, _sp if _sp != -1 else len(_sn))
+            if _dash > 0:
+                _post, _loc = _sn[:_dash].strip(), _sn[_dash + 1:].strip()
+            elif _sp > 0:
+                _post, _loc = _sn[:_sp].strip(), _sn[_sp + 1:].strip()
+            elif ":" in _sn:
+                _post, _loc = [x.strip() for x in _sn.split(":", 1)]
+            else:
+                _loc = _pt
+        # 限值: oel_limit 标准库 (噪声 LEX,8h=85 dB(A) / 工频电场 5 kV/m / 高温 WBGT=…)
+        lim = "—"
+        try:
+            _recs = conn.execute("SELECT oel_type, value, unit FROM oel_limit "
+                                 "WHERE factor_name LIKE ?", (fac + "%",)).fetchall()
+            _prefer = (("LEX",) if "噪声" in fac else
+                       ("电场",) if "工频" in fac else
+                       ("WBGT",) if ("高温" in fac or "WBGT" in fac) else ())
+            _pick = next((r for r in _recs if _prefer and any(k in str(r[0]) for k in _prefer)), None)
+            if _pick is None and len(_recs) == 1:
+                _pick = _recs[0]
+            if _pick:
+                lim = f"{_pick[1]} {_pick[2] or ''}".strip()
+        except Exception:
+            pass
+        _ri = len(rows)
+        _hrs = str(d.get("exposure_hours") or "").strip() or "—"
+        rows.append([_post, _loc, fac] + (vals[:3] + ["—", "—", "—"])[:3]
+                    + [lex or "—", _hrs, lim, _phys_verdict(d, vals)])
+        # 逐格 provenance: 物理测量值来自检测报告 (视觉提取 → needs_review)
+        # 列号: 0岗位 1地点 2检测项目 3|4|5检测结果 6 LEX 7时间 8限值 9判定
+        _ev = {"file": d.get("_file") or "检测报告", "page": d.get("_page")}
+        for _ci, _vv in enumerate(vals[:3]):
+            if not _vv:
+                continue
+            try:
+                if d.get("source") == "vision":
+                    from web.number_provenance import prov_vision
+                    prov[f"{_ri}_{3 + _ci}"] = prov_vision(
+                        _ev, field=f"{fac}.检测结果{_ci + 1}", page=d.get("_page"))
+                else:
+                    prov[f"{_ri}_{3 + _ci}"] = prov_rule(
+                        _ev, field=f"{fac}.检测结果{_ci + 1}", traceable=bool(d.get("_file")))
+            except Exception:
+                pass
+        if lex:
+            try:
+                if d.get("source") == "vision":
+                    from web.number_provenance import prov_vision
+                    prov[f"{_ri}_6"] = prov_vision(_ev, field=f"{fac}.LEX,8h", page=d.get("_page"))
+                else:
+                    prov[f"{_ri}_6"] = prov_rule(_ev, field=f"{fac}.LEX,8h", traceable=bool(d.get("_file")))
+            except Exception:
+                pass
+    if not rows:
+        return None
+    # 行序: 按因素名分组 (噪声在前, 同真实报告表28 的独立噪声表) — 稳定排序保持原页序
+    # 同时把 prov 重映射 (key = "行号_列号")
+    _idx = sorted(range(len(rows)), key=lambda i: (0 if "噪声" in str(rows[i][2]) else 1, i))
+    if _idx != list(range(len(rows))):
+        _new_rows, _new_prov = [], {}
+        for _ni, _oi in enumerate(_idx):
+            _new_rows.append(rows[_oi])
+            for _k, _v in prov.items():
+                _r, _, _c = _k.partition("_")
+                if _r == str(_oi):
+                    _new_prov[f"{_ni}_{_c}"] = _v
+        rows, prov = _new_rows, _new_prov
+    # 表头双层: 上=检测结果(跨3列)/下=1|2|3 (原报告表28 形态 + 新泰 p43 检测项目列);
+    # 岗位/地点/项目/LEX/时间/限值/判定 纵向合并 (两版真实表均如此)
+    _H = "LEX,8h[dB(A)]"
+    _HU = "职业卫生接触限[dB(A)]"
+    cols = ["检测岗位", "检测地点", "检测项目", "检测结果", "检测结果", "检测结果",
+            _H, "接触时间(h)", _HU, "结果判定"]
+    header2 = ["检测岗位", "检测地点", "检测项目", "1", "2", "3",
+               _H, "接触时间(h)", _HU, "结果判定"]
+    merge = [(0, 0, 1, 0), (0, 1, 1, 1), (0, 2, 1, 2), (0, 3, 0, 5),
+             (0, 6, 1, 6), (0, 7, 1, 7), (0, 8, 1, 8), (0, 9, 1, 9)]
+    return {"name": "物理因素检测结果表", "cols": cols, "header2": header2,
+            "merge_rect": merge, "rows": rows, "prov": prov}
+
+
 def _rows_of(conn, sql, args=()):
     return [list(r) for r in conn.execute(sql, args).fetchall()]
 
@@ -379,6 +565,11 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             det_by_type = defaultdict(list)
             for d in dets:
                 fac = d.get("factor", "")
+                # h14: 物理因素 → 独立「物理因素检测结果表」; 不进化学浓度表
+                # (噪声 ctwa=LEX,8h 非浓度; 照度/工频无浓度列; 实测值在 results —
+                #  塞进 CTWA/峰值浓度 表会全列 '—' = 数据丢失)
+                if _is_phys_factor(fac):
+                    continue
                 cat = conn.execute("SELECT category FROM hazard_factor WHERE name LIKE ? LIMIT 1", (fac + "%",)).fetchone()
                 ty = (cat[0] if cat else "化学毒物")
                 if "噪声" in fac:
@@ -388,28 +579,36 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 det_by_type[ty].append(d)
             for ty, dets_b in det_by_type.items():
                 dtype = {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(ty, "化学毒物")
+                # h11: CTWA 与峰值浓度 双列投影 — ctwa 为空的峰值行值在 cstel 键, 不得塌缩为 '—'
+                # (真实报告双浓度列: 新泰 p37 检测结果[C_TWA|峰值浓度]; 长兴 表25 CTWA|CSTEL)
                 det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—") or "—",
-                             "—", _det_verdict(d)]
+                             d.get("cstel", "—") or "—", "—", _det_verdict(d)]
                             for i, d in enumerate(dets_b, 1)]
                 # 逐格 provenance: CTWA 值来自检测报告 (文本层或视觉提取), 必须标来源 —
                 # 这是报告里最安全关键的数值, 不标会被审计判 unverified (早期遗漏, 71 个)。
                 _dp = {}
                 for _i, _d in enumerate(dets_b):
-                    _ctwa = _d.get("ctwa")
-                    if _ctwa in (None, "", "—"):
-                        continue
                     _ev = {"file": _d.get("_file") or "检测报告",
                            "page": _d.get("_page")}
-                    if _d.get("source") == "vision":
-                        # 视觉提取的数字 → needs_review (用户红线: 机器读的≠确定取出)
-                        from web.number_provenance import prov_vision
-                        _dp[f"{_i}_2"] = prov_vision(_ev, field=f"{_d.get('factor')}.CTWA",
-                                                     page=_d.get("_page"))
-                    else:
-                        _dp[f"{_i}_2"] = prov_rule(_ev, field=f"{_d.get('factor')}.CTWA",
-                                                   traceable=bool(_d.get("_file")))
-                tables.append({"name": f"检测结果表({dtype})", "cols": ["序号", "危害因素", "CTWA", "PC-TWA", "判定"],
+                    # h11: CTWA(列2) 与 峰值浓度(列3) 双列投影, 各自独立逐格溯源
+                    for _ky, _ci, _lab in (("ctwa", 2, "CTWA"), ("cstel", 3, "峰值浓度")):
+                        _v1 = _d.get(_ky)
+                        if _v1 in (None, "", "—"):
+                            continue
+                        if _d.get("source") == "vision":
+                            # 视觉提取的数字 → needs_review (用户红线: 机器读的≠确定取出)
+                            from web.number_provenance import prov_vision
+                            _dp[f"{_i}_{_ci}"] = prov_vision(_ev, field=f"{_d.get('factor')}.{_lab}",
+                                                             page=_d.get("_page"))
+                        else:
+                            _dp[f"{_i}_{_ci}"] = prov_rule(_ev, field=f"{_d.get('factor')}.{_lab}",
+                                                           traceable=bool(_d.get("_file")))
+                tables.append({"name": f"检测结果表({dtype})", "cols": ["序号", "危害因素", "CTWA", "峰值浓度", "PC-TWA", "判定"],
                                "rows": det_rows, "prov": _dp})
+            # h14: 物理因素独立表 (检测岗位|检测地点|检测项目|检测结果|LEX,8h|时间|限值|判定)
+            _pt_ = _physical_det_table(conn, dets) if dets else None
+            if _pt_:
+                tables.append(_pt_)
         surv = _rows_of(conn, "SELECT factor, check_type, cycle FROM surveillance_rule")
         if surv:
             tables.append({"name": "职业健康监护表", "cols": ["序号", "危害因素", "检查类别", "周期"],
@@ -520,6 +719,11 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             det_by_type = defaultdict(list)
             for d in dets:
                 fac = d.get("factor", "")
+                # h14: 物理因素 → 独立「物理因素检测结果表」; 不进化学浓度表
+                # (噪声 ctwa=LEX,8h 非浓度; 照度/工频无浓度列; 实测值在 results —
+                #  塞进 CTWA/峰值浓度 表会全列 '—' = 数据丢失)
+                if _is_phys_factor(fac):
+                    continue
                 cat = conn.execute("SELECT category FROM hazard_factor WHERE name LIKE ? LIMIT 1", (fac + "%",)).fetchone()
                 ty = (cat[0] if cat else "化学毒物")
                 if "噪声" in fac:
@@ -529,28 +733,36 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 det_by_type[ty].append(d)
             for ty, dets_b in det_by_type.items():
                 dtype = {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(ty, "化学毒物")
+                # h11: CTWA 与峰值浓度 双列投影 — ctwa 为空的峰值行值在 cstel 键, 不得塌缩为 '—'
+                # (真实报告双浓度列: 新泰 p37 检测结果[C_TWA|峰值浓度]; 长兴 表25 CTWA|CSTEL)
                 det_rows = [[i, d.get("factor", ""), d.get("ctwa", "—") or "—",
-                             "—", _det_verdict(d)]
+                             d.get("cstel", "—") or "—", "—", _det_verdict(d)]
                             for i, d in enumerate(dets_b, 1)]
                 # 逐格 provenance: CTWA 值来自检测报告 (文本层或视觉提取), 必须标来源 —
                 # 这是报告里最安全关键的数值, 不标会被审计判 unverified (早期遗漏, 71 个)。
                 _dp = {}
                 for _i, _d in enumerate(dets_b):
-                    _ctwa = _d.get("ctwa")
-                    if _ctwa in (None, "", "—"):
-                        continue
                     _ev = {"file": _d.get("_file") or "检测报告",
                            "page": _d.get("_page")}
-                    if _d.get("source") == "vision":
-                        # 视觉提取的数字 → needs_review (用户红线: 机器读的≠确定取出)
-                        from web.number_provenance import prov_vision
-                        _dp[f"{_i}_2"] = prov_vision(_ev, field=f"{_d.get('factor')}.CTWA",
-                                                     page=_d.get("_page"))
-                    else:
-                        _dp[f"{_i}_2"] = prov_rule(_ev, field=f"{_d.get('factor')}.CTWA",
-                                                   traceable=bool(_d.get("_file")))
-                tables.append({"name": f"检测结果表({dtype})", "cols": ["序号", "危害因素", "CTWA", "PC-TWA", "判定"],
+                    # h11: CTWA(列2) 与 峰值浓度(列3) 双列投影, 各自独立逐格溯源
+                    for _ky, _ci, _lab in (("ctwa", 2, "CTWA"), ("cstel", 3, "峰值浓度")):
+                        _v1 = _d.get(_ky)
+                        if _v1 in (None, "", "—"):
+                            continue
+                        if _d.get("source") == "vision":
+                            # 视觉提取的数字 → needs_review (用户红线: 机器读的≠确定取出)
+                            from web.number_provenance import prov_vision
+                            _dp[f"{_i}_{_ci}"] = prov_vision(_ev, field=f"{_d.get('factor')}.{_lab}",
+                                                             page=_d.get("_page"))
+                        else:
+                            _dp[f"{_i}_{_ci}"] = prov_rule(_ev, field=f"{_d.get('factor')}.{_lab}",
+                                                           traceable=bool(_d.get("_file")))
+                tables.append({"name": f"检测结果表({dtype})", "cols": ["序号", "危害因素", "CTWA", "峰值浓度", "PC-TWA", "判定"],
                                "rows": det_rows, "prov": _dp})
+            # h14: 物理因素独立表 (检测岗位|检测地点|检测项目|检测结果|LEX,8h|时间|限值|判定)
+            _pt_ = _physical_det_table(conn, dets) if dets else None
+            if _pt_:
+                tables.append(_pt_)
         js = assess.get("judgements", [])
         if js:
             j_rows = [[i, j["factor"], "—", "—", "—", "—",

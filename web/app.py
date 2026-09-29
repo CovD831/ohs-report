@@ -1351,9 +1351,18 @@ def import_materials_from_dir(pid: str) -> dict:
                                 _new = {
                                     "factor": fac,
                                     "ctwa": _it.get("ctwa") or None,
+                                    # h11: CSTEL/峰值浓度 不得丢 — 化学表「峰值浓度」列读此键
+                                    # (真实报告 表25/表28 双浓度列; 曾因漏拷使峰值行全 '—')
+                                    "cstel": _it.get("cstel") or None,
                                     "results": _it.get("results") or [],
                                     "sio2": _it.get("sio2_percent") or None,
                                     "judgement": _it.get("judgement") or "",
+                                    # h14: 物理表岗位/地点/接触时间必备 (噪声表按岗位一行);
+                                    # 曾因漏拷 sampling_point 使物理表无法成行/去重
+                                    "sampling_point": _it.get("sampling_point") or "",
+                                    "exposure_hours": _it.get("exposure_hours") or "",
+                                    "dust_type": _it.get("dust_type") or "",
+                                    "table_type": _it.get("table_type") or "",
                                     "source": "vision",
                                     "_page": _it.get("_page"),
                                     "_file": _it.get("_file", f.name),
