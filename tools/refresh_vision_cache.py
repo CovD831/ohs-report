@@ -73,7 +73,6 @@ for it in res["items"]:
         "ctwa": str(it.get("ctwa") or "").strip(),
         "cstel": str(it.get("cstel") or "").strip(),
         "results": it.get("results") or [],
-        "pass_ratio": str(it.get("pass_ratio") or "").strip(),
         "dust_type": str(it.get("dust_type") or "").strip(),
         "judgement": str(it.get("judgement") or "").strip(),
         "exposure_hours": str(it.get("exposure_hours") or "").strip(),

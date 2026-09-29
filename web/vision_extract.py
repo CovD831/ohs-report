@@ -52,7 +52,11 @@ _INDEX_ASK = ("本页是职业病危害检测报告的一页。用一行回答: 
 # ⚠ 实测: 检测报告里至少有两种表型, 不能假设单一 shape
 #   (a) 逐样结果表: 检测项目 | 采样点 | 接触时间 | 结果1/2/3 | C_TWA | C_STEL | 判定
 #   (b) 岗位汇总表: 车间/岗位 | 工作地点 | 测试点数 | 危害因素×2 | 检测方式×2 |
-#                  检测结果×2(如 3/1 = 合格点数/总点数) | 佩戴(PPE)
+#                  检测结果×2 | 佩戴(PPE)
+#   ⚠ 实测纠偏 (300dpi 取证, v59): (b) 的"检测结果×2"里**不是浓度也不是合格率** ——
+#     新泰 p25 列头是 `采样时长/小时`, 长兴 p14 是 `采样时间(小时)`, 值都是 0.5/2/3/4/5。
+#     旧 prompt 曾写 "如 3/1 = 合格点数/总点数" 当示例 → 模型照抄示例值, 产出伪字段
+#     `pass_ratio`(长兴 89/109 条都是 3/1 = 我给的示例)。**已删除该字段与示例**。
 #   硬套 (a) 的字段去读 (b) 会得到一堆空值 → 先让模型自报表型, 再按型取数。
 _EXTRACT_ASK = (
     "这是中国职业病危害检测报告的扫描页。请先判断表格类型, 再精确转录为 JSON。\n"
@@ -381,7 +385,6 @@ def vision_detections(pdf_path: Path, index: dict | None = None,
             "ctwa": str(it.get("ctwa") or "").strip(),
             "cstel": str(it.get("cstel") or "").strip(),
             "results": it.get("results") or [],
-            "pass_ratio": str(it.get("pass_ratio") or "").strip(),
             "dust_type": str(it.get("dust_type") or "").strip(),
             "judgement": str(it.get("judgement") or "").strip(),
             "exposure_hours": str(it.get("exposure_hours") or "").strip(),
