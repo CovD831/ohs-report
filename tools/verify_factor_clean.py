@@ -1,13 +1,18 @@
-"""Q3 在真实新泰缓存上的效果验证"""
+"""Q3 在真实新泰缓存上的效果验证 (路径可移植: 本地 repo 或容器 /app 均可跑;
+样本缓存服务器上没有 → SKIP 优雅退出)"""
 import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/Users/abaaba/Projects/ohs-report")
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 from web.factor_clean import clean_factor_name  # noqa: E402
 
-vd = json.loads(Path("/Users/abaaba/Projects/ohs-report/data/vision_cache/"
-                     "a66517be268181e6.json").read_text())
+CACHE = ROOT / "data" / "vision_cache" / "a66517be268181e6.json"
+if not CACHE.exists():
+    print(f"SKIP: 样本缓存不存在 ({CACHE}) — 服务器无 vision_cache 属预期")
+    sys.exit(0)
+vd = json.loads(CACHE.read_text())
 dets = vd["detections"]
 
 fixed = 0
