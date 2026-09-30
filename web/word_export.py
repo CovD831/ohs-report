@@ -419,7 +419,8 @@ def add_units_section(doc, units: list[dict]):
             _para(doc, u["text"], FANGSONG, 14, indent=0.74)
 
 
-def export_docx(project: dict, assess: dict, out_path: Path, section_states: dict | None = None):
+def export_docx(project: dict, assess: dict, out_path: Path, section_states: dict | None = None,
+                front_data: dict | None = None):
     global _USED_TABLES, _TABLE_SEQ, _NUM_LIST_STATE, _NUM_COUNTER
     _USED_TABLES = set()  # 每次导出重置去重
     _TABLE_SEQ = {}  # 表编号计数器重置 (表{二级}-{序号})
@@ -440,8 +441,8 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
     style._element.rPr.rFonts.set(qn("w:eastAsia"), FANGSONG)
     style.font.size = Pt(14)
 
-    # 页脚页码 (PAGE 域, 每页底部居中)
-    for section in doc.sections:
+    # 页脚页码 (PAGE 域, 每页底部居中) — 只挂"正文节"(前置页无页码, 复刻真实报告)
+    def _add_page_footer(section):
         fp = section.footer.paragraphs[0]
         fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = fp.add_run()
@@ -459,10 +460,34 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
         for el in (b2, i2, e2):
             run2._r.append(el)
 
-    # 封面标题
-    _para(doc, "职业病危害预评价报告书", HEI, 22, True, WD_ALIGN_PARAGRAPH.CENTER)
-    _para(doc, "（附录D格式 演示版）", FANGSONG, 14, False, WD_ALIGN_PARAGRAPH.CENTER)
-    doc.add_page_break()
+    # 封面 + 声明页 (复刻真实备案稿格式: 企业名/项目名/报告书/备案稿/编号 + 机构/日期 + 声明)
+    # 取证: 3份真实报告 (长兴/浦发/新泰) span 级字号; 数据源 company/name/org_name/report_no
+    from web.front_matter import add_front_matter
+    _front = front_data if front_data is not None else {
+        "company": (project or {}).get("company", ""),
+        "name": (project or {}).get("name", ""),
+        "org_name": (project or {}).get("org_name", ""),
+        "report_no": (project or {}).get("report_no", ""),
+    }
+    add_front_matter(doc, _front)
+
+    # ── 分节: 正文节 (目录+章节) — 前置页(封面/声明)独立成节, 页码只从正文起算 ──
+    from docx.enum.section import WD_SECTION
+    body_sec = doc.add_section(WD_SECTION.NEW_PAGE)
+    body_sec.page_width, body_sec.page_height = Cm(21), Cm(29.7)
+    body_sec.left_margin, body_sec.right_margin = Cm(3.7), Cm(2.6)
+    body_sec.top_margin, body_sec.bottom_margin = Cm(3.5), Cm(2.8)
+    body_sec.footer.is_linked_to_previous = False
+    _add_page_footer(body_sec)
+    # 页码从 1 起算 (前置页不计入) — pgNumType 须在 w:cols 之前
+    _sectPr = body_sec._sectPr
+    _pg = OxmlElement("w:pgNumType")
+    _pg.set(qn("w:start"), "1")
+    _cols = _sectPr.find(qn("w:cols"))
+    if _cols is not None:
+        _cols.addprevious(_pg)
+    else:
+        _sectPr.append(_pg)
 
     # 目录
     add_toc(doc)

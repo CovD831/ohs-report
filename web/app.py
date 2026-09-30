@@ -683,6 +683,10 @@ def api_update_project(pid: str, payload: dict):
         if k in payload:
             data[k] = payload[k]
             rebuild = True
+    # 前置页字段 (封面/声明/页脚): 机构名/报告书编号 — 直接落库, 不重建骨架表
+    for k in ("org_name", "report_no"):
+        if k in payload:
+            data[k] = payload[k]
     if rebuild:
         try:
             from web.company_profile import build_profile
@@ -1478,6 +1482,11 @@ def api_export(pid: str, request: Request):
     if not p:
         return JSONResponse({"error": "not found"}, status_code=404)
     data = p["data"]
+    # 报告书编号: 无则生成 Y{年}-{序号} 并持久化 (前端可改 data.report_no)
+    from web.front_matter import ensure_report_no
+    _rno = ensure_report_no(pid)
+    p = gp(pid) or p
+    data = p["data"]
     conn = connect()
     project = {"id": pid, "name": p["name"], "industry": data.get("industry", ""),
                "equipment": data.get("equipment", []),
@@ -1505,7 +1514,9 @@ def api_export(pid: str, request: Request):
                "built_tables": data.get("built_tables", {}),
                "profile": data.get("profile", {}),
                "location": data.get("location", ""),
-               "company": data.get("company", "")}
+               "company": data.get("company", ""),
+               "org_name": data.get("org_name", ""),
+               "report_no": data.get("report_no", "")}
     assess = assess_project(conn, project)
     # 把完整项目数据塞进 assess._project_data, 供 fill_section 内嵌表格取数
     assess["_project_data"] = dict(project)
