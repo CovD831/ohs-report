@@ -212,6 +212,184 @@ def _add_field(doc, instr: str):
     return p
 
 
+# ── 页眉/页脚 (fm5) — 复刻真实备案稿 (长兴/浦发/新泰 span 级取证; rec92 LO 渲染验证) ──
+# 页眉: 左=企业名+项目名+职业病危害预评价报告书; 右=报告书编号; 宋体 9pt(小五); 含下边框线
+# 页脚: 奇数页=机构名(左)+「第X页 共Y页」(右); 偶数页镜像 (evenAndOddHeaders)
+# 合计页数: PAGEREF→文末书签 (渲染=正文末页页码, 与真实报告"共194页"语义一致) —
+#   弃用 NUMPAGES(计全文档含前置页, LO 多节曾+1) / SECTIONPAGES(LO 渲染空白/1)
+# ⚠ tab 陷阱 (rec87→rec92 定案): python-docx 默认 Header/Footer 样式自带 tab stops
+#   (4680/9360), 与添加的合并→劫持落点(显示在 x≈318 而非右端); 样式级 clear 后只留 right@8334
+_HF_SONG = "宋体"
+_HF_TNR = "Times New Roman"
+_HF_AVAIL_TW = 8334          # 页宽11906 − 左2098 − 右1474 (本项目 A4 页面设置)
+_HF_BOOKMARK = "_ohs_report_end"
+_HF_SZ = 9                   # 小五 (sz=18 半磅) — 3 份报告样式定义一致
+
+_HF_PPR_ORDER = [
+    "pStyle", "keepNext", "keepLines", "pageBreakBefore", "framePr", "widowControl",
+    "numPr", "suppressLineNumbers", "pBdr", "shd", "tabs", "suppressAutoHyphens",
+    "kinsoku", "wordWrap", "overflowPunct", "topLinePunct", "autoSpaceDE", "autoSpaceDN",
+    "bidi", "adjustRightInd", "snapToGrid", "spacing", "ind", "contextualSpacing",
+    "mirrorIndents", "suppressOverlap", "jc", "textDirection", "textAlignment",
+    "textboxTightWrap", "outlineLvl", "divId", "cnfStyle", "rPr", "sectPr", "pPrChange",
+]
+
+
+def _hf_pPr_set(pPr, el):
+    """按 pPr schema 顺序插入子元素 (顺序错 Word 会忽略/报修复)"""
+    tag = el.tag.split("}")[-1]
+    idx = _HF_PPR_ORDER.index(tag)
+    for child in pPr:
+        ct = child.tag.split("}")[-1]
+        if ct in _HF_PPR_ORDER and _HF_PPR_ORDER.index(ct) > idx:
+            child.addprevious(el)
+            return
+    pPr.append(el)
+
+
+def _hf_font(r, size: float = _HF_SZ):
+    """页眉页脚字体: 西文 Times New Roman / 中文 宋体; 9pt (复刻真实 rFonts eastAsia=宋体 hint)"""
+    r.font.name = _HF_TNR
+    rf = r._element.get_or_add_rPr().get_or_add_rFonts()
+    rf.set(qn("w:ascii"), _HF_TNR)
+    rf.set(qn("w:hAnsi"), _HF_TNR)
+    rf.set(qn("w:eastAsia"), _HF_SONG)
+    rf.set(qn("w:hint"), "eastAsia")
+    r.font.size = Pt(size)
+
+
+def _hf_add_field(p, instr: str, cached: str = "1"):
+    """页眉页脚内的域 (begin/instrText/separate/cached/end 五段式; updateFields 打开时自动更新)"""
+    for kind, text in (("begin", None), ("instr", instr), ("separate", None),
+                       ("text", cached), ("end", None)):
+        run = p.add_run()
+        if kind in ("begin", "separate", "end"):
+            fc = OxmlElement("w:fldChar")
+            fc.set(qn("w:fldCharType"), kind)
+            run._r.append(fc)
+        elif kind == "instr":
+            it = OxmlElement("w:instrText")
+            it.set(qn("xml:space"), "preserve")
+            it.text = text
+            run._r.append(it)
+        else:
+            run.text = text
+        _hf_font(run)
+
+
+def _setup_hf_styles(doc: Document):
+    """Header/Footer 样式: 宋体 9pt + clear 模板继承 tab stops + 只留 right@8334;
+    Header 样式加下边框线 (复刻真实 Header 样式 pBdr: bottom single sz6)"""
+    for name, with_bdr in (("Header", True), ("Footer", False)):
+        st = doc.styles[name]
+        st.font.size = Pt(_HF_SZ)
+        pPr = st.element.get_or_add_pPr()
+        for t in ("w:tabs", "w:pBdr"):
+            old = pPr.find(qn(t))
+            if old is not None:
+                pPr.remove(old)
+        if with_bdr:
+            pBdr = OxmlElement("w:pBdr")
+            b = OxmlElement("w:bottom")
+            b.set(qn("w:val"), "single")
+            b.set(qn("w:sz"), "6")
+            b.set(qn("w:space"), "1")
+            b.set(qn("w:color"), "000000")
+            pBdr.append(b)
+            _hf_pPr_set(pPr, pBdr)
+        tabs = OxmlElement("w:tabs")
+        for pos in ("4680", "9360"):
+            t = OxmlElement("w:tab")
+            t.set(qn("w:val"), "clear")
+            t.set(qn("w:pos"), pos)
+            tabs.append(t)
+        t = OxmlElement("w:tab")
+        t.set(qn("w:val"), "right")
+        t.set(qn("w:pos"), str(_HF_AVAIL_TW))
+        t.set(qn("w:leader"), "none")
+        tabs.append(t)
+        _hf_pPr_set(pPr, tabs)
+
+
+def _hf_clear_para(p):
+    for r in list(p.runs):
+        r._element.getparent().remove(r._element)
+
+
+def _hf_cur_page(p):
+    """「第 X 页 共 Y 页」— Y = PAGEREF 文末书签 (=正文末页页码, 语义同真实'共194页')"""
+    r = p.add_run("第 "); _hf_font(r)
+    _hf_add_field(p, " PAGE ")
+    r = p.add_run(" 页 共 "); _hf_font(r)
+    _hf_add_field(p, f" PAGEREF {_HF_BOOKMARK} ")
+    r = p.add_run(" 页"); _hf_font(r)
+
+
+def _hf_nobreak_run(p, text: str):
+    """编号 run — '-' 用 w:noBreakHyphen (复刻真实 Y2023-002: 编号整体不可在连字符处折行)"""
+    r = p.add_run()
+    parts = str(text).split("-")
+    for i, seg in enumerate(parts):
+        if i:
+            r._r.append(OxmlElement("w:noBreakHyphen"))
+        if seg:
+            r._r.append(_hf_t(seg))
+    _hf_font(r)
+
+
+def _hf_t(text: str):
+    t = OxmlElement("w:t")
+    t.set(qn("xml:space"), "preserve")
+    t.text = text
+    return t
+
+
+def _attach_body_hf(sec, doc: Document, title: str, no: str, org: str) -> None:
+    """正文节页眉+页脚 — 奇偶镜像 (真实 settings evenAndOddHeaders 取证);
+    页眉: 标题 …右tab… 编号; 页脚奇数: 机构名 …右tab… 第X页共Y页; 偶数页左右互换。"""
+    for hf in (sec.header, sec.even_page_header):
+        hf.is_linked_to_previous = False
+        p = hf.paragraphs[0]
+        _hf_clear_para(p)
+        p.style = doc.styles["Header"]
+        r = p.add_run(title)
+        _hf_font(r)
+        if no:
+            r = p.add_run(); r.add_tab(); _hf_font(r)
+            _hf_nobreak_run(p, no)
+    for hf, mirror in ((sec.footer, False), (sec.even_page_footer, True)):
+        hf.is_linked_to_previous = False
+        p = hf.paragraphs[0]
+        _hf_clear_para(p)
+        p.style = doc.styles["Footer"]
+        if mirror:
+            _hf_cur_page(p)
+            r = p.add_run(); r.add_tab(); _hf_font(r)
+            r = p.add_run(org); _hf_font(r)
+        else:
+            r = p.add_run(org); _hf_font(r)
+            r = p.add_run(); r.add_tab(); _hf_font(r)
+            _hf_cur_page(p)
+
+
+def _add_end_bookmark(doc: Document):
+    """文末书签 — 页脚「共Y页」PAGEREF 的目标 (挂最末段落; rec97 para_end 变体已 LO 验证)"""
+    body = doc.element.body
+    kids = [el for el in body.iterchildren() if el.tag != qn("w:sectPr")]
+    last = kids[-1] if kids else None
+    if last is None or last.tag != qn("w:p"):
+        doc.add_paragraph("")
+        kids = [el for el in body.iterchildren() if el.tag != qn("w:sectPr")]
+        last = kids[-1]
+    bs = OxmlElement("w:bookmarkStart")
+    bs.set(qn("w:id"), "901")
+    bs.set(qn("w:name"), _HF_BOOKMARK)
+    be = OxmlElement("w:bookmarkEnd")
+    be.set(qn("w:id"), "901")
+    last.append(bs)
+    last.append(be)
+
+
 def add_toc(doc: Document):
     """目录: 真 Word TOC 域 (与原报告同款: TOC \\o "1-2" \\h \\z \\u)
     我们的标题已带 outlineLvl, Word 打开后 F9 (或 引用→更新目录) 自动生成条目+页码"""
@@ -435,30 +613,16 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
         section.page_width, section.page_height = Cm(21), Cm(29.7)
         section.left_margin, section.right_margin = Cm(3.7), Cm(2.6)
         section.top_margin, section.bottom_margin = Cm(3.5), Cm(2.8)
+        # 页眉/页脚距 = 1.5cm (复刻真实 pgMar header=851 / footer=851 twips → 页眉 y≈45 / 页脚 y≈786.6; fm5)
+        section.header_distance, section.footer_distance = Cm(1.5), Cm(1.5)
     # 默认样式
     style = doc.styles["Normal"]
     style.font.name = FANGSONG
     style._element.rPr.rFonts.set(qn("w:eastAsia"), FANGSONG)
     style.font.size = Pt(14)
 
-    # 页脚页码 (PAGE 域, 每页底部居中) — 只挂"正文节"(前置页无页码, 复刻真实报告)
-    def _add_page_footer(section):
-        fp = section.footer.paragraphs[0]
-        fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = fp.add_run()
-        b = OxmlElement("w:fldChar"); b.set(qn("w:fldCharType"), "begin")
-        i = OxmlElement("w:instrText"); i.set(qn("xml:space"), "preserve"); i.text = "PAGE"
-        e = OxmlElement("w:fldChar"); e.set(qn("w:fldCharType"), "end")
-        for el in (b, i, e):
-            run._r.append(el)
-        r = fp.add_run(" / ")
-        _set_font(r, FANGSONG, 10.5)
-        run2 = fp.add_run()
-        b2 = OxmlElement("w:fldChar"); b2.set(qn("w:fldCharType"), "begin")
-        i2 = OxmlElement("w:instrText"); i2.set(qn("xml:space"), "preserve"); i2.text = "NUMPAGES"
-        e2 = OxmlElement("w:fldChar"); e2.set(qn("w:fldCharType"), "end")
-        for el in (b2, i2, e2):
-            run2._r.append(el)
+    # 页眉/页脚 (fm5): 正文节挂「标题+编号 页眉 + 机构名/第X页共Y页 镜像页脚」
+    # 旧实现 (裸 PAGE/NUMPAGES 居中) 已由 _attach_body_hf 取代 (复刻真实备案稿取证)
 
     # 封面 + 声明页 (复刻真实备案稿格式: 企业名/项目名/报告书/备案稿/编号 + 机构/日期 + 声明)
     # 取证: 3份真实报告 (长兴/浦发/新泰) span 级字号; 数据源 company/name/org_name/report_no
@@ -477,8 +641,12 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
     body_sec.page_width, body_sec.page_height = Cm(21), Cm(29.7)
     body_sec.left_margin, body_sec.right_margin = Cm(3.7), Cm(2.6)
     body_sec.top_margin, body_sec.bottom_margin = Cm(3.5), Cm(2.8)
-    body_sec.footer.is_linked_to_previous = False
-    _add_page_footer(body_sec)
+    body_sec.header_distance, body_sec.footer_distance = Cm(1.5), Cm(1.5)
+    doc.settings.odd_and_even_pages_header_footer = True
+    _setup_hf_styles(doc)
+    from web.front_matter import render_org as _render_org
+    _hf_title = f"{_front.get('company','')}{_front.get('name','')}职业病危害预评价报告书"
+    _attach_body_hf(body_sec, doc, _hf_title, str(_front.get("report_no") or ""), _render_org(_front))
     # 页码从 1 起算 (前置页不计入) — pgNumType 须在 w:cols 之前
     _sectPr = body_sec._sectPr
     _pg = OxmlElement("w:pgNumType")
@@ -637,6 +805,8 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                 if d3_tables:
                     _write_tables_named(doc, num, d3_tables)
     conn.close()
+    # 文末书签 (fm5): 页脚「共Y页」PAGEREF 目标 — 域渲染值 = 正文末页页码
+    _add_end_bookmark(doc)
     doc.save(str(out_path))
     _inject_numbering(out_path)
 

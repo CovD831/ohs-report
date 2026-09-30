@@ -13,6 +13,7 @@
 无 DB / 无 LLM / 无外部依赖 — 纯 python-docx 结构断言
 用法: .venv/bin/python tools/test_front_matter.py
 """
+import re
 import sys
 from pathlib import Path
 
@@ -52,16 +53,14 @@ def main():
     add_front_matter(doc, data)
     from docx.enum.section import WD_SECTION
     sec = doc.add_section(WD_SECTION.NEW_PAGE)
-    sec.footer.is_linked_to_previous = False
-    p = sec.footer.paragraphs[0]
-    r = p.add_run()
-    from docx.oxml import OxmlElement
-    b = OxmlElement("w:fldChar"); b.set(qn("w:fldCharType"), "begin")
-    i = OxmlElement("w:instrText"); i.text = "PAGE"
-    e = OxmlElement("w:fldChar"); e.set(qn("w:fldCharType"), "end")
-    for el in (b, i, e):
-        r._r.append(el)
+    # fm5: 用 word_export 的真实实现挂页眉页脚 (守卫覆盖生产代码路径, 非模拟)
+    from web.word_export import _setup_hf_styles, _attach_body_hf, _add_end_bookmark
+    doc.settings.odd_and_even_pages_header_footer = True
+    _setup_hf_styles(doc)
+    _hf_title = f"{data['company']}{data['name']}职业病危害预评价报告书"
+    _attach_body_hf(sec, doc, _hf_title, data["report_no"], "江苏宁大卫防检测技术有限公司常熟分公司")
     doc.add_paragraph("正文占位")
+    _add_end_bookmark(doc)
     doc.save(str(OUT))
     doc = Document(str(OUT))
 
@@ -131,6 +130,42 @@ def main():
     check("跨年隔离 (2025 的 020 不影响 2026)",
           gen_report_no(["Y2025-020"], dt=__import__("datetime").datetime(2026, 5, 1)) == "Y2026-001")
     check("中文年月", cn_year_month(__import__("datetime").datetime(2023, 7, 15)) == "二〇二三年七月")
+
+    print("⑦ 页眉 (fm5)")
+    s1 = doc.sections[1]
+    hdr = s1.header
+    htxt = hdr.paragraphs[0].text if hdr.paragraphs else ""
+    check("页眉=企业名+项目名+报告书", htxt.startswith("长兴合成树脂") and "职业病危害预评价报告书" in htxt
+          and "Y2026-001" in htxt, htxt)
+    _ntabs = len(list(hdr.paragraphs[0]._p.iter(qn("w:tab")))) if hdr.paragraphs else 0
+    check("页眉含 tab (编号右对齐用)", _ntabs >= 1, f"tabs={_ntabs}")
+    _hxml = hdr.paragraphs[0]._p.xml if hdr.paragraphs else ""
+    check("页眉编号含 noBreakHyphen", "noBreakHyphen" in _hxml, "")
+    _hstyle = doc.styles["Header"]
+    _hpPr = _hstyle.element.find(qn("w:pPr"))
+    _hbdr = _hpPr.find(qn("w:pBdr")) if _hpPr is not None else None
+    check("Header 样式含下边框", _hbdr is not None and _hbdr.find(qn("w:bottom")) is not None)
+    _htabs = _hpPr.find(qn("w:tabs")) if _hpPr is not None else None
+    _clears = len([t for t in _htabs if t.get(qn("w:val")) == "clear"]) if _htabs is not None else 0
+    _right = [t.get(qn("w:pos")) for t in _htabs if t.get(qn("w:val")) == "right"] if _htabs is not None else []
+    check("Header/Footer 样式 clear 模板tab + right@8334", _clears == 2 and _right == ["8334"],
+          f"clears={_clears} right={_right}")
+
+    print("⑧ 页脚奇偶镜像 (fm5)")
+    f_odd = s1.footer.paragraphs[0].text
+    f_even = s1.even_page_footer.paragraphs[0].text
+    check("奇数页 机构名在前", f_odd.startswith("江苏宁大卫防"), f_odd)
+    check("偶数页 页码在前 (镜像)", f_even.startswith("第"), f_even)
+    check("奇数页含 第X页共Y页", "第" in f_odd and "页 共" in f_odd and "页" in f_odd, f_odd)
+    o_instr = []
+    for pp in s1.footer.paragraphs:
+        o_instr += [x.text for x in pp._p.findall(".//" + qn("w:instrText"))]
+    check("合计页数用 PAGEREF (非 NUMPAGES/SECTIONPAGES)",
+          any("PAGEREF _ohs_report_end" in (t or "") for t in o_instr)
+          and not any("NUMPAGES" in (t or "") or "SECTIONPAGES" in (t or "") for t in o_instr), str(o_instr))
+    check("evenAndOddHeaders 开启", doc.settings.odd_and_even_pages_header_footer is True)
+    _bx = doc.element.body.findall(".//" + qn("w:bookmarkStart"))
+    check("文末书签存在", any(b.get(qn("w:name")) == "_ohs_report_end" for b in _bx))
 
     OUT.unlink(missing_ok=True)
 
