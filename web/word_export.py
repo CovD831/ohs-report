@@ -84,6 +84,20 @@ _SUB_TABLE_MAP = {
 
 
 
+def _match_wanted(wanted: list, name: str):
+    """表名 → wanted 名单位次 (None=不匹配)。wanted 顺序 = 原报告表序 = 编号序。
+
+    精确匹配; wanted 无括号时前缀匹配变体 (检测结果表 → 检测结果表(粉尘));
+    禁止子串误配 (健康影响表 ⊄ 物理因素健康影响表)。"""
+    for i, w in enumerate(wanted):
+        if name == w:
+            return i
+        if "(" not in w and "（" not in w and name.startswith(w):
+            if not any(name.startswith(x) and x != w and len(x) > len(w) for x in wanted):
+                return i
+    return None
+
+
 def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     """按小节返回内嵌表格 (复用 fill_section 各章表格, 全局去重)
     支持二级(3.1)与三级(3.1.3)节: 三级优先用自己的映射, 无则回退父级"""
@@ -155,22 +169,25 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
         return split
     if not wanted:
         return tables
-    # 前缀/包含匹配 (检测结果表(化学毒物) 匹配 '检测结果表')
+    # 前缀/包含匹配 (检测结果表(化学毒物) 匹配 '检测结果表') — 规则见 _match_wanted
     res = []
     for t in tables:
-        for w in wanted:
-            hit = t["name"] == w
-            if not hit and "(" not in w and "（" not in w:
-                # wanted 无括号前缀 (如 检测结果表) → 匹配 检测结果表(粉尘) 变体; 但禁止子串误配 (健康影响表 ⊂ 物理因素健康影响表)
-                hit = t["name"].startswith(w) and not any(t["name"].startswith(x) and x != w and len(x) > len(w) for x in wanted)
-            if hit:
-                # 去重: 同一"节+表名"只出现一次; 不同节允许复用同名表
-                # (原报告同一张检查表在 2.3 现状/6.2 评价/10.4 建议多处出现)
-                key = f"{sub}:{t['name']}"
-                if key not in _USED_TABLES:
-                    _USED_TABLES.add(key)
-                    res.append(t)
-                break
+        if _match_wanted(wanted, t["name"]) is None:
+            continue
+        # 去重: 同一"节+表名"只出现一次; 不同节允许复用同名表
+        # (原报告同一张检查表在 2.3 现状/6.2 评价/10.4 建议多处出现)
+        key = f"{sub}:{t['name']}"
+        if key not in _USED_TABLES:
+            _USED_TABLES.add(key)
+            res.append(t)
+
+    # 归位 wanted 名单顺序 (= 原报告表序/编号序): 骨架补插 append 在尾部、
+    # fill 现算顺序与 wanted 偏离时都要归位, 否则出现「表4.2-2 排在 表4.2-1 前」类错序
+    def _wseq(t):
+        p = _match_wanted(wanted, t["name"])
+        return p if p is not None else len(wanted)   # 稳定排序, 同位次保 fill 原序
+
+    res.sort(key=_wseq)
     return res
 
 
@@ -831,21 +848,45 @@ _TABLE_SEQ: dict = {}
 
 def _write_tables_named(doc, sn: str, tables: list[dict]):
     """内嵌表格 + 语义化标题: 表{二级节}-{序号} {语义名}
-    编号优先对齐原报告显式表号 (ORIG_TABLE_NOS, 含跳号取证如表3.6-3);
+
+    编号/表题**按表名配对**原报告槽位 (ORIG_TABLE_NOS/ORIG_CAPTIONS), 不按列表位置:
+    ⚠ 位置配对曾致「表4.2-1 类比企业工作日写实」表题下挂着劳动强度分级表内容 ——
+    写实表空(0行)不上屏 + 骨架补插把分级表顶到 idx0, 拿走写实的编号/表题,
+    真表题「表4.2-2 常见职业体力劳动强度分级表」整条消失 (verify_export_tables ✗)。
+    名→槽映射仅在 wanted/nos/caps 三名单位次一一平行时启用; 拆表场景 (2.1.1 拆3表,
+    表名=原表题) 按 表名==原表题 直接对槽; 其余回退位置配对。
     无取证的节回退 表{二级}-{序号} 连续计数 (3.1.5/3.1.7 都编 表3.1-x)"""
     from web.orig_table_map import ORIG_TABLE_NOS, ORIG_CAPTIONS
     cap = ".".join(sn.split(".")[:2]) if "." in sn else sn
     nos = ORIG_TABLE_NOS.get(sn, [])
     caps = ORIG_CAPTIONS.get(sn, [])
+    _m = _SUB_TABLE_MAP.get(sn)
+    wanted = (_m[1] if _m else []) or []
+    # 三名单位次一一对应 (wanted[i] ↔ nos[i] ↔ caps[i]) 才可按名配对
+    parallel = bool(wanted) and len(nos) == len(caps) == len(wanted)
+    used: set = set()
     for idx, t in enumerate(tables):
         if not t.get("rows"):
             continue
-        if idx < len(nos):
-            no = nos[idx]  # 原报告显式编号 (表3.6-3)
+        slot = _match_wanted(wanted, t["name"]) if parallel else None
+        if slot is not None and slot in used:      # 同名变体重复 → 位置兜底
+            slot = None
+        if slot is None and t["name"] in caps:     # 拆表场景: 表名==原表题 (2.1.1 应急三拆)
+            j = caps.index(t["name"])
+            if j < len(nos) and j not in used:
+                slot = j
+        if slot is not None:
+            used.add(slot)
+            no = nos[slot]                          # 原报告显式编号 (跳号对齐 表3.6-3)
+            title = caps[slot] if slot < len(caps) else t.get("name", "相关数据表")
+        elif idx < len(nos) and idx not in used:
+            used.add(idx)                           # 位置兜底 (无 wanted 名单的节, 旧行为)
+            no = nos[idx]
+            title = caps[idx] if idx < len(caps) else t.get("name", "相关数据表")
         else:
             _TABLE_SEQ[cap] = _TABLE_SEQ.get(cap, 0) + 1
             no = f"表{cap}-{_TABLE_SEQ[cap]}"
-        title = caps[idx] if idx < len(caps) else t.get("name", "相关数据表")  # 原报告标题逐字对齐
+            title = t.get("name", "相关数据表")
         doc.add_paragraph()
         # 表题格式对齐原报告 (取证: 36/48 为 仿宋_GB2312 12pt 不加粗 居中)
         _para(doc, f"{no} {title}", FANGSONG, 12, bold=False, align=1)

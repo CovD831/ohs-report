@@ -55,6 +55,41 @@ def test_mounts_reachable() -> int:
     return 0
 
 
+def test_orig_map_hygiene() -> int:
+    """ORIG 编号/表题映射卫生 (防章号平移后死键/槽位不平行 → 表题静默回退内部名)
+
+    2026-09 实例: 挂载 3.5.3→3.5 / 5.4.3→10.1 / 10.2→11.2 迁移后映射留旧键,
+    表题静默回退内部名 (「本项目工艺检查及评价」→「工艺检查表」)。
+    规则: ① 键必须仍是挂载节 (无死键); ② 有映射的节编号/表题列表平行,
+    且与 wanted 名单位次一一对应 (2.1.1 应急三拆登记例外)。
+    """
+    from web.orig_table_map import ORIG_CAPTIONS, ORIG_TABLE_NOS
+    from web.word_export import _SUB_TABLE_MAP
+
+    mounts = {k for k, v in _SUB_TABLE_MAP.items() if v}
+    split_ok = {"2.1.1"}  # wanted 1 → 编号/表题 3 (应急药品/物资/洗眼器 三拆)
+    bad = 0
+    dead = sorted((set(ORIG_TABLE_NOS) | set(ORIG_CAPTIONS)) - mounts)
+    if dead:
+        print(f"  ✗ ORIG 映射死键 (挂载已迁走): {dead}")
+        bad += len(dead)
+    for k in sorted(set(ORIG_TABLE_NOS) | set(ORIG_CAPTIONS)):
+        nos = ORIG_TABLE_NOS.get(k) or []
+        caps = ORIG_CAPTIONS.get(k) or []
+        if len(nos) != len(caps):
+            print(f"  ✗ {k}: 编号 {len(nos)} ≠ 表题 {len(caps)} (须平行)")
+            bad += 1
+            continue
+        wanted = (_SUB_TABLE_MAP.get(k) or (None, []))[1]
+        if k not in split_ok and wanted and len(wanted) != len(nos):
+            print(f"  ✗ {k}: wanted {len(wanted)} ≠ 槽位 {len(nos)} (按名配对失效)")
+            bad += 1
+    tag = "✗" if bad else "✓"
+    print(f"  {tag} ORIG 映射: {len(mounts)} 挂载 / {len(ORIG_TABLE_NOS)} 编号 / {len(ORIG_CAPTIONS)} 表题"
+          + (f" — {bad} 项异常" if bad else " — 无死键, 槽位平行"))
+    return bad
+
+
 def test_tables_export(tmpdir=None) -> int:
     """真项目跑导出, 骨架里有行的表必须都在 docx 里出现"""
     import json
@@ -129,6 +164,8 @@ def test_tables_export(tmpdir=None) -> int:
 
 if __name__ == "__main__":
     bad = test_mounts_reachable()
+    print()
+    bad += test_orig_map_hygiene()
     print()
     bad += test_tables_export()
     print()
