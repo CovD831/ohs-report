@@ -57,8 +57,9 @@ def main() -> int:
     print(f"test project: {pid}")
 
     from web.uploads import project_dir, save_upload
-    # 只传关键文件: 04 (文本层) + 05 (扫描件走视觉缓存)
-    for name, cat in (("04_原有项目_现状评价报告.docx", "C3"),
+    # 只传关键文件: 03 (可研, 项目名权威) + 04 (文本层) + 05 (扫描件走视觉缓存)
+    for name, cat in (("03_项目申请报告_可研.pdf", "C2"),
+                      ("04_原有项目_现状评价报告.docx", "C3"),
                       ("05_类比检测_职业卫生检测2025.pdf", "C17")):
         f = PACK / name
         if not f.exists():
@@ -155,6 +156,12 @@ def main() -> int:
     else:
         print("  - 可研不在材料包, 跳过 ⑤")
 
+    # ⑥ 项目名权威性 (可研 > 现状报告; 遍历顺序无关 — 修复: 04先跑到不得占名)
+    _dn = str(data.get("name") or "")
+    ok_auth = ("项目" in _dn) and ("有限公司" not in _dn) and len(_dn) >= 6
+    print(f"  {'✓' if ok_auth else '✗'} 项目名权威 = {_dn[:48]!r} (⑥ 可研优先守卫;"
+          f" 修复前=04公司名占位)")
+
     # 清理测试项目 (防污染项目列表)
     try:
         from web.projects_db import _conn as _pc
@@ -165,7 +172,7 @@ def main() -> int:
     except Exception:
         pass
 
-    all_ok = ok_noise and ok_cstel and ok_pt and ok_mount and ok_dup and ok_merge and ok_name
+    all_ok = bool(ok_noise and ok_cstel and ok_pt and ok_mount and ok_dup and ok_merge and ok_name and ok_auth)
     print()
     print(f"新鲜导入数据链: {'✓ 通过' if all_ok else '✗ 失败'}")
     return 0 if all_ok else 1

@@ -1007,16 +1007,20 @@ def import_materials_from_dir(pid: str) -> dict:
             try:
                 from web.report_parser import parse_report_file
                 rp = parse_report_file(f)
-                proj_name = proj_name or rp.get("name", "")
-                # 项目基本信息(industry/capacity)以"可研/申请报告"为准(本项目), 现状报告是现有企业(存量)不覆盖
+                # 项目基本信息(项目名/行业/产能)以"可研/申请报告"为准(本项目), 现状报告是现有企业(存量)不覆盖
+                # ⚠ name 同样要覆盖: 实测 04现状报告 name=公司名'长兴合成树脂（常熟）有限公司（简称…）',
+                #   若先被 rglob 遍历到就占住 proj_name (遍历顺序无保证) → 项目名错成公司名。
                 _is_proj_report = any(k in name for k in ("可研", "申请报告", "项目申请", "初步设计"))
                 if _is_proj_report:
-                    # 申请报告优先: 覆盖现状报告的行业/产能(本项目新增)
+                    # 申请报告优先: 覆盖现状报告的项目名/行业/产能(本项目新增)
+                    if rp.get("name"):
+                        proj_name = rp["name"]
                     if rp.get("industry"):
                         industry = rp["industry"]
                     if rp.get("capacity"):
                         capacity = rp["capacity"]
                 else:
+                    proj_name = proj_name or rp.get("name", "")
                     industry = industry or rp.get("industry", "")
                     capacity = capacity or rp.get("capacity", "")
                 nature = nature or rp.get("nature", "")
