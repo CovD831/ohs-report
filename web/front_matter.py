@@ -140,7 +140,10 @@ def add_front_matter(doc, project_data: dict, report_no: str = "") -> None:
     _para(doc, "", size=14, line=Pt(_DECL_LINE_PT))
     _para(doc, "法人代表：", FANGSONG, 14, False, None, line=Pt(_DECL_LINE_PT), indent_chars=11)
     _add_personnel_table(doc)
-    # 不在此处 page break: 调用方紧跟 add_section(NEW_PAGE) — 分节符负责翻页且隔离页码
+    # 末尾补一个空段落: 段末分页符落在声明页内, 使随后 add_section(NEW_PAGE) 的
+    # <w:sectPr>(前置节) 挂在**声明页内的空段落**上 → 前置节恰好止于声明页 (否则声明页
+    # 会被并入后一节; fm6 三节取证: 声明页属前置节, 页码隔离靠第 2 节重设)
+    doc.add_paragraph()
 
 
 def _add_personnel_table(doc) -> None:

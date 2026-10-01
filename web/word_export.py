@@ -389,6 +389,56 @@ def _attach_body_hf(sec, doc: Document, title: str, no: str, org: str) -> None:
             _hf_cur_page(p)
 
 
+def _set_pg_num_type(sec, fmt: str | None = None, start: int | None = None):
+    """sectPr 的 pgNumType — schema 顺序须在 w:cols (及 w:docGrid 等) 之前。
+    fmt: upperRoman / decimal; start: 起始页码 (None=续前节)。"""
+    _sectPr = sec._sectPr
+    old = _sectPr.find(qn("w:pgNumType"))
+    if old is not None:
+        _sectPr.remove(old)
+    _pg = OxmlElement("w:pgNumType")
+    if start is not None:
+        _pg.set(qn("w:start"), str(start))
+    if fmt:
+        _pg.set(qn("w:fmt"), fmt)
+    _cols = _sectPr.find(qn("w:cols"))
+    if _cols is not None:
+        _cols.addprevious(_pg)
+    else:
+        _sectPr.append(_pg)
+
+
+def _attach_toc_hf(sec, doc: Document, title: str, no: str, org: str) -> None:
+    """目录节页眉+页脚 — 页眉与正文节同款 (标题+编号右对齐);
+    页脚 = 机构名 + **裸罗马数字** (无「第X页共Y页」包装), 奇偶镜像。
+    取证: 长兴/新泰 footer6/7 = '机构名|II' / '机构名|III'; 浦发为同构变体。"""
+    for hf in (sec.header, sec.even_page_header):
+        hf.is_linked_to_previous = False
+        p = hf.paragraphs[0]
+        _hf_clear_para(p)
+        p.style = doc.styles["Header"]
+        r = p.add_run(title)
+        _hf_font(r)
+        if no:
+            r = p.add_run(); r.add_tab(); _hf_font(r)
+            _hf_nobreak_run(p, no)
+    for hf, mirror in ((sec.footer, False), (sec.even_page_footer, True)):
+        hf.is_linked_to_previous = False
+        p = hf.paragraphs[0]
+        _hf_clear_para(p)
+        p.style = doc.styles["Footer"]
+        def _roman():
+            r = p.add_run(org); _hf_font(r)
+            r = p.add_run(); r.add_tab(); _hf_font(r)
+            _hf_add_field(p, " PAGE ", cached="I")
+        if mirror:
+            _hf_add_field(p, " PAGE ", cached="II")
+            r = p.add_run(); r.add_tab(); _hf_font(r)
+            r = p.add_run(org); _hf_font(r)
+        else:
+            _roman()
+
+
 def _add_end_bookmark(doc: Document):
     """文末书签 — 页脚「共Y页」PAGEREF 的目标 (挂最末段落; rec97 para_end 变体已 LO 验证)"""
     body = doc.element.body
@@ -652,30 +702,39 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
     }
     add_front_matter(doc, _front)
 
-    # ── 分节: 正文节 (目录+章节) — 前置页(封面/声明)独立成节, 页码只从正文起算 ──
+    # ── 分节 (复刻真实备案稿 3/3 节结构): [封面][声明] → [目录·upperRoman] → [正文·decimal] ──
+    # 真实报告 5 节; 我们合并为 3 节 (封面+声明同节 / 目录 / 正文), 每节 = sectPr type=nextPage,
+    # 页码在节边界重启: 目录节 upperRoman 不设 start (续 = I), 正文节 decimal start=1。
     from docx.enum.section import WD_SECTION
+    from web.front_matter import render_org as _render_org
+    _hf_title = f"{_front.get('company','')}{_front.get('name','')}职业病危害预评价报告书"
+    _hf_org = _render_org(_front)
+    _hf_no = str(_front.get("report_no") or "")
+    doc.settings.odd_and_even_pages_header_footer = True
+    _setup_hf_styles(doc)
+
+    # ── 端口 A: 目录节 (upperRoman 页码, 页脚 = 机构名+裸罗马数字镜像) ──
+    # 注: doc.add_section() 会把当前光标前的段落归入 prev sectPr; 前置页已以分页符收尾, 故
+    # 新建目录节后立刻插入一个分页符段落 → 目录从新页起 (python-docx 无法回填前置 sectPr)
+    toc_sec = doc.add_section(WD_SECTION.NEW_PAGE)
+    toc_sec.page_width, toc_sec.page_height = Cm(21), Cm(29.7)
+    toc_sec.left_margin, toc_sec.right_margin = Cm(3.7), Cm(2.6)
+    toc_sec.top_margin, toc_sec.bottom_margin = Cm(3.5), Cm(2.8)
+    toc_sec.header_distance, toc_sec.footer_distance = Cm(1.5), Cm(1.5)
+    _attach_toc_hf(toc_sec, doc, _hf_title, _hf_no, _hf_org)
+    _set_pg_num_type(toc_sec, fmt="upperRoman", start=1)  # 目录节从 I 起 (不与封面页数续算)
+
+    # 目录 (独立节; 末尾分页符使其与正文分离 → 分页符段落归入目录节)
+    add_toc(doc)
+
+    # ── 端口 B: 正文节 (decimal 页码从 1 起; 页脚 = 机构名+第X页共Y页 镜像) ──
     body_sec = doc.add_section(WD_SECTION.NEW_PAGE)
     body_sec.page_width, body_sec.page_height = Cm(21), Cm(29.7)
     body_sec.left_margin, body_sec.right_margin = Cm(3.7), Cm(2.6)
     body_sec.top_margin, body_sec.bottom_margin = Cm(3.5), Cm(2.8)
     body_sec.header_distance, body_sec.footer_distance = Cm(1.5), Cm(1.5)
-    doc.settings.odd_and_even_pages_header_footer = True
-    _setup_hf_styles(doc)
-    from web.front_matter import render_org as _render_org
-    _hf_title = f"{_front.get('company','')}{_front.get('name','')}职业病危害预评价报告书"
-    _attach_body_hf(body_sec, doc, _hf_title, str(_front.get("report_no") or ""), _render_org(_front))
-    # 页码从 1 起算 (前置页不计入) — pgNumType 须在 w:cols 之前
-    _sectPr = body_sec._sectPr
-    _pg = OxmlElement("w:pgNumType")
-    _pg.set(qn("w:start"), "1")
-    _cols = _sectPr.find(qn("w:cols"))
-    if _cols is not None:
-        _cols.addprevious(_pg)
-    else:
-        _sectPr.append(_pg)
-
-    # 目录
-    add_toc(doc)
+    _attach_body_hf(body_sec, doc, _hf_title, _hf_no, _hf_org)
+    _set_pg_num_type(body_sec, fmt="decimal", start=1)
 
     # 各章节 (按 report_struct 新结构: 11章 + 二级 + 三级 + 数据四级)
     from web.report_struct import _extract_product_units

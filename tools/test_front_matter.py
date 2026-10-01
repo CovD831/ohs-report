@@ -52,13 +52,20 @@ def main():
     }
     add_front_matter(doc, data)
     from docx.enum.section import WD_SECTION
-    sec = doc.add_section(WD_SECTION.NEW_PAGE)
-    # fm5: 用 word_export 的真实实现挂页眉页脚 (守卫覆盖生产代码路径, 非模拟)
-    from web.word_export import _setup_hf_styles, _attach_body_hf, _add_end_bookmark
+    # fm6: 三节结构 (前置 / 目录·upperRoman / 正文·decimal)
+    from web.word_export import (_setup_hf_styles, _attach_toc_hf, _attach_body_hf,
+                                 _add_end_bookmark, _set_pg_num_type, add_toc)
     doc.settings.odd_and_even_pages_header_footer = True
     _setup_hf_styles(doc)
     _hf_title = f"{data['company']}{data['name']}职业病危害预评价报告书"
-    _attach_body_hf(sec, doc, _hf_title, data["report_no"], "江苏宁大卫防检测技术有限公司常熟分公司")
+    _org = "江苏宁大卫防检测技术有限公司常熟分公司"
+    toc_sec = doc.add_section(WD_SECTION.NEW_PAGE)
+    _attach_toc_hf(toc_sec, doc, _hf_title, data["report_no"], _org)
+    _set_pg_num_type(toc_sec, fmt="upperRoman", start=1)
+    add_toc(doc)
+    sec = doc.add_section(WD_SECTION.NEW_PAGE)
+    _attach_body_hf(sec, doc, _hf_title, data["report_no"], _org)
+    _set_pg_num_type(sec, fmt="decimal", start=1)
     doc.add_paragraph("正文占位")
     _add_end_bookmark(doc)
     doc.save(str(OUT))
@@ -113,16 +120,21 @@ def main():
     allnone = borders is not None and all(c.get(qn("w:val")) == "none" for c in borders)
     check("无边框 (复刻浦发)", allnone)
 
-    print("⑤ 页码隔离")
+    print("⑤ 页码隔离 (fm6: 三节)")
     s0 = doc.sections[0]
-    hdr0 = "".join(p.text for p in s0.footer.paragraphs)
     instrs0 = s0.footer.paragraphs[0]._p.findall(".//" + qn("w:instrText")) if s0.footer.paragraphs else []
     check("前置节无页码域", not instrs0)
+    check("节数=3 (前置/目录/正文)", len(doc.sections) == 3, str(len(doc.sections)))
     s1 = doc.sections[1]
     instrs1 = []
     for pp in s1.footer.paragraphs:
         instrs1 += [x.text for x in pp._p.findall(".//" + qn("w:instrText"))]
-    check("正文节有 PAGE 域", any("PAGE" in (t or "") for t in instrs1), str(instrs1))
+    check("目录节有 PAGE 域", any("PAGE" in (t or "") for t in instrs1), str(instrs1))
+    s2 = doc.sections[2]
+    instrs2 = []
+    for pp in s2.footer.paragraphs:
+        instrs2 += [x.text for x in pp._p.findall(".//" + qn("w:instrText"))]
+    check("正文节有 PAGE 域", any("PAGE" in (t or "") for t in instrs2), str(instrs2))
 
     print("⑥ 编号生成")
     check("格式 Y{年}-{3位}", gen_report_no([], dt=__import__("datetime").datetime(2026, 5, 1)) == "Y2026-001")
@@ -132,7 +144,7 @@ def main():
     check("中文年月", cn_year_month(__import__("datetime").datetime(2023, 7, 15)) == "二〇二三年七月")
 
     print("⑦ 页眉 (fm5)")
-    s1 = doc.sections[1]
+    s1 = doc.sections[2]           # 正文节 (fm6 后为第 3 节)
     hdr = s1.header
     htxt = hdr.paragraphs[0].text if hdr.paragraphs else ""
     check("页眉=企业名+项目名+报告书", htxt.startswith("长兴合成树脂") and "职业病危害预评价报告书" in htxt
@@ -152,13 +164,14 @@ def main():
           f"clears={_clears} right={_right}")
 
     print("⑧ 页脚奇偶镜像 (fm5)")
-    f_odd = s1.footer.paragraphs[0].text
-    f_even = s1.even_page_footer.paragraphs[0].text
+    s2 = doc.sections[2]
+    f_odd = s2.footer.paragraphs[0].text
+    f_even = s2.even_page_footer.paragraphs[0].text
     check("奇数页 机构名在前", f_odd.startswith("江苏宁大卫防"), f_odd)
     check("偶数页 页码在前 (镜像)", f_even.startswith("第"), f_even)
     check("奇数页含 第X页共Y页", "第" in f_odd and "页 共" in f_odd and "页" in f_odd, f_odd)
     o_instr = []
-    for pp in s1.footer.paragraphs:
+    for pp in s2.footer.paragraphs:
         o_instr += [x.text for x in pp._p.findall(".//" + qn("w:instrText"))]
     check("合计页数用 PAGEREF (非 NUMPAGES/SECTIONPAGES)",
           any("PAGEREF _ohs_report_end" in (t or "") for t in o_instr)
@@ -166,6 +179,33 @@ def main():
     check("evenAndOddHeaders 开启", doc.settings.odd_and_even_pages_header_footer is True)
     _bx = doc.element.body.findall(".//" + qn("w:bookmarkStart"))
     check("文末书签存在", any(b.get(qn("w:name")) == "_ohs_report_end" for b in _bx))
+
+    print("⑨ 目录节罗马页码 (fm6)")
+    stoc = doc.sections[1]
+    pg = stoc._sectPr.find(qn("w:pgNumType"))
+    check("目录节 pgNumType fmt=upperRoman",
+          pg is not None and pg.get(qn("w:fmt")) == "upperRoman",
+          str(dict((k.split('}')[-1], v) for k, v in (pg.attrib.items() if pg is not None else []))))
+    check("目录节页码从 I 起 (start=1)",
+          pg is not None and pg.get(qn("w:start")) == "1",
+          str(pg.get(qn("w:start")) if pg is not None else None))
+    tf_odd = stoc.footer.paragraphs[0].text
+    tf_even = stoc.even_page_footer.paragraphs[0].text
+    check("目录页脚=机构名+裸罗马数字 (奇数页机构名在前)", tf_odd.startswith("江苏宁大卫防")
+          and "第" not in tf_odd and "页" not in tf_odd, tf_odd)
+    check("目录页脚 偶数页镜像 (罗马数字在前)", "第" not in tf_even and "江苏宁大卫防" in tf_even
+          and tf_even.index("江苏宁大卫防") > 0, tf_even)
+    tobj = []
+    for pp in stoc.footer.paragraphs:
+        tobj += [x.text for x in pp._p.findall(".//" + qn("w:instrText"))]
+    check("目录页脚仅 PAGE 域 (无 PAGEREF 共Y页)",
+          any("PAGE" in (t or "") for t in tobj) and not any("PAGEREF" in (t or "") for t in tobj), str(tobj))
+    _sh = stoc.header.paragraphs[0].text if stoc.header.paragraphs else ""
+    check("目录节页眉同正文 (标题+编号)", _sh.startswith("长兴合成树脂") and "Y2026-001" in _sh, _sh)
+    _spg = doc.sections[2]._sectPr.find(qn("w:pgNumType"))
+    check("正文节 pgNumType decimal start=1",
+          _spg is not None and _spg.get(qn("w:fmt")) == "decimal" and _spg.get(qn("w:start")) == "1",
+          str(dict((k.split('}')[-1], v) for k, v in (_spg.attrib.items() if _spg is not None else []))))
 
     OUT.unlink(missing_ok=True)
 
