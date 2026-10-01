@@ -1252,11 +1252,25 @@ def import_materials_from_dir(pid: str) -> dict:
                 prot_lines = [ln.lstrip("- ").strip() for ln in raw.splitlines() if ln.strip()][:40]
                 prot = prot or "；".join(prot_lines)
             # 个人防护用品
+            # C14 表头实测: 职业病危害因素名称 | 个人防护用品 | 型号 | 发放周期
+            #   ⚠ 旧写法 _get(r,"名称",...) 会模糊命中第1列「职业病危害因素名称」→
+            #      item 存成危害因素(噪声/高温)而非用品(防噪耳塞)。故用品列优先且排除危害列。
             if "个人防护" in name or "ppe" in name.lower():
                 for r in _dict_rows(_read_rows(f)):
-                    pn = _get(r, "名称", "防护用品", "物品")
+                    pn = _get(r, "个人防护用品", "防护用品", "物品", "个体防护装备")
+                    if not pn:
+                        # 兜底: 取非「危害因素/型号/周期」类的名称列
+                        for k, v in r.items():
+                            ks = str(k)
+                            if "名称" in ks and "危害" not in ks and str(v).strip():
+                                pn = v
+                                break
                     if pn:
-                        ppe.append({"item": pn, "post": _get(r, "岗位", "岗位名称"), "frequency": _get(r, "发放频次", "更换周期", "周期")})
+                        fac = _get(r, "职业病危害因素名称", "危害因素", "职业病危害因素")
+                        mdl = _get(r, "型号", "规格型号")
+                        ppe.append({"item": pn, "factor": fac, "model": mdl,
+                                    "post": _get(r, "岗位", "岗位名称", "工段"),
+                                    "frequency": _get(r, "发放周期", "发放频次", "更换周期", "周期")})
             # 应急救援
             if "应急" in name or "救援" in name:
                 raw = f.read_text(encoding="utf-8", errors="ignore")
@@ -1838,7 +1852,11 @@ def _run_bench_after_generate(pid: str):
             import tempfile
             from web.word_export import export_docx
             out_path = _P2(tempfile.gettempdir()) / f"bench_{pid}.docx"
-            export_docx(pd, {}, out_path, section_states=pd.get("section_states"))
+            # ⚠ 必须带 _project_data, 否则 fill_section 拿不到项目数据 →
+            #   内嵌表(含 PPE 6 列)全空 → 评测失真 (曾传 {} 漏 18 张表)
+            _a = assess_project(_conn_tasks(), pd)
+            _a["_project_data"] = dict(pd)
+            export_docx(pd, _a, out_path, section_states=pd.get("section_states"))
         except Exception as _e:
             import logging
             logging.getLogger("ohs").warning(f"bench 导出docx失败: {_e}")

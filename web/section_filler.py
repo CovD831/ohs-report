@@ -13,6 +13,7 @@
   新10 补充建议      → 问题与建议表
   新11 结论          → 结论要素表
 """
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -271,6 +272,131 @@ def _ppe_matrix_table() -> dict | None:
         return None
 
 
+def _ppe_vertical_rows(project_data: dict):
+    """竖排 6 列 PPE 表行 (真稿 4.2-4 / 8.1-1 版式约定)
+
+    返回 (rows, merged_row_indices); rows[i] = [生产单元,生产岗位,用品,单位,数量,更换周期]
+    """
+    try:
+        from knowledge.ppe_vertical import build_ppe_rows
+        return build_ppe_rows(project_data)
+    except Exception:
+        return [], set()
+
+
+def _norm_fac(s: str) -> str:
+    """因素名归一化 — 去掉括号注解/空白/全角标点, 用于**受控**匹配
+
+    仅用于**等值**比较, 不用于子串匹配(子串会串物质: 「丙酮」⊂「丙酮氰醇」)。
+    """
+    s = s or ""
+    s = re.sub(r"[（(].*?[)）]", "", s)          # 去括号注解: 丙酮氰醇（按CN 计）→ 丙酮氰醇
+    s = s.replace(" ", "").replace("\u3000", "")
+    s = s.replace("，", ",").replace("、", ",")
+    return s.strip()
+
+
+def _same_substance(a: str, b: str) -> bool:
+    """判断两个因素名是否**同一物质** — 严格, 宁缺勿错(用户红线)
+
+    允许: 归一化后等值; 或「及/或/、」连接的同义词组精确拆分
+          (如「氯化氢及盐酸」vs「盐酸」→ 拆出 '盐酸' 命中)
+    禁止: 任意子串包含(会把 丙酮 匹到 丙酮氰醇, 危险)
+    """
+    na, nb = _norm_fac(a), _norm_fac(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    # 「A及B」「A或B」「A,B」→ 拆分为 token 后取等值
+    toks_a = [t for t in re.split(r"[及或,/]", na) if t]
+    toks_b = [t for t in re.split(r"[及或,/]", nb) if t]
+    for ta in toks_a:
+        for tb in toks_b:
+            if ta and tb and ta == tb and len(ta) >= 2:
+                return True
+    return False
+
+
+def lookup_toxicity(conn, fac: str) -> str:
+    """查危害程度分级 (hazard_toxicity 表, 确定性查表)
+
+    未收录 → 返回「待补充」, **不推算不编造**(用户原则: 认可能计算的绝不生成)。
+
+    匹配策略(**宁缺勿错**):
+      1. 精确名
+      2. 别名(竖线分隔)**等值**
+      3. 同义名组精确拆分(「氯化氢及盐酸」↔「盐酸」)
+    ⚠ 曾用任意子串包含匹配 → 实测踩坑: 「丙酮」(低毒溶剂) 匹到「丙酮氰醇」(剧毒),
+      张冠李戴。物质身份必须**确定**, 故禁止无约束子串。
+    """
+    if not fac:
+        return "待补充"
+    try:
+        r = conn.execute(
+            "SELECT level FROM hazard_toxicity WHERE factor_name=?", (fac,)
+        ).fetchone()
+        if r:
+            return r[0]
+        for name, aliases, level in conn.execute(
+            "SELECT factor_name, aliases, level FROM hazard_toxicity"
+        ):
+            if _same_substance(name, fac):
+                return level
+            for a in (aliases or "").split("|"):
+                if a.strip() and _same_substance(a, fac):
+                    return level
+    except sqlite3.OperationalError:
+        pass  # 表未建 → 待补充
+    return "待补充"
+
+
+def form_of(conn, fac: str) -> str:
+    """物质形态 (气体/液体/固体/气溶胶) — 确定性查表优先, 未收录返回「—」
+
+    优先级:
+      1. hazard_toxicity.form (真实报告 5.2-1 逐格取证, 权威)
+      2. hazchem_item.alias 形态线索 (兜底, 如「液氨；氨气」)
+    原报告取证(新泰表5.2-1): 氟化氢=气体, 氟化钙/石灰石粉尘=固体, 氯化氢及盐酸=液体
+    """
+    if not fac:
+        return "—"
+    # 1) 权威表
+    try:
+        for name, aliases, form in conn.execute(
+            "SELECT factor_name, aliases, form FROM hazard_toxicity WHERE form IS NOT NULL"
+        ):
+            if name == fac:
+                return form
+            for a in (aliases or "").split("|"):
+                if a and (a == fac or a in fac or fac in a):
+                    return form
+    except sqlite3.OperationalError:
+        pass
+    # 2) 兜底: hazchem alias 形态线索
+    KEYS = (("气溶胶", "气溶胶"), ("蒸气", "蒸气"), ("气体", "气体"),
+            ("液体", "液体"), ("固体", "固体"), ("粉尘", "粉尘"),
+            ("气", "气体"), ("液", "液体"), ("固", "固体"))
+    try:
+        r = conn.execute(
+            "SELECT alias FROM hazchem_item WHERE name=?", (fac,)
+        ).fetchone()
+        text = (r[0] if r else "") or ""
+        for token in text.replace("|", "；").split("；"):
+            token = token.strip()
+            if not token or token == fac:
+                continue
+            for k, v in KEYS:
+                if k in token:
+                    return v
+    except sqlite3.OperationalError:
+        pass
+    for k, v in (("粉尘", "粉尘"), ("烟尘", "粉尘"), ("烟雾", "粉尘")):
+        if k in fac:
+            return v
+    return "—"
+
+
 def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]:
     """按报告章节 (新11章) 生成表格"""
     if sec == "1":
@@ -383,6 +509,9 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                                "rows": [[i] + r for i, r in enumerate(p2_rows, 1)]})
         # 表3.1-1 所在地常年主要气象因素 (序号/项目/情况和数据/备注) — 气象要素=公开区域资料
         # 项目材料未含气象/地勘专项 → 情况和数据标待补充, 结构复刻原报告
+        # 原报告 3.2 选址分析 含「建筑场地类别及场地地震效应」段(依据 GB 50011)
+        #   → 参数(峰值加速度/设计地震分组/场地土类型/场地类别)全部来自**地勘报告**
+        #   → 我方 demo 无勘察素材, 按用户原则诚实标注待补充, 不编造
         wx_rows = [
             ["1", "气候", "待补充（所在地属亚热带季风气候区）", "/"],
             ["2", "气温", "待补充（年平均/极端最高/最低）", "/"],
@@ -393,6 +522,9 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             ["7", "日照", "待补充", "/"],
             ["8", "地质", "待补充（以地勘报告为准）", "/"],
             ["9", "水文", "待补充", "/"],
+            ["10", "场地地震效应",
+             "待补充（以地勘报告为准；须含场地土类型/场地类别/设计地震分组，"
+             "依据 GB 50011-2010 判定）", "/"],
         ]
         tables.append({"name": "气象因素表", "cols": ["序号", "项目", "情况和数据", "备注"], "rows": wx_rows})
         # 项目概况/投资 (从固定字段)
@@ -647,11 +779,17 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             tables.append({"name": "类比工作日写实表",
                            "cols": ["部门", "岗位/工种", "总人数", "女工数", "工作班制", "工作班制时长（h）", "工作日写实"],
                            "rows": wl7})
-        # 类比企业个人防护用品配备 (原报告表4.2-4: 作业类型×装备 标准配备矩阵 — 类比推定共用)
-        _mt = _ppe_matrix_table()
-        if _mt:
-            tables.append({**_mt, "name": "类比PPE配备表"})
-            # 类比企业PPE有效性分析 (原报告表4.2-5: 单元/岗位/因素/配备/符合性/有效性 定式评价)
+        # 类比企业个人防护用品配备 (原报告表4.2-4: 竖排6列 生产单元|岗位|用品|单位|数量|更换周期)
+        #   ⚠ 真稿43表零张 √/※ 矩阵表 → 旧横排矩阵(_ppe_matrix_table)是张冠李戴, 已弃用
+        _pd4 = assess.get("_project_data") or {}
+        _pv_rows, _pv_merged = _ppe_vertical_rows(_pd4)
+        if _pv_rows:
+            tables.append({"name": "类比PPE配备表",
+                           "cols": ["生产单元", "生产岗位", "配置的防护用品", "单位", "数量", "更换周期"],
+                           "rows": _pv_rows,
+                           "vmerge_cols": [0, 1]})
+        # 类比企业PPE有效性分析 (原报告表4.2-5: 单元/岗位/因素/配备/符合性/有效性 定式评价)
+        if _pv_rows:
             hg2 = (assess.get("_project_data") or {}).get("hazard_grid", [])
             vrows = []
             for i2, g in enumerate(hg2):
@@ -839,6 +977,11 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         for fac in hazards[:30]:
             if fac in seen_he:
                 continue
+            # 真稿表5.2-1 只列**化学物质/粉尘**(新泰取证: 石灰石粉尘/氟化氢/氯化氢及盐酸/氧化钙),
+            #   物理因素(噪声/高温/紫外)另见「物理因素健康影响表」→ 此表须排除,
+            #   否则违反「每章讲该章的事」(用户原则)
+            if is_physical(fac):
+                continue
             seen_he.add(fac)
             hes = link_health_effect(conn, fac)
             ds = link_disease(conn, fac)
@@ -849,13 +992,22 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             elif ds:  # 物理因素: 无化学健康影响但有职业病(噪声聋/中暑)
                 he_rows.append([fac, is_physical(fac) and "—", "、".join(ds)[:30], "—"])
         if he_rows:
-            # 原报告表5.2-1 6列: 因素/侵入途径/毒理学资料/健康影响/临界效应/职业病
+            # 原报告表5.2-1 6列逐格取证(新泰备案稿):
+            #   名称 | 形态 | 危害特性 | 对人体健康的影响 | 危害程度 | 可能引起的职业病或职业性病损
+            #   e.g. 氟化氢|气体|刺入、皮肤|对皮肤有强烈的腐蚀作用…|高度危害|化学性皮肤灼伤…
+            # 「危害程度」= GBZ/T 230-2025 THI 分级, 属**确定性查表**(hazard_toxicity),
+            #   未收录 → 标「待补充」, 不推算不编造(用户原则)
             he6 = []
             for r in he_rows:
                 # he_rows 现为 [fac, effect, disease, route]
-                he6.append([r[0], r[3] if len(r) > 3 else "—", "—", r[1], "—", r[2]])
+                fac, effect = r[0], r[1]
+                disease = r[2] if len(r) > 2 else "—"
+                route = r[3] if len(r) > 3 else "—"
+                grade = lookup_toxicity(conn, fac)
+                he6.append([fac, form_of(conn, fac), route, effect, grade, disease])
             tables.append({"name": "健康影响表",
-                           "cols": ["职业病危害因素", "主要侵入途径", "毒理学资料", "对人体健康的主要影响", "临界不良健康效应", "可能引起的主要职业病"],
+                           "cols": ["名称", "形态", "危害特性", "对人体健康的影响",
+                                    "危害程度", "可能引起的职业病或职业性病损"],
                            "rows": he6})
         # 关键控制点表 (岗位×关键因子×措施)
         # 原报告表5.4-1 7列: 车间/产品/工序/设备密闭/接触方式/因素/关键控制措施 (hazard_grid+judgement 派生)
@@ -1005,29 +1157,15 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                         if len(parts) >= 2:
                             p_rows.append([len(p_rows) + 1, parts[0].strip(), parts[1].strip(), "GB 39800.1—2020"])
         if p_rows:
-            # 原报告表8.1-1: 作业类型×装备 标准配备矩阵 (GB39800.1+江苏省标准2007, 类比推定与4.2-4同源)
-            _mt8 = _ppe_matrix_table()
-            if _mt8:
-                tables8 = [{**_mt8, "name": "PPE配备表"}]
+            # 原报告表8.1-1: 竖排6列 生产单元|岗位|用品|单位|数量|更换周期 (= 4.2-4 同构, 类比推定)
+            #   ⚠ 真稿零张矩阵表 → 弃用 _ppe_matrix_table 横排
+            _pv8, _pv8m = _ppe_vertical_rows(pd)
+            if _pv8:
+                tables8 = [{"name": "PPE配备表",
+                            "cols": ["生产单元", "生产岗位", "配置的防护用品", "单位", "数量", "更换周期"],
+                            "rows": _pv8, "vmerge_cols": [0, 1]}]
             else:
-                # 矩阵库缺失时回退: ppe 数据派生 (行=岗位, 列=装备种类)
-                posts8 = sorted({str(p.get("post") or p.get("岗位") or "") for p in (pd.get("ppe") or [])
-                                 if isinstance(p, dict) and (p.get("post") or p.get("岗位"))})
-                items8 = []
-                for p in (pd.get("ppe") or []):
-                    if isinstance(p, dict):
-                        it = str(p.get("item") or p.get("name") or p.get("防护用品") or "")
-                        if it and it not in items8 and len(it) < 10:
-                            items8.append(it)
-                if posts8 and items8:
-                    m8 = []
-                    for po in posts8:
-                        equipped = {str(p.get("item") or p.get("name") or "") for p in (pd.get("ppe") or [])
-                                    if isinstance(p, dict) and (p.get("post") or p.get("岗位")) == po}
-                        m8.append([po] + [("√" if it in equipped else "") for it in items8])
-                    tables8 = [{"name": "PPE配备表", "cols": ["安全装备项目／工作性质、内容"] + items8, "rows": m8}]
-                else:
-                    tables8 = [{"name": "PPE配备表", "cols": ["序号", "岗位/作业", "防护装备", "配备标准"], "rows": p_rows[:60]}]
+                tables8 = [{"name": "PPE配备表", "cols": ["序号", "岗位/作业", "防护装备", "配备标准"], "rows": p_rows[:60]}]
         else:
             tables8 = []
         # 表8.2-1 拟配置检查表 (GB 39800—2020 通用配备要求, 检查表定式: 通用规则非项目编造)

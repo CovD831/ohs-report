@@ -991,6 +991,25 @@ def _write_tables(doc, tables):
                 r = cells[i].paragraphs[0].add_run(str(v))
                 # 表格正文: 仿宋_GB2312 10.5pt (原报告取证: FangSong/仿宋 sz=21 半磅)
                 _set_font(r, FANGSONG, 10.5)
+        # vmerge_cols: [c1,c2...] 纵向合并 — 相邻行同值的列合并 (原报告取证: PPE表 生产单元/生产岗位)
+        #   注意: 必须在数据行填充后执行; 单层表头表也适用(merge_rect 仅在双层表头分支内)
+        _vm = t.get("vmerge_cols") or []
+        if _vm:
+            n_data = len(t["rows"])
+            for c in _vm:
+                if c >= len(t["cols"]):
+                    continue
+                start = 0
+                for i in range(1, n_data + 1):
+                    cur = str(t["rows"][i][c]) if i < n_data else None
+                    prev = str(t["rows"][start][c])
+                    if cur != prev:
+                        if i - 1 > start:
+                            r1, r2 = nrows_head + start, nrows_head + i - 1
+                            for rr in range(r1 + 1, r2 + 1):
+                                dt.rows[rr].cells[c].text = ""
+                            dt.rows[r1].cells[c].merge(dt.rows[r2].cells[c])
+                        start = i
         doc.add_paragraph()
 
 

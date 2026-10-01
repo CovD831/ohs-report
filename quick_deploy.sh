@@ -15,14 +15,19 @@ echo "=== 1. 打源码包 (排除数据/venv/标准PDF, ~1-2MB) ==="
 # ⚠⚠ 教训 (2026-09): knowledge/ 曾整目录排除 → 改了 knowledge/project_assess.py
 #   部署后服务器上还是旧代码, 而本地测试全过 = "部署了但没生效" 的静默假成功。
 #   正解: knowledge 只送 **.py 源码** (小), 排除它的数据文件 (*.json/*.csv 大)。
+# ⚠⚠ 教训 (2026-10): _KN_EXCL 里排 '*.json' 是给 knowledge/ 用的,
+#   但它作用在**整个 tar**(web+knowledge+tools), 把 web/section_style_spec.json
+#   也一起排掉了 → 改了样式规格部署后容器里还是旧的 = 静默假成功。
+#   正解: 排除规则一律用 **路径限定** (--exclude 'knowledge/*.json'), 不用裸 '*.json'。
 _EXCL=(--exclude '.git' --exclude '.venv' --exclude 'raw' --exclude '*/raw'
        --exclude 'data' --exclude '*/data' --exclude '__pycache__'
        --exclude '*/__pycache__' --exclude '*.docx' --exclude '*.pdf'
        --exclude '.env*' --exclude 'docker-compose.yml')
 # knowledge: 只要代码 (小), 排除大体积数据/词库/扫描页图片
 #   gbz22_pages 33M + gb39800_pages 12M = 标准扫描页 PNG (OCR 中间产物, 服务器不需要)
-_KN_EXCL=(--exclude '*.json' --exclude '*.csv' --exclude '*.txt' --exclude '*.xlsx'
-          --exclude '*.png' --exclude '*.jpg' --exclude '*.pdf'
+_KN_EXCL=(--exclude 'knowledge/*.json' --exclude 'knowledge/*.csv' --exclude 'knowledge/*.txt'
+          --exclude 'knowledge/*.xlsx'
+          --exclude 'knowledge/*.png' --exclude 'knowledge/*.jpg' --exclude 'knowledge/*.pdf'
           --exclude '*/gbz22_pages' --exclude '*/gb39800_pages' --exclude '*/__pycache__')
 _SRC=(web tools acquire knowledge requirements.txt Dockerfile)
 tar czf /tmp/ohs_src.tgz "${_EXCL[@]}" "${_KN_EXCL[@]}" "${_SRC[@]}"
@@ -32,7 +37,7 @@ echo "    包大小: ${_sz}MB"
 [ "$_sz" -gt 20 ] && echo "  ⚠ 包偏大(${_sz}MB) — 检查是否漏排大目录, 大包易传断"
 
 # 部署前校验: 关键源码目录必须在包里 (防"漏送目录"类静默失败)
-for _must in web/app.py knowledge/project_assess.py tools/audit_numbers.py; do
+for _must in web/app.py knowledge/project_assess.py tools/audit_numbers.py web/section_filler.py web/section_style_spec.json; do
   if ! tar tzf /tmp/ohs_src.tgz "$_must" >/dev/null 2>&1; then
     echo "❌ 包内缺少 $_must — 打包规则有误, 中止"; exit 1
   fi
@@ -70,7 +75,7 @@ curl -s -o /dev/null -w '公网: %{http_code}\n' https://paiyipai.xyz/login
 # 比对本地与容器内关键文件的 md5
 echo "=== 6. 源码一致性校验 (本地 vs 容器) ==="
 _mismatch=0
-for _f in web/app.py knowledge/project_assess.py web/table_skeleton.py; do
+for _f in web/app.py knowledge/project_assess.py web/table_skeleton.py web/section_filler.py web/section_style_spec.json; do
   _l=$(md5 -q "$_f" 2>/dev/null || md5sum "$_f" | cut -d' ' -f1)
   _r=$(ssh $SRV "docker exec ohs-report md5sum /app/$_f 2>/dev/null | cut -d' ' -f1")
   if [ "$_l" = "$_r" ]; then
