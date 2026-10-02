@@ -839,7 +839,11 @@ def api_import_materials(pid: str):
         except Exception:
             pass
         # 表骨架先行: 36 张表全部建出来 (能填的填, 缺的标待补充/待评估)
-        from web.table_skeleton import build_skeletons
+        from web.table_skeleton import build_skeletons, _sanitize_untrusted
+        # 先清洗不可信字段 → 回写 merged (invest=裸数字无单位等), 再建表。
+        # ⚠ 顺序要紧: 若先建表后清洗, 表里已烙进脏值, 且 _untrusted_fields
+        #   标记也不会随 merged 落盘 → section_filler 读不到标记 (各判各的)。
+        merged = _sanitize_untrusted(merged)
         merged["built_tables"] = build_skeletons(merged)
         _ext_pid = pid
         _ext_data = dict(merged)

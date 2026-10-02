@@ -306,9 +306,31 @@ def _names_of(v: Any, limit: int = 40) -> str:
 
 
 # ============ 3. 溯源传导 ============
-# 上游不可信/待核的字段 → 值后加标注, 让 LLM 知道不能照抄
+# 上游不可信/待核的字段 → **值不进 prompt**, 只给"待补充"占位 + 原因
+#
+# ⚠ 设计修正 (2026-10, 实测教训):
+#   旧做法是「值 + 警告note」一起喂 LLM, 例: 「投资规模：5000（⚠来源待核，未在材料中指到出处）」,
+#   指望 LLM 看到警告后不乱写。**实测失败**:
+#     - 1.1 项目背景 正文写出「投资规模为5000，该投资数据来源待核」→ 裸数字进了正式报告;
+#     - 更糟的是 LLM 自行补了口径写出「投资总额为5000万元」(元单位是 LLM 编的)。
+#   根因: 把"可信性判断"交给 LLM 自律 = 违背用户红线 (LLM 不得碰数字/不得凑合数字)。
+#   → 现在改为**源头不投喂**: 不可信字段的 value 置空, placeholder 写明原因,
+#     LLM 只能照写"待补充", 无从编造, 也无从自补单位。
 UNTRUSTED_FIELDS = {"investment"}
-UNTRUSTED_NOTE = "（⚠来源待核，未在材料中指到出处）"
+UNTRUSTED_PLACEHOLDER = "待补充（材料中该数据未标注单位，无法确定口径）"
+UNTRUSTED_REASON = {
+    "investment": "材料仅给出裸数字、未标注单位（万元/亿元/美元…），无法确定口径",
+}
+
+
+def _is_untrusted(name: str, project: dict, val) -> bool:
+    """字段是否应视为不可信 → 值不进 prompt
+
+    现在只有 investment 一类; 未来可扩展为「无单位金额」「无出处数字」等通用判据。
+    """
+    if name in UNTRUSTED_FIELDS:
+        return True
+    return False
 
 
 def _field_value(name: str, project: dict, assess: dict) -> Any:
@@ -345,20 +367,30 @@ def project_fields(sec: str, project: dict, assess: dict | None = None) -> list[
             val = raw
         if val in (None, "", [], {}):
             val = ""
-        note = UNTRUSTED_NOTE if (field in UNTRUSTED_FIELDS and val) else ""
+        # 不可信字段: value 置空 (不进 prompt) + note 说明原因
+        note = ""
+        if val and _is_untrusted(field, project, val):
+            note = UNTRUSTED_PLACEHOLDER
+            val = ""
         out.append({"label": label, "field": field, "value": val,
                     "view": view, "note": note})
     return out
 
 
 def render_kv_block(fields: list[dict]) -> str:
-    """渲染成真实报告的 '字段：值' metadata 块"""
+    """渲染成真实报告的 '字段：值' metadata 块
+
+    ⚠ note 有值但 value 被置空的字段 (不可信数据) 也要输出 → 让 LLM 照写"待补充",
+      否则该行整体消失, LLM 反而可能凭常识补一个 (实测曾自补"5000万元")。
+    """
     lines = []
     for f in fields:
-        if not f["value"]:
-            continue
-        v = f"{f['value']}{f['note']}" if f["note"] else str(f["value"])
-        lines.append(f"{f['label']}：{v}")
+        if f["value"]:
+            v = f"{f['value']}{f['note']}" if f["note"] else str(f["value"])
+            lines.append(f"{f['label']}：{v}")
+        elif f.get("note"):
+            # 不可信/待补充: 只给占位说明, 不给值
+            lines.append(f"{f['label']}：{f['note']}")
     return "\n".join(lines)
 
 
@@ -380,8 +412,9 @@ def render_for_prompt(sec: str, project: dict, assess: dict | None = None) -> st
         return render_kv_block(fields)
     parts = []
     for f in fields:
-        if not f["value"]:
-            continue
-        v = f"{f['value']}{f['note']}" if f["note"] else str(f["value"])
-        parts.append(f"**{f['label']}：** {v}")
+        if f["value"]:
+            v = f"{f['value']}{f['note']}" if f["note"] else str(f["value"])
+            parts.append(f"**{f['label']}：** {v}")
+        elif f.get("note"):
+            parts.append(f"**{f['label']}：** {f['note']}")
     return "\n\n".join(parts)

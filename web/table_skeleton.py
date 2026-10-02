@@ -18,6 +18,8 @@
 """
 from __future__ import annotations
 
+import re
+
 import sys
 from pathlib import Path
 
@@ -179,6 +181,28 @@ def _prov(status: str, why: str) -> dict:
     return prov_rule({"file": "骨架先行(导入时建表)", "page": None, "text": why})
 
 
+def _sanitize_untrusted(data: dict) -> dict:
+    """清洗不可信字段 → **单一合并点**
+
+    与 field_projection.UNTRUSTED_FIELDS 同源。表骨架是"数据落盘的唯一入口"
+    (app.py:843 build_skeletons), 在此清一次, 下游 filler/导出/prompt 全部受益,
+    不必每处各打一次补丁。
+
+    当前唯一判据: 投资额无单位 (材料只给裸数字, 无"万/亿/元") → 口径不可确定。
+    实测事故: 长兴 investment="5000" → 表「项目投资总额|万元|5000」+ 正文
+    「投资总额5000万元」, 其中"万元"是系统/LLM 替材料编的口径。
+    """
+    out = dict(data)
+    for _k in ("investment", "ohy_investment"):
+        v = out.get(_k)
+        s = str(v or "").strip()
+        if s and not re.search(r"万|亿|元", s):
+            out[_k] = ""            # 值置空 → 表填"待补充", prompt 也不投喂
+            out.setdefault("_untrusted_fields", {})[_k] = (
+                "材料中该数据未标注单位，无法确定口径")
+    return out
+
+
 def build_skeletons(data: dict, assess: dict | None = None) -> dict:
     """按骨架名单建全部表 (能填的填, 缺的占位)
 
@@ -188,6 +212,7 @@ def build_skeletons(data: dict, assess: dict | None = None) -> dict:
     from web.table_builder import build_data_tables
     from web.external_tables import EXTERNAL_TABLES, placeholder as _ext_ph
 
+    data = _sanitize_untrusted(data)        # ← 不可信字段清洗 (单一合并点)
     built = dict(build_data_tables(data))
     # 标准库驱动表 (检查表类): 导入时即填 (GBZ1 条款查表, 与项目无关)
     names_map = dict(_skeleton_names())

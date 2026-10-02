@@ -528,9 +528,20 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         ]
         tables.append({"name": "气象因素表", "cols": ["序号", "项目", "情况和数据", "备注"], "rows": wx_rows})
         # 项目概况/投资 (从固定字段)
+        # 投资额不可信判据: **读清洗标记**(table_skeleton._sanitize_untrusted 落盘),
+        #   而不是重算 (清洗后 investment 已被置空, 重算判不出"曾是无单位裸数字")。
+        #   标记来源唯一 → 与 field_projection / 表骨架同源, 不会各判各的。
+        _untrusted = (pd_.get("_untrusted_fields") or {})
+        _inv_flagged = "investment" in _untrusted
         invest = (pd_.get("investment") or "")
         cap = (pd_.get("capacity") or "")
-        if invest or cap or pd_.get("area"):
+        if _inv_flagged:
+            invest_cell = f"待补充（{_untrusted.get('investment') or '口径不确定'}）"
+        elif not str(invest).strip():
+            invest_cell = "待补充（材料未提供）"
+        else:
+            invest_cell = invest
+        if invest or cap or pd_.get("area") or _inv_flagged:
             # 原报告表3.1-3 主要经济技术指标: 序号/项目名称/单位/指标/备注 (5行)
             stf3 = pd_.get("staffing", [])
             tot3 = 0
@@ -543,7 +554,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             info_rows = [
                 ["1", "厂区总占地面积", "平方米", "依托现有", ""],
                 ["2", "新建建筑面积", "平方米", "依托现有", ""],
-                ["3", "项目投资总额", "万元", invest or "—", ""],
+                ["3", "项目投资总额", "万元", invest_cell, ""],
                 ["4", "职业病防治经费概算", "万元", "待补充（需企业核实）", ""],
             ]
             tables.append({"name": "项目概况表", "cols": ["序号", "项目名称", "单位", "指标", "备注"], "rows": info_rows})
