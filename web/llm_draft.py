@@ -602,6 +602,29 @@ FIXED_TEXTS = {
     ),
     # ── 3.9 建设施工工程分析 (定式: 标准施工工序流程, 与项目无关 — 真稿8.7全量取证) ──
     # 零 LLM: 施工工艺流程是规范化的通用工序描述, 不含项目特有数据, 不应由 LLM 生成
+    # ===== 3.6 生产设备及布局 (定式, 零 LLM) =====
+    # 真稿 8.4.2 生产设备调查 = 文字(调查方法/数据来源/选型依据), 表在 8.4.3
+    # 真稿 8.4.3 设备布局 = 「本项目设备清单详见表8.4-2。」+ 表 → 本节即那句引导语
+    # 数字 {eq_total} 由 _proj_fill 从 equipment_detail 实数注入 (不经 LLM)
+    "3.6.1": (
+        "本项目生产设备调查以建设单位提供的《项目申请报告（可行性研究）》中"
+        "「主要设备一览表」为基础，按车间/工段逐台核对设备名称、位号、规格型号、"
+        "数量及材质，并补充设备操作参数（温度、压力）与内部反应介质。\n"
+        "经核查，本项目共配置主要生产设备{eq_total}台（套），涵盖反应、换热、储存、"
+        "调配、分散、研磨及输送等工序。设备选型与布局的安全卫生要求依据"
+        "GB 5083—2023《生产设备安全卫生设计总则》及GB 12801—2025《生产过程安全卫生要求总则》"
+        "进行核查，重点关注设备运行过程中可能产生的粉尘、化学毒物及噪声等职业病危害因素的"
+        "源头控制与密闭化程度。"
+    ),
+    "3.6.2": (
+        "本项目设备清单详见表3.6-2。\n"
+        "本项目主要生产设备按工艺流程顺序布置于主厂房内，反应釜、冷凝器、中间槽、"
+        "稀释槽、调整槽等静设备及屏蔽泵、输送泵等动设备沿工艺流向分列，动静设备交错布置。"
+        "产生粉尘、毒物、噪声等职业病危害因素的设备集中布置并与其他作业区域相对隔离；"
+        "噪声源设备采取隔声、消声措施，其控制设计满足GB/T 50087—2013"
+        "《工业企业噪声控制设计规范》的要求；物料输送环节优先选用屏蔽泵等密闭输送设备，"
+        "减少作业人员接触。设备规格大、材质以SUS304/SUS316为主，各设备操作条件见表3.6-2。"
+    ),
     "3.9": (
         "本项目施工过程主要包括基础工程、模板工程、钢筋工程、混凝土工程、砌体工程、"
         "抹灰工程、楼地面工程及饰件工程等，各分项工程的施工工艺流程如下。"
@@ -698,11 +721,23 @@ def _fixed_text(sec: str, project: dict | None = None) -> str | None:
     if not tpl:
         return None
     name = ""
+    ph = dict(_FIXED_PROJ)
     if project:
         name = project.get("name", "")
         if name and name not in ("", "新建项目"):
             name = f"{name}"
-    return tpl.format(**({**_FIXED_PROJ, "proj": name or _FIXED_PROJ["proj"]})) if "{proj}" in tpl else tpl
+        # 设备实数注入 (定式章节零 LLM: 数字必须由代码从 equipment_detail 算出)
+        if "{eq_total}" in tpl or "{eq_rows}" in tpl:
+            eqd = [x for x in (project.get("equipment_detail") or [])
+                   if isinstance(x, dict) and not x.get("_group")]
+            ph["eq_total"] = str(len(eqd)) if eqd else "—"
+            ph["eq_rows"] = str(len(project.get("equipment_detail") or []))
+    ph["proj"] = name or _FIXED_PROJ["proj"]
+    # 只对含占位的模板做 format, 避免正文里出现 '{' 时炸
+    import re as _re
+    if _re.search(r"\{[a-z_]+\}", tpl):
+        return tpl.format(**{k: v for k, v in ph.items() if k in tpl})
+    return tpl
 
 
 def _strip_md_tables(text: str) -> str:

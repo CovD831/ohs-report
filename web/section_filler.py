@@ -558,26 +558,36 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 ["4", "职业病防治经费概算", "万元", "待补充（需企业核实）", ""],
             ]
             tables.append({"name": "项目概况表", "cols": ["序号", "项目名称", "单位", "指标", "备注"], "rows": info_rows})
-        # 设备细表 (名称+位号+规格+数量+材质+车间)
-        eq_d = pd_.get("equipment_detail", [])
+        # 设备明细表 (复刻真稿表8.4-2 本项目涉及的主要生产装置及设备)
+        # 真稿口径 8 列: 序号|设备名称|规格|材质|数量/台|操作条件|内部物料|备注
+        # ⚠ 旧版是 9 列双层(车间|位号|名称|规格|现有|扩建后全厂|变化|材质|备注),
+        #   但"现有/扩建后全厂"可研数据里没有(全是本项目设备) → 硬编"—"是伪造列,
+        #   改回真稿 8 列。分组行(_group)输出为横跨整行的产线标题行。
+        eq_d = [d for d in (pd_.get("equipment_detail") or []) if isinstance(d, dict)]
         if eq_d:
-            ed_rows = [[i, d.get("name", "") if isinstance(d, dict) else d,
-                        d.get("位号", "") if isinstance(d, dict) else "",
-                        d.get("spec", "") if isinstance(d, dict) else "",
-                        d.get("qty", "") if isinstance(d, dict) else "",
-                        d.get("材质", "") if isinstance(d, dict) else "",
-                        d.get("车间", "") if isinstance(d, dict) else ""]
-                       for i, d in enumerate(eq_d, 1)]
-            # 原报告表3.6-1 9列双层: 车间|位号|名称|规格|数量(现有·扩建后全厂·变化)|材质|备注
-            ed9 = [[d.get("车间", ""), d.get("位号", ""),
-                    d.get("name", "") if isinstance(d, dict) else d,
-                    d.get("spec", ""), d.get("qty", ""), d.get("qty", ""), "—",
-                    d.get("材质", ""), ""] for d in eq_d if isinstance(d, dict)]
+            ed_rows = []
+            for d in eq_d:
+                if d.get("_group"):        # 分组标题行 (真稿: 产线/车间名 单列跨行)
+                    ed_rows.append([d["_group"]] + [""] * 7)
+                    continue
+                # 操作条件/内部物料/备注: 提取层字段名 = 操作条件 / 内部物料 / 备注
+                #   (可研原文 "温度190-240；压力常压" → 直接取整列, 不再拆温度/压力重组)
+                ed_rows.append([
+                    d.get("no") or "",                      # 序号
+                    d.get("name", ""),                      # 设备名称
+                    d.get("spec", ""),                      # 规格型号
+                    d.get("材质", ""),                      # 材质
+                    d.get("qty", ""),                       # 数量/台
+                    d.get("操作条件", ""),                   # 操作条件
+                    d.get("内部物料", ""),                   # 内部物料
+                    d.get("备注", ""),                       # 备注
+                ])
             tables.append({"name": "设备明细表",
-                           "cols": ["车间", "位号", "设备名称", "规格型号", "数量", "数量", "数量", "材质", "备注"],
-                           "header2": ["车间", "位号", "设备名称", "规格型号", "现有", "扩建后全厂", "变化", "材质", "备注"],
-                           "merge_rect": [(0, 4, 0, 6)],
-                           "rows": ed9})
+                           "cols": ["序号", "设备名称", "规格型号", "材质", "数量/台",
+                                    "操作条件", "内部物料", "备注"],
+                           "rows": ed_rows,
+                           # 分组行 merge: 由 _write_tables_named 按 _group 标记处理(见 merge_rows)
+                           "group_rows": [i for i, r in enumerate(ed_rows) if r[1:] == [""] * 7]})
         # 班制定员表 (原报告表3.1-2: 工种/工作区域/工作内容/人班/生产班制/总人数/最大班女工数)
         # staffing(dept/post/count) + shifts(post→system) 拼; 工作内容无数据源标"—", 女工数无数据源标"/"
         sf = pd_.get("shifts", [])

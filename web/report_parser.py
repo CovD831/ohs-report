@@ -242,52 +242,109 @@ def parse_report_file(path) -> dict:
         out["process_text"] = "\n".join(proc)
 
     # ===== 设备 (设备表: 车间|序号|位号|设备名称|规格型号|数量|材质 → 设备名 + 完整列) =====
+    # ⚠ 旧实现两处硬伤 (2026-10 修):
+    #   ① 设备名靠白名单正则(釜/槽/罐/泵/塔/机/炉/器/线)识别 → 漏"电动葫芦/蒸发器"等,
+    #      且属"白名单式识别"红线。改为: 表头定位"设备名称"列取值。
+    #   ② 末尾 eq_dict[:40] 硬截断 → 可研 172 台被砍到 40。改为止于表结束(无上限)。
+    #   ③ 补 操作条件(温度/压力) / 内部物料(反应介质) / 备注(变更情况) 三列, 对齐真稿 8 列。
     eq, eq_detail = [], []
-    eq_dict = []  # equipment_detail: {name/位号/规格/数量/材质/车间}
+    eq_dict = []
     for tb in tables:
-        flat = " | ".join(str(c).replace("\n", "") for r in tb for c in r)
-        if not ("设备名称" in flat and "位号" in flat):
+        if not tb or not tb[0]:
             continue
-        head = [str(c).replace("\n", " ").strip() for c in tb[0]]
-        def _ec(kws):
-            for i, h in enumerate(head):
-                for kw in kws:
-                    if kw in h:
-                        return i
+        flat = " | ".join(str(c).replace("\n", "") for r in tb for c in r)
+        if not (("设备名称" in flat or "设备名" in flat) and ("位号" in flat or "规格" in flat)):
+            continue
+        # 表头可能双层 → 前 2 行拼起来找列位
+        # ⚠ 表头单元格常含内部换行 ("序\n号" / "数\n量") → 必须去换行, 否则关键词匹配失败
+        head = [re.sub(r"\s+", "", str(c)) for c in tb[0]]
+        head2 = [re.sub(r"\s+", "", str(c)) for c in tb[1]] if len(tb) > 1 else []
+        def _ec(kws, extra=None):
+            for src in ([head] + ([head2] if extra else [])):
+                for i, h in enumerate(src):
+                    for kw in kws:
+                        if kw in h:
+                            return i
             return -1
+        c_no = _ec(["序号"])
         c_pos = _ec(["位号"])
+        c_name = _ec(["设备名称", "设备名"])
         c_spec = _ec(["规格", "型号"])
         c_qty = _ec(["数量"])
         c_mat = _ec(["材质"])
         c_dept = _ec(["车间"])
-        for row in tb[1:]:
-            cells = [str(c).replace("\n", " ").strip() for c in row]
-            if not cells or any("设备名称" == c for c in cells):
+        # 双层表头: 操作参数(温度/压力/反应介质) 常在第二行
+        c_temp = _ec(["温度"], extra=True)
+        c_pres = _ec(["压力"], extra=True)
+        c_media = _ec(["反应介质", "介质", "内部物料"], extra=True)
+        c_chg = _ec(["停用", "变更", "备注"])
+        if c_name < 0:
+            continue
+        # 数据行可能从第 2 或第 3 行开始 (跳过双层表头)
+        start = 0
+        for j in range(min(3, len(tb))):
+            r0 = "".join(str(c) for c in tb[j])
+            if not re.search(r"温度|压力|反应介质|设备名称", r0):
+                start = j
+                break
+        start = max(start, 1)
+        _last_spec = _last_temp = _last_pres = _last_media = ""   # 纵向合并 forward-fill 状态
+        for row in tb[start:]:
+            # ⚠ 数据单元格同样含内部换行 ("主厂\n房") → 去空白; None → ""
+            cells = [("" if c is None else re.sub(r"\s+", "", str(c))) for c in row]
+            if not cells or any(c == "设备名称" for c in cells):
                 continue
-            # 设备名称列 (找含"釜/槽/罐/泵/塔/机/炉/器/线"的单元格)
-            eqname = ""
-            for c in cells:
-                if re.search(r"(反应釜|稀释槽|稀释釜|调整槽|中间槽|储罐|储槽|泵|冷凝器|冷凝|塔|风机|锅炉|搅拌|砂磨|分散|包装线|生产线|热媒)", c) and len(c) <= 20:
-                    eqname = c
-                    break
-            if not eqname:
-                continue
-            if eqname and eqname not in eq_detail:
-                eq_detail.append(eqname)
-            ed = {"name": eqname}
+            # 分组行: 无序号 & 只有名称列有值 → 记为 _group
+            ne = [c for c in cells if c]
             def _g(idx):
-                return cells[idx] if (idx >= 0 and idx < len(cells)) else ""
-            ed["位号"] = _g(c_pos)
-            ed["spec"] = _g(c_spec)
-            ed["qty"] = _g(c_qty)
-            ed["材质"] = _g(c_mat)
-            ed["车间"] = _g(c_dept)
-            if not any(x.get("name") == eqname and x.get("spec") == ed["spec"] for x in eq_dict):
-                eq_dict.append(ed)
-        if len(eq_detail) >= 40:
-            break
-    out["equipment"] = eq_detail[:40]
-    out["equipment_detail"] = eq_dict[:40]
+                return cells[idx] if (0 <= idx < len(cells)) else ""
+            no_v = _g(c_no)
+            name_v = _g(c_name)
+            spec_v = _g(c_spec)          # 规格型号 (forward-fill 判据)
+            if not ne:
+                continue
+            # 分组行: 全行无纯数字 & 无数量 & 非空列<=2 & 有较长中文值(产线/车间名)
+            # ⚠ 不能按"序号列为空"判定 —— 可研把分组名放在序号列位置 (实证 p162:
+            #   ['主厂房','不饱和聚酯树脂','','',...] / p172: ['','公用、辅助设备',...])
+            #   判据用"全行有无数字"更稳: 数据行必有序号或数量(数字), 分组行没有。
+            if not any(re.fullmatch(r"\d+", c) for c in cells) and len(ne) <= 2:
+                cand = [c for c in ne if re.search(r"[\u4e00-\u9fa5]{3,}", c)
+                        and "：" not in c and "℃" not in c]
+                if cand:
+                    eq_dict.append({"_group": max(cand, key=len)})
+                    continue
+            if not name_v:
+                continue
+            if name_v not in eq_detail:
+                eq_detail.append(name_v)
+            temp, pres = _g(c_temp), _g(c_pres)
+            media = _g(c_media)
+            # 纵向合并单元格 forward-fill (版式约定, 非缺数据):
+            #   可研设备表里"同规格同工况的多台设备"把 温度/压力/反应介质 列纵向合并,
+            #   pdfplumber 只在首行给值, 后续行为 None。语义 = "同上"。
+            #   ⚠ 仅对**紧邻的、同规格型号**的行填充 —— 跨规格不得继承 (防张冠李戴)。
+            if spec_v and _last_spec == spec_v:
+                if not temp:
+                    temp = _last_temp
+                if not pres:
+                    pres = _last_pres
+                if not media:
+                    media = _last_media
+            op = ""
+            if temp and pres:
+                op = f"温度{temp}；压力{pres}"
+            elif temp or pres:
+                op = f"温度{temp}" if temp else f"压力{pres}"
+            ed = {"name": name_v, "no": no_v or str(len(eq_detail)),
+                  "位号": _g(c_pos), "spec": spec_v, "qty": _g(c_qty),
+                  "材质": _g(c_mat), "车间": _g(c_dept),
+                  "操作条件": op, "内部物料": media, "备注": _g(c_chg)}
+            _last_spec, _last_temp, _last_pres, _last_media = spec_v, temp, pres, media
+            # ⚠ 不去重: 设备表一行一序号, 同型号多台是不同记录 (真稿 316 行同构)。
+            #   旧实现按 (name,spec) 去重 → 可研 172 台被吃掉 27 条。
+            eq_dict.append(ed)
+    out["equipment"] = eq_detail          # 不截断
+    out["equipment_detail"] = eq_dict     # 不截断
 
     # ===== 原辅材料 (通用: 只从"原辅料表"取完整列: 名称/规格/年用量/最大储量/物态/储存地点) =====
     # 表4: 序号 物料名称 目录序号 规格 年用量t/a 最大储量t 物态 包装 储存地点 储存条件 → 按表头定位各列

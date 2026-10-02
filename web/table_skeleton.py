@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import re
+import json
 
 import sys
 from pathlib import Path
@@ -300,7 +301,46 @@ def _fill_assess_tables(out: dict, assess: dict) -> None:
             if not t or not (t.get("rows") or []):
                 continue
             if cur and (cur.get("rows") or []):
-                continue          # 已有数据, 不覆盖
+                # ⚠ 已有数据的骨架**默认不覆盖**, 但有一类必须刷新: 引用的标准号已废止。
+                #   事故 (2026-10): 噪声/高温接触限值表骨架建于 GBZ 2.2—2007 时代,
+                #   标准升 2019 后骨架"永生" → 导出物里 21 处废止引用。
+                #   判据: 骨架内容含**已废止标准号**而现算版本不含 → 用现算覆盖 (标准版本护栏)。
+                _cs = json.dumps(cur, ensure_ascii=False)
+                _ns = json.dumps(t, ensure_ascii=False)
+                # ⚠ 前缀分支必须用 () 包住 —— 写成 "GB(?:/T|/Z)?|GBZ(?:/T)?\s*\d+..."
+                #   会被 | 劈成两个完整模式, 左支无后续约束 → 只匹配到 "GB" (实测)。
+                _RE_STD = (r"(?:GB(?:/T|/Z)?|GBZ(?:/T)?)\s*"
+                           r"\d+(?:\.\d+)?\s*[—\-–−－]\s*\d{4}")
+                _norm = lambda s: re.sub(r"[—\-–−－]", "-", s).replace(" ", "")
+                _cur_std = {_norm(x) for x in re.findall(_RE_STD, _cs)}
+                _new_std = {_norm(x) for x in re.findall(_RE_STD, _ns)}
+                if _cur_std and _cur_std - _new_std:
+                    # 骨架引用了现算没有的标准号 → 查库确认该号已废止才刷 (不误伤)
+                    try:
+                        import sqlite3 as _sq
+                        from pathlib import Path as _P2
+                        _c2 = _sq.connect(str(_P2(__file__).resolve().parent.parent / "data" / "ohs.db"))
+                        _dead = False
+                        for _c in _cur_std - _new_std:
+                            _r = _c2.execute(
+                                "SELECT state FROM standard_db WHERE REPLACE(REPLACE(code,' ',''),char(12288),'')=?",
+                                (_c,)).fetchone()
+                            if _r and (_r[0] or "") in ("废止", "已废止"):
+                                _dead = True
+                                break
+                        _c2.close()
+                    except Exception:
+                        _dead = False
+                    if _dead:
+                        out[nm] = {
+                            "cols": t.get("cols") or [],
+                            "rows": t.get("rows") or [],
+                            "section": (cur or {}).get("section", ""),
+                            "status": "filled",
+                            "prov": _prov("rule", f"评估链路产物 (章{ch}) · 标准版本护栏刷新"),
+                        }
+                        continue
+                continue          # 已有数据且标准未废止, 不覆盖
             out[nm] = {
                 "cols": t.get("cols") or [],
                 "rows": t.get("rows") or [],

@@ -49,8 +49,12 @@ _SUB_TABLE_MAP = {
     # (SUBS3 无 3.5.*) → 原挂 3.5.3 永不可达, 工艺检查表被静默丢弃。
     # 挂到真实存在的 3.5 (与 3.6.3 设备布局检查表 同层, 语义一致)。
     "3.5": ("3", ["工艺检查表"]),  # 表3.5-1 工艺检查及评价
-    "3.6.1": ("3", ["设备明细表"]),  # 表3.6-1 扩建后全厂设备设施一览
-    "3.6.3": ("3", ["设备布局检查表"]),  # 表3.6-3 生产设备及布局分析与评价 (原跳过3.6-2)
+    # ⚠ 3.6.1 生产设备调查: 纯文字节, 不挂表 → **不写此键**
+    #   (写 ("3", []) 会被 _tables_for_sub 当成"无映射 → 回退全章表" → 21 张无关表灌入)
+    # 真稿 8.4.3 设备布局 = 「本项目设备清单详见表8.4-2」+ 表(316行x8列)
+    #   真稿该节 17954 字几乎全部来自此表 → 表挂这里才是复刻
+    "3.6.2": ("3", ["设备明细表"]),  # 表3.6-2 本项目涉及的主要生产装置及设备
+    "3.6.3": ("3", ["设备布局检查表"]),  # 表3.6-3 生产设备及布局分析与评价
     "3.7.1": ("3", ["建构筑物表"]),  # 表3.7-1 技改范围建(构)筑物
     "3.7.4": ("3", ["建筑卫生学检查表"]),  # 表3.7-2 建筑物卫生学检查
     "3.8.1": ("3", ["卫生特征分级表", "辅助用室设置表"]),  # 表3.8-1 分级 + 表3.8-2 辅助用室设置情况
@@ -99,6 +103,71 @@ def _match_wanted(wanted: list, name: str):
     return None
 
 
+def _refresh_stale_std_tables(tables: list[dict]) -> list[dict]:
+    """标准版本护栏: 表内引用**已废止**标准号 → 替换为现行版 (确定性, 不靠 LLM)
+
+    事故 (2026-10): 噪声/高温接触限值表骨架建于 GBZ 2.2—2007 时代, 标准升 2019 后
+    骨架被"骨架优先"原样输出 → 产物 21 处废止引用。骨架只在导入时重建,
+    导出纯读 → 护栏必须挂在导出侧 (本函数), 且需覆盖**表内所有格**。
+
+    判据: 用 standard_db 确认该号 state=废止 才替换; 解析不到现行版则不动 (不伪造出处)。
+    """
+    try:
+        import sqlite3 as _sq
+        import re as _re
+        from pathlib import Path as _P
+        from web.standard_version import resolve_current, _base_code
+        db = _P(__file__).resolve().parent.parent / "data" / "ohs.db"
+        if not db.exists():
+            return tables
+        conn = _sq.connect(str(db))
+    except Exception:
+        return tables
+
+    # ⚠ 前缀分支必须用 () 包住, 否则 | 会把模式劈开只匹配到 "GB"
+    re_ref = _re.compile(r"(?:GB(?:/T|/Z)?|GBZ(?:/T)?)\s*(\d+(?:\.\d+)?)"
+                         r"\s*[—\-–−－]\s*((?:19|20)\d{2})(?![0-9A-Za-z])")
+
+    def _fix_cell(v):
+        if not isinstance(v, str) or not v:
+            return v
+
+        def _sub(m):
+            # m.group(0) 形如 "GBZ 2.2—2007"; 前缀 = 匹配段中 group(1) 之前的部分
+            prefix = m.group(0)[:m.start(1) - m.start(0)].strip()
+            full = f"{prefix}{m.group(1)}-{m.group(2)}"
+            try:
+                row = conn.execute(
+                    "SELECT state FROM standard_db WHERE REPLACE(REPLACE(code,' ',''),char(12288),'')=?",
+                    (_base_code(full),)).fetchone()
+                if row is None:
+                    row = conn.execute("SELECT state FROM standard_db WHERE code=?", (full,)).fetchone()
+                if ((row[0] if row else "") or "") not in ("废止", "已废止"):
+                    return m.group(0)
+                cur = resolve_current(conn, full)
+                if not cur or not cur.get("code") or (cur.get("state") or "") in ("废止", "已废止"):
+                    return m.group(0)      # 无现行后继 → 不动 (不伪造出处)
+                # 沿用原文前缀形态 ("GBZ 2.2—"), 只把年份段换成现行版年份
+                cur_code = cur["code"]
+                cur_yr = cur_code.split("-")[-1].strip() if "-" in cur_code else ""
+                if not cur_yr.isdigit() or len(cur_yr) != 4:
+                    return m.group(0)
+                return m.group(0)[:m.start(2) - m.start(0)] + cur_yr + m.group(0)[m.end(2) - m.start(0):]
+            except Exception:
+                return m.group(0)
+
+        return re_ref.sub(_sub, v)
+
+    out = []
+    for t in tables:
+        t2 = dict(t)
+        if t2.get("rows"):
+            t2["rows"] = [[_fix_cell(c) for c in r] for r in t2["rows"]]
+        out.append(t2)
+    conn.close()
+    return out
+
+
 def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     """按小节返回内嵌表格 (复用 fill_section 各章表格, 全局去重)
     支持二级(3.1)与三级(3.1.3)节: 三级优先用自己的映射, 无则回退父级"""
@@ -129,6 +198,10 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
         else:
             _merged.append(t)
     tables = _merged
+    # 标准版本护栏 (单一合并点): 骨架建于旧标准版时, 引用会随骨架"永生"。
+    #   事故: 噪声/高温接触限值表骨架含 GBZ 2.2—2007, 标准升 2019 后产物仍 21 处废止引用。
+    #   此处是骨架→产物的唯一出口, 故护栏挂这里 (与 table_skeleton 同判据: 仅当该号确已废止才刷)。
+    tables = _refresh_stale_std_tables(tables)
     # 骨架补插: built 里已沉淀但现算缺失的表 (filler 因空数据跳过) 按原节内顺序插入 —
     # 骨架永远在, 数据待补充; 表名顺序依 wanted 名单 (导出编号顺序)
     have = {t["name"] for t in tables}

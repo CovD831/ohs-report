@@ -270,23 +270,36 @@ def build_data_tables(pd: dict) -> dict:
                 "merge_rect": [(0, 1, 0, 2), (0, 5, 0, 6)],
                 "rows": [[i] + r for i, r in enumerate(p2_rows, 1)]}
 
-    # ===== 设备明细表 (表3.6-1, 9列双层) ← equipment_detail — 同源 section_filler sec3 =====
-    # 回退: 无 equipment_detail 时用 equipment (提取层两套字段并存, 老项目只有 equipment)
+    # ===== 设备明细表 (8列, 复刻真稿表·设备一览) ← equipment_detail — 同源 section_filler sec3 =====
+    # 真稿 8 列: 序号|设备名称|规格|材质|数量/台|操作条件|内部物料|备注
+    # 口径: 本项目设备 (可研「主要设备一览表」提取, 172 台/5 分组)。
+    #   真稿为全厂改扩建口径(302 行/12 分组, 含 R27&R28/32线/38线/51线/钠盐炉 等产线),
+    #   本项目材料内 0 处提及 → 不硬凑真稿行数, 如实按本项目口径出表, 差异在正文说明。
+    #   分组行: {_group: name} → 整行仅名称列有值 (与真稿 316 行表的分组行同构)
     eq_d = pd.get("equipment_detail") or []
     if not eq_d:
         eq_d = [{"name": e} if isinstance(e, str) else e
                 for e in (pd.get("equipment") or [])]
         eq_d = [x for x in eq_d if isinstance(x, dict)]
     if eq_d:
-        ed9 = [[d.get("车间", ""), d.get("位号", ""),
-                d.get("name", "") if isinstance(d, dict) else d,
-                d.get("spec", ""), d.get("qty", ""), d.get("qty", ""), "—",
-                d.get("材质", ""), ""] for d in eq_d if isinstance(d, dict)]
+        ed8 = []
+        for d in eq_d:
+            if not isinstance(d, dict):
+                continue
+            if d.get("_group"):
+                ed8.append([d["_group"]] + [""] * 7)   # 分组行: 名称在第 1 列(与 section_filler 同构)
+                continue
+            # 字段名以提取层为准: 操作条件 / 内部物料 / 备注 (整列直取, 不重组)
+            ed8.append([d.get("no", ""), d.get("name", ""), d.get("spec", ""),
+                        d.get("材质", "") or d.get("mat", ""),
+                        d.get("qty", ""),
+                        d.get("操作条件", "") or d.get("op", ""),
+                        d.get("内部物料", "") or d.get("media", ""),
+                        d.get("备注", "") or d.get("chg", "")])
         tables["设备明细表"] = {
-            "cols": ["车间", "位号", "设备名称", "规格型号", "数量", "数量", "数量", "材质", "备注"],
-            "header2": ["车间", "位号", "设备名称", "规格型号", "现有", "扩建后全厂", "变化", "材质", "备注"],
-            "merge_rect": [(0, 4, 0, 6)],
-            "rows": ed9}
+            "cols": ["序号", "设备名称", "规格型号", "材质", "数量/台",
+                     "操作条件", "内部物料", "备注"],
+            "rows": ed8}
 
     # ===== 建构筑物表 (表3.7-1) ← buildings — 同源 section_filler sec3 =====
     blds = pd.get("buildings") or []
