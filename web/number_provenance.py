@@ -306,10 +306,58 @@ def audit_tables(built_tables: dict) -> dict:
     }
 
 
+def audit_standards(data: dict) -> dict:
+    """标准引用审计: 扫 section_states 正文, 找出**废止/无效**标准引用
+
+    事故 (2026-10): 正文引 GBZ 2.2—2007 / GBZ 188—2014 等已废止标准 (61 处)。
+    与数字审计同级的**引用审计** —— 数字要有据, 标准引用也必须现行有效。
+
+    输出 {total_refs, superseded:[{sec,ref,current}], unknown:[{sec,ref,suggest}]}
+    """
+    import re
+    states = (data or {}).get("section_states") or {}
+    try:
+        from web.validators import _check_standards
+    except Exception:
+        return {"total_refs": 0, "superseded": [], "unknown": []}
+    seen: set[tuple] = set()
+    superseded, unknown = [], []
+    n_refs = 0
+    re_any = re.compile(r"(?<![0-9A-Za-z])GB(?:/T|/Z)?\s*\d+(?:\.\d+)?(?:\s*[—\-–]\s*(?:19|20)\d{2})?"
+                        r"(?![0-9A-Za-z])"
+                        r"|(?<![0-9A-Za-z])GBZ(?:/T)?\s*\d+(?:\.\d+)?(?:\s*[—\-–]\s*(?:19|20)\d{2})?"
+                        r"(?![0-9A-Za-z])")
+    for sec, v in states.items():
+        text = (v or {}).get("text", "") if isinstance(v, dict) else ""
+        if not text:
+            continue
+        for m in re_any.finditer(text):
+            n_refs += 1
+        for it in _check_standards(text):
+            key = (sec, it.get("standard"), it.get("level"))
+            if key in seen:
+                continue
+            seen.add(key)
+            rec = {"sec": sec, "ref": it.get("standard"), "note": it.get("note", "")}
+            if it.get("level") == "error":
+                rec["current"] = it.get("current") or ""
+                superseded.append(rec)
+            else:
+                rec["suggest"] = it.get("suggest") or ""
+                unknown.append(rec)
+    return {"total_refs": n_refs, "superseded": superseded, "unknown": unknown}
+
+
 def audit_project(data: dict) -> dict:
     """按 project.data 跑一遍审计 (供 API/面板调用)"""
     bt = (data or {}).get("built_tables") or {}
-    return audit_tables(bt)
+    res = audit_tables(bt)
+    if isinstance(res, dict):
+        try:
+            res["standards"] = audit_standards(data)
+        except Exception:
+            pass
+    return res
 
 
 # ============ 供建表侧使用的标记助手 ============

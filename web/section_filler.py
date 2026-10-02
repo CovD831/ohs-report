@@ -829,7 +829,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                                "header2": ["序号", "评价单元", "岗位", "产品", "工段", "主要职业病危害因素", "个人防护用品配备", "符合性", "有效性"],
                                "merge_rect": [(0, 3, 0, 4)],
                                "rows": v9})
-        # 常见职业体力劳动强度分级 (GBZ 2.2-2007 固定 — 原报告表4.2-2 挂4.2.1)
+        # 常见职业体力劳动强度分级 (GBZ 2.2-2019 固定 — 原报告表4.2-2 挂4.2.1)
         tables.append({"name": "劳动强度分级表",
                        "cols": ["体力劳动 强度分级", "职业描述"],
                        "rows": [
@@ -965,7 +965,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                            "header2": ["种类", "PC-MAC", "PC-TWA", "PC-STEL", "PE", "备注"],
                            "merge_rect": [(0, 1, 0, 4)],
                            "rows": lim_rows, "prov": lim_prov})
-        # 物理因素限值表 (GBZ 2.2—2007 静态标准数据, 规则生成 — 盲区修复: 原报告5.3有噪声/高温限值表)
+        # 物理因素限值表 (GBZ 2.2—2019 静态标准数据, 规则生成 — 盲区修复: 原报告5.3有噪声/高温限值表)
         _hz5 = " ".join([str(h.get("factor") or "") for h in assess.get("hazards", [])] +
                         [str(g.get("factors") or "") for g in (assess.get("_project_data") or {}).get("hazard_grid", [])])
         # 工种×危害表 (岗位→危害, 从网格关联)
@@ -1053,7 +1053,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                                                      "text": f"{r[0]} 健康影响 (GBZ 2.2/职业病目录)"},
                                                     field=f"{r[0]}.健康影响")
                                 for i, r in enumerate(phys_rows)}})
-        # 表5.3-2 噪声接触限值 (GBZ 2.2—2007 表5: 接触时间/限值[dB(A)]/备注)
+        # 表5.3-2 噪声接触限值 (GBZ 2.2—2019 表5: 接触时间/限值[dB(A)]/备注)
         _noise_rows = [["5d/w，≤8h/d", "85", "非稳态噪声计算8h等效声级"],
                        ["5d/w，≠8h/d", "85", "计算8h等效声级"],
                        ["5d/w，≠4h/d", "88", "计算8h等效声级"],
@@ -1061,12 +1061,12 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                        ["5d/w，≠1h/d", "94", "计算8h等效声级"]]
         tables.append({"name": "噪声接触限值表", "cols": ["接触时间", "接触限值[dB(A)]", "备注"],
                        "rows": _noise_rows,
-                       # 静态标准数据: 逐格标 GBZ 2.2—2007 表5 (非 LLM 生成)
-                       "prov": {f"{i}_1": prov_rule({"file": "GBZ 2.2—2007", "table": "oel_limit",
-                                                     "text": f"噪声 {r[0]} → {r[1]} dB(A) (GBZ 2.2—2007 表5)"},
+                       # 静态标准数据: 逐格标 GBZ 2.2—2019 表5 (非 LLM 生成)
+                       "prov": {f"{i}_1": prov_rule({"file": "GBZ 2.2—2019", "table": "oel_limit",
+                                                     "text": f"噪声 {r[0]} → {r[1]} dB(A) (GBZ 2.2—2019 表5)"},
                                                     field=f"噪声.{r[0]}")
                                 for i, r in enumerate(_noise_rows)}})
-        # 表5.3-3 高温接触限值 (GBZ 2.2-2007 表1: 接触时间率×体力劳动强度 WBGT 限值℃) 双层表头
+        # 表5.3-3 高温接触限值 (GBZ 2.2-2019 表1: 接触时间率×体力劳动强度 WBGT 限值℃) 双层表头
         _heat_rows = [["100%", "30", "28", "26", "25"], ["75%", "31", "29", "27", "26"],
                       ["50%", "32", "30", "28", "27"], ["25%", "33", "31", "29", "28"]]
         tables.append({"name": "高温接触限值表",
@@ -1074,9 +1074,9 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                        "header2": ["接触时间率", "I", "II", "III", "IV"],
                        "merge_rect": [(0, 1, 0, 4)],
                        "rows": _heat_rows,
-                       # 静态标准数据: 逐格标 GBZ 2.2—2007 表1 (含第0列接触时间率)
-                       "prov": {f"{i}_{c}": prov_rule({"file": "GBZ 2.2—2007", "table": "oel_limit",
-                                                       "text": f"高温 接触时间率{r[0]} 强度{[None,'I','II','III','IV'][c]} → WBGT {r[c]}℃ (GBZ 2.2—2007 表1)"},
+                       # 静态标准数据: 逐格标 GBZ 2.2—2019 表1 (含第0列接触时间率)
+                       "prov": {f"{i}_{c}": prov_rule({"file": "GBZ 2.2—2019", "table": "oel_limit",
+                                                       "text": f"高温 接触时间率{r[0]} 强度{[None,'I','II','III','IV'][c]} → WBGT {r[c]}℃ (GBZ 2.2—2019 表1)"},
                                                       field=f"高温.{r[0]}.{c}")
                                 for i, r in enumerate(_heat_rows) for c in (0, 1, 2, 3, 4)}})
         # 工种×危害表 (岗位→危害, 从网格关联)
@@ -1251,7 +1251,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 g = _grade.get(pf) or {}
                 rows.append([pf, str(g.get("level") or "—"),
                              str(g.get("name") or "见防护设施/PPE章节"),
-                             "GBZ 2.2—2007"])
+                             "GBZ 2.2—2019"])
         if not rows:
             return []
         rows = [[i] + r for i, r in enumerate(rows, 1)]

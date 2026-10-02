@@ -170,6 +170,39 @@ def _fmt_list(items: list) -> str:
     return "；".join(parts) if parts else "（暂无数据）"
 
 
+def _standard_benchmark() -> str:
+    """标准版本基准块 — 喂给 LLM 的**唯一**标准号来源 (通用, 不写死)
+
+    事故 (2026-10): 报告依据表列的 GBZ/T 196-2025 第2章引用清单是**无年份号**
+    (GBZ 188 / GBZ/T 196), LLM 凭训练记忆自补年份 → 补成废止版
+    (GBZ188-2014 / GBZ/T196-2007)。旧实现从没把"应写哪一版"给过 LLM。
+
+    本函数用 standard_db 把无年份号解析成**现行版**, 作为权威基准注入;
+    LLM 照抄即可, 不必(也不得)自己回忆年份。库中查不到现行版的如实标"待核实"。
+    """
+    try:
+        from .standard_version import resolve_all_refs
+        import sqlite3
+        from pathlib import Path
+        db = Path(__file__).resolve().parent.parent / "data" / "ohs.db"
+        if not db.exists():
+            return ""
+        conn = sqlite3.connect(str(db))
+        refs = resolve_all_refs(conn)
+        conn.close()
+    except Exception:
+        return ""
+    if not refs:
+        return ""
+    lines = ["【标准版本基准】(引用标准必须用以下完整号, 逐字符照抄, 不得自补年份/改前缀)"]
+    for r in refs:
+        if r["current_code"] and not r["note"]:
+            lines.append(f"  {r['current_code']}  {r['name'][:34]}")
+        else:
+            lines.append(f"  {r['ref_code']}  {r['name'][:30]}  ← {r['note']}")
+    return "\n\n" + "\n".join(lines)
+
+
 def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str:
     """按章节取该项目数据子集, 格式化为 prompt 片段 (全量不截断, 各章讲各章)
 
@@ -215,7 +248,7 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
         from .field_projection import render_for_prompt as _proj
         _p = _proj(sec, project, assess)
         if _p:
-            return _p
+            return _p + _standard_benchmark()
     except Exception:
         pass  # 投影失败不阻断 (回退旧逻辑)
 
@@ -357,7 +390,7 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
                 lines.append(f"**{desc}：** {'、'.join(str(v) for v in val)}")
         else:
             lines.append(f"**{desc}：** {val}")
-    return "\n\n".join(lines) if lines else "（暂无项目数据，需甲方补充）"
+    return ("\n\n".join(lines) if lines else "（暂无项目数据，需甲方补充）") + _standard_benchmark()
 
 
 # ============ 章节要素清单 (MUST_COVER: 每节必须覆盖的内容要点) ============

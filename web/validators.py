@@ -189,6 +189,102 @@ def _check_factors(text: str, project_data: dict, assess: dict | None) -> list[d
     return issues
 
 
+def _suggest_standard(code: str, limit: int = 3) -> list[str]:
+    """库中**近似**标准号 — 给 LLM 纠错线索 (**只建议, 不自动改**, 避免猜测改错)
+
+    实测 LLM 常见错法 (2026-10):
+      GBZ50019-2015   ← 多写 Z   (实为 GB 50019-2015)
+      GB/T 2890-2022  ← 多写 /T  (实为 GB 2890-2022, 强制性)
+      GB/T50493-2019  ← 少空格   (实为 GB/T 50493-2019)
+    匹配策略: 数字部分相同即算近似 (前缀/空格差异不影响判定)
+    """
+    import re as _re
+    from knowledge.oel import connect
+    m = _re.search(r"(\d+(?:\.\d+)?)", code or "")
+    if not m:
+        return []
+    num = m.group(1)
+    try:
+        conn = connect()
+        rows = conn.execute(
+            "SELECT code, name, state FROM standard_db WHERE code LIKE ? LIMIT 6",
+            (f"%{num}%",)).fetchall()
+    except Exception:
+        return []
+    out = []
+    for c, n, st in rows:
+        if _re.sub(r"\s", "", c or "").upper() == _re.sub(r"\s", "", code or "").upper():
+            continue  # 完全相同不算建议 (那是命中, 走别的分支)
+        out.append(f"{c} [{st}] {n[:26]}")
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _check_standards(text: str) -> list[dict]:
+    """V-05 标准引用校验: 正文引用的标准号必须能在 standard_db 查到, 且**未废止**
+
+    事故背景 (2026-10): 正文写成 GBZ/T 196—2007《建设项目职业病危害预评价技术导则》,
+    该标准已被 GBZ/T196-2025 代替(2026-02-01 起废止) —— LLM 凭训练记忆写旧版号,
+    而 _WRITING_GUIDE 5d 只约束"限值数值不得凭记忆改写", 没约束"标准版本号"。
+
+    判据 (确定性查表, 不靠 LLM):
+      - 正则抽出正文里所有 "GB/GBZ/WS/… 编号—年份" 形式的标准引用
+      - 归一化后在 standard_db 里精确查 (禁模糊/LIKE)
+      - state == '废止' → 报错(引用废止标准=硬伤)
+      - 查不到 → 提醒(可能是新标准未入库, 也可能是 LLM 编的)
+      - 有 replace_of 且被替代者已废止 → 提示应引新版
+    """
+    issues: list[dict] = []
+    # 标准号形态: GB 30871—2022 / GBZ/T 196-2025 / WS/T 757—2016 / GBZ2.1—2019
+    pat = re.compile(r"(GBZ?|WS|GB)\s*(/T|/Z)?\s*(\d+(?:\.\d+)?)\s*[—\-–−]\s*(\d{4})", re.I)
+    found = pat.findall(text)
+    if not found:
+        return issues
+    try:
+        from knowledge.oel import connect
+        conn = connect()
+    except Exception:
+        return issues
+    seen: set[str] = set()
+    for prefix, suffix, num, year in found:
+        full = f"{prefix.upper()}{(suffix or '').upper()}{num}-{year}"
+        norm = re.sub(r"\s", "", full).upper()
+        if norm in seen:
+            continue
+        seen.add(norm)
+        # 精确查 (归一化后比对, 兼容库里 'GBZ/T196-2025' 与正文 'GBZ/T 196—2025')
+        hit = None
+        for r in conn.execute("SELECT code, name, state FROM standard_db"):
+            if re.sub(r"[\s—–−]", "", (r[0] or "")).replace("－", "-").upper() == norm:
+                hit = r
+                break
+        if hit is None:
+            sug = _suggest_standard(full)
+            note = f"引用的标准[{full}]未在标准库中查到, 请核实编号/年份是否真实存在"
+            if sug:
+                note += f"; 库中近似: {' / '.join(sug)}"
+            issues.append({"rule_id": "V-05", "level": "warn", "standard": full,
+                           "note": note, "suggest": sug})
+            continue
+        code, name, state = hit
+        if (state or "") == "废止":
+            cur = ""
+            try:
+                from web.standard_version import resolve_current
+                _c = resolve_current(conn, code)
+                if _c and (_c.get("state") or "") not in ("废止", "已废止"):
+                    cur = _c.get("code") or ""
+            except Exception:
+                pass
+            _note = f"引用了**已废止**标准[{code}] {name[:30]} —— 须改引现行版本"
+            if cur:
+                _note += f"[{cur}]"
+            issues.append({"rule_id": "V-05", "level": "error", "standard": code,
+                           "current": cur, "note": _note})
+    return issues
+
+
 def _check_must_cover(sec: str, text: str) -> list[dict]:
     """MUST_COVER 要素: 关键章节必须覆盖 (缺失→提醒, 不做硬阻断, 供重试/标注)"""
     issues = []
@@ -238,6 +334,7 @@ def validate_section(sec: str, text: str, project_data: dict, assess: dict | Non
     issues = []
     issues += _check_numbers(text, project_data)
     issues += _check_factors(text, project_data, assess)
+    issues += _check_standards(text)
     issues += _check_must_cover(sec, text)
     issues += _check_duplication(sec, text, all_texts)
     return {
