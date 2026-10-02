@@ -330,6 +330,19 @@ def build_data_tables(pd: dict) -> dict:
             "merge_rect": [(0, 2, 0, 3)],
             "rows": hg_rows}
 
+    # ===== 体检项目与周期表 (表11.5-1) =====
+    # ⚠ 表的唯一产地是 web/health_exam_map.py:build_health_exam_rows (由 section_filler
+    #   第11章调用产出, 走导出链路)。此处**不再重复建**, 避免「同一表两份定义」走样
+    #   (设备表曾因 table_builder + section_filler 双份定义而不一致)。
+    #   若 build_all_tables 需要沉淀骨架, 直接复用同一函数源:
+    from web.health_exam_map import build_health_exam_rows as _bhe
+    hc_rows = _bhe(pd)
+    if hc_rows:
+        tables["体检项目与周期表"] = {
+            "cols": ["职业病危害因素", "体检类别", "岗前职业健康检查",
+                     "岗中职业健康检查", "健康检查周期", "离岗职业健康检查"],
+            "rows": hc_rows}
+
     # 数字溯源: 各表数字都来自 project.data 提取字段 (非 LLM 在"建表"环节生成)。
     # ⚠ 但"建表不用 LLM" ≠ "数字可信": 上游提取器可能本身是 LLM 拼出来的
     #   (用户实证: investment=5000 就是 LLM 拼的)。故逐个字段声明可信度:

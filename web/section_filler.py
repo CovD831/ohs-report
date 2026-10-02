@@ -1312,6 +1312,18 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         # 标准 10.2.11 补充建议: 问题与建议 (标准条款驱动)
         from web.advice_gen import fill_10211
         built = fill_10211(conn, assess)
+        # 表11.5-1 拟建项目职业病危害因素体检项目与周期 (复刻真稿 表5.1-1)
+        # ⚠ 必须在 fill_section 里产出: _tables_for_sub 只从 fill_section 取数,
+        #   放 table_builder.build_data_tables 不进导出链路(实测产物 0 张表)。
+        from web.health_exam_map import build_health_exam_rows
+        _he = build_health_exam_rows(assess.get("_project_data") or assess)
+        if _he:
+            built["tables"].append({
+                "name": "体检项目与周期表",
+                "cols": ["危害因素", "体检类别", "岗前职业健康检查",
+                         "岗中职业健康检查", "健康检查周期", "离岗职业健康检查"],
+                "rows": _he,
+            })
         # 表11.2-1 室内空气质量标准 (GB/T 18883—2002 固定节选, 6列)
         built["tables"].append({"name": "室内空气质量标准表",
                                 "cols": ["序号", "参数", "参数类别", "单位", "标准值", "备注"],
