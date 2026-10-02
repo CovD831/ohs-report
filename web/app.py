@@ -10,6 +10,7 @@
 运行: .venv/bin/uvicorn web.app:app --reload --port 8000
 """
 import json
+import logging
 import os
 import re
 import secrets
@@ -2051,14 +2052,54 @@ def sub_section_content(pid: str, sec: str, sub: str, request: Request):
     subs = SUBS.get(sec, [])
     if not any(s == sub for s, _ in subs):
         return JSONResponse({"error": "unknown sub-section"}, status_code=404)
-    from web.subsection_gen import build_subsection
-    built = build_subsection(connect(), sec, sub, result)
+    title = next(t for s, t in subs if s == sub)
+    # ── 正文/表格 与导出同源 ────────────────────────────────────────
+    # 单一数据源 = 导出链路 word_export.py:763-805 用的那两个:
+    #   正文: project.data.section_states[sub]["text"]   (state=="generated")
+    #   表格: word_export._tables_for_sub(conn, sec, sub, assess)
+    # 旧实现走 web.subsection_gen.build_subsection —— 其编号映射还是重构前的
+    # 7.x/8.x/9.x 体系, 对现行编号 100% 错位 (实测 5.1 返回"三同时"、8.1 返回
+    # "工程概况"), 导致预览与导出内容不一致。故改为同源, subsection_gen 仅作兜底。
+    from web.report_struct import SUBS3
+    pd = result.get("_project_data") or {}
+    # 注意: _project_data = _get_project_data() 的返回值 = dict(project["data"]) + name,
+    # 即**已拍平的 data 层本身**（不是 {data:...} 外壳）。section_states 直接在其下。
+    # 与导出链路 app.py:1543 的 data.get("section_states") 同一层。
+    ss = pd.get("section_states") or {}
+    sub_meta = ss.get(sub) or {}
+    text = (sub_meta.get("text") or "").strip()
+    paragraphs, tables = [], []
+    if text and sub_meta.get("state") == "generated":
+        has_sub3 = any(parent == sub for parent, _ in SUBS3.values())
+        # 与导出同规则: 有子节的父节超长正文只作引导语, 不整体输出
+        if not (has_sub3 and len(text) > 150):
+            for line in text.split("\n"):
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if re.match(r"^\d+(\.\d+)*\s+\S", line) and len(line) < 40:
+                    continue
+                paragraphs.append(line)
+    src = "section_states"
+    if not text:
+        # 兜底: 该节还没生成过 → 用 subsection_gen 的模板占位 (内容可能与标题目不一致,
+        # 故标记 src, 前端应提示"该节尚未生成")
+        from web.subsection_gen import build_subsection
+        built = build_subsection(connect(), sec, sub, result)
+        paragraphs = built["paragraphs"]
+        src = "fallback_template"
+    try:
+        from web.word_export import _tables_for_sub
+        tables = _tables_for_sub(connect(), sec, sub, result) or []
+    except Exception as _e:
+        logging.getLogger("ohs").warning("sub_section_content: 表格取数失败 %s: %s", sub, _e)
+
     # 三级单元 (数据驱动) + 物质深文
     from web.unit_gen import build_units
     from web.uploads import project_dir
     units = build_units(sec, sub, {"name": result.get("project", ""),
-                                   "equipment": result.get("_project_data", {}).get("equipment", []),
-                                   "process_text": result.get("_project_data", {}).get("process_text", "")},
+                                   "equipment": pd.get("equipment", []),
+                                   "process_text": pd.get("process_text", "")},
                         result)
     # 深文加载 (A2i_物质毒理学.json, 批量LLM生成)
     deep = {}
@@ -2066,15 +2107,15 @@ def sub_section_content(pid: str, sec: str, sub: str, request: Request):
     if pf.exists():
         try:
             deep = json.loads(pf.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception as _e:
+            _log.warning("sub_section_content: 深文读取失败 %s: %s", pf, _e)
     for u in units:
         if u["type"] == "物质" and u["title"] in deep:
             u["deep"] = deep[u["title"]]
-    title = next(t for s, t in subs if s == sub)
     return {"section": sec, "sub": sub, "title": f"{sub} {title}",
-            "paragraphs": built["paragraphs"], "tables": built["tables"],
-            "units": units,
+            "paragraphs": paragraphs, "tables": tables,
+            "units": units, "source": src,
+            "state": sub_meta.get("state", ""),
             "evidence": []}
 
 

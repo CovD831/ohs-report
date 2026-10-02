@@ -65,6 +65,7 @@ _SUB_TABLE_MAP = {
     # 检测结果表(化学毒物/粉尘…)前缀匹配 + h14 物理因素独立表, 同节一次挂出。
     "4.4.2": ("4", ["检测结果表", "物理因素检测结果表"]),
     "5.1.1.2": ("5", ["危害因素识别表"]),  # 表5.1-1 危害因素分布一览
+    "5.1.4": ("5", ["施工危害因素表"]),  # 表5.1-1 建筑施工过程中劳动者接触的主要职业病危害因素 (真稿表10.1-3)
     "5.2.1": ("5", ["健康影响表"]),  # 表5.2-1 化学因素健康影响
     "5.2.2": ("5", ["物理因素健康影响表"]),  # 表5.2-2 物理因素健康影响
     "5.3": ("5", ["接触限值表", "噪声接触限值表", "高温接触限值表"]),  # 表5.3-1/2/3
@@ -797,6 +798,16 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                             if _is_llm_table_title(line):
                                 continue
                             _para(doc, line, FANGSONG, 14, indent=0.74)
+            else:
+                # 定式文本兜底 (section_states 未生成时): 3.9 建设施工工程分析 等
+                # 零 LLM 定式章节 — 与 llm_draft._fixed_text 同源, 保证预览/导出/生成一致
+                from web.llm_draft import _fixed_text as _ftx2
+                _fx2 = _ftx2(sn, assess.get("_project_data"))
+                if _fx2:
+                    for line in _fx2.split("\n"):
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            _para(doc, line, FANGSONG, 14, indent=0.74)
             # 内嵌表格: 该小节对应的数据表 (跟真实报告一致, 表格在正文对应位置)
             # 若该二级节有三级子节: 不在二级挂表 (表跟随叶子三级节, 原报告如此; 防同表×2)
             if not has_sub3:
@@ -835,6 +846,15 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                             if _is_llm_table_title(line):
                                 continue
                             _para(doc, line, FANGSONG, 14, indent=0.74)
+                else:
+                    # 定式文本兜底 (三级): 3.9.1~3.9.8 施工工序, 5.1.4 建设施工危害识别
+                    from web.llm_draft import _fixed_text as _ftx4
+                    _fx4 = _ftx4(sub3, assess.get("_project_data"))
+                    if _fx4:
+                        for line in _fx4.split("\n"):
+                            line = line.strip()
+                            if line and not line.startswith("#"):
+                                _para(doc, line, FANGSONG, 14, indent=0.74)
                 # 三级节内嵌表 (原报告表挂在三级: 3.1.3气象/3.1.7技术经济/3.2.2选址评价/3.4.1产品/3.4.2原辅料…)
                 sub3_tables = _tables_for_sub(conn, sec, sub3, assess)
                 if sub3_tables:
