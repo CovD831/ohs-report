@@ -736,6 +736,61 @@ FIXED_TEXTS = {
     "3.1.7": (
         "本项目主要技术经济指标依据项目申请报告（可行性研究）确定，见表3.1-5。"
     ),
+    # ── 12.1 评价结论 (定式 — 复刻真稿 6 评价结论 六段式, 零 LLM) ──
+    # 真稿 6 评价结论 = 6 段: ①引导语(评价范围概述) ②风险分类(行业分类+严重程度)
+    #   ③关键控制点/主要评价因子 ④正常工况可达标 ⑤防护措施基本合理+不足项
+    #   ⑥可行性总结论("从职业病防治角度分析…是可行的")。
+    # 事故背景: LLM 稿 644 字 3 段 —— 缺①引导语、缺⑥可行性总结论(报告的核心结论),
+    #   且行业表述脱GB/T 4754代码口径。
+    "12.1": (
+        "{concl_intro}"
+        "\n"
+        "{concl_risk}"
+        "\n"
+        "{concl_factors}"
+        "\n"
+        "{concl_control}"
+        "\n"
+        "{concl_feasible}"
+    ),
+
+    # 真稿 7.7 = 1 句引导语 + 图7.7-1 评价程序流程图(准备/实施/报告编制及评审 三阶段)。
+    # 事故背景: LLM 稿 333 字平铺一段, 自造"六阶段"(准备/工程分析/类比/检测/评价/报告编制)
+    #   与真稿三阶段口径不符, 且尾句"各阶段检测数据及类比结果待补充"是自贬式占位。
+    # 本定式按真稿三阶段文字化(无绘图能力 → 以文字条目承载流程图内容)。
+    "1.7": (
+        "评价机构按照准备、实施、报告编制及评审三个阶段开展本项目职业病危害预评价工作，"
+        "各阶段的主要工作内容如下。"
+        "\n"
+        "（一）准备阶段：接受建设单位委托；收集有关职业病防治法律、法规、标准及本项目技术资料；"
+        "开展初步调查分析，了解项目概况、生产工艺、原辅材料及拟采取的防护措施；"
+        "确定评价单元并筛选重点评价因子，拟订预评价方案，经建设单位确认后确定预评价方案。"
+        "\n"
+        "（二）实施阶段：依据确定的预评价方案开展评价工作；进行建设项目工程分析，"
+        "系统辨识生产过程中可能产生的职业病危害因素及其分布；组织职业卫生调查，"
+        "包括现场调查与类比企业调查；对职业病危害因素实施定性、定量评价及风险评估，"
+        "判定各岗位职业病危害因素的接触水平是否符合职业接触限值要求。"
+        "\n"
+        "（三）报告编制及评审阶段：汇总、分析所收集的资料，得出评价结论；"
+        "针对存在的职业病危害提出相应的防护对策和建议；经质量控制审查后，"
+        "向建设单位提交正式职业病危害预评价报告。"
+    ),
+
+    # 事故背景: LLM 稿仅 287 字平铺 4 句(公司/行业/规模/风险), 无项目由来、无建设内容,
+    #   真稿 7.1 = 行业产品定义 + 市场 + 公司动机 + 建设内容 + 设备 + 产能 + 法规委托。
+    #   其中「项目由来/动机/建设条件」段直接来自可研正文(权威原文, 红线: 勿概括) →
+    #   抽 data/project_background.json; 其余(行业/建设内容/设备/产能/委托)由落库字段拼。
+    "1.1": (
+        "{bg_paras}"
+        "本项目所属行业为{industry}，项目性质为{nature}。"
+        "本次扩建的主要内容为：{build_txt}"
+        "{eq_txt}"
+        "项目建设后{cap_txt}"
+        "由于本项目在生产过程中可能产生{risk_factors}等职业病危害，"
+        "根据《中华人民共和国职业病防治法》《建设项目职业病防护设施“三同时”监督管理办法》等规定，"
+        "对可能产生职业病危害的建设项目，建设单位应当在可行性论证阶段进行职业病危害预评价，编制预评价报告。"
+        "{entrust_clause}"
+    ),
     # ── 3.1.1 基本情况 (定式 — 复刻真稿8.1.1 字段清单式) ──
     # 事故背景: LLM 稿曾写「项目投资额、占地面积、劳动定员及工作制度等基本信息待补充」——
     #   但字段全有 (profile.investment/profile.nature/buildings/staffing/work_system),
@@ -850,6 +905,25 @@ def _load_new_equipment(project: dict | None) -> dict | None:
     pid = (project or {}).get("id")
     d = _NEW_EQUIP_DRAFT_CACHE or {}
     return d.get(pid) if pid else None
+
+
+# 可研「一、项目背景」原文缓存 (data/project_background.json) — 1.1 定式数据源
+_BG_DRAFT_CACHE: dict | None = None
+
+
+def _load_project_background(pid: str | None) -> dict | None:
+    global _BG_DRAFT_CACHE
+    if _BG_DRAFT_CACHE is None:
+        import json as _json
+        import os as _os
+        p = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                          "data", "project_background.json")
+        try:
+            _BG_DRAFT_CACHE = _json.load(open(p, encoding="utf-8"))
+        except Exception:
+            _BG_DRAFT_CACHE = {}
+    d = _BG_DRAFT_CACHE
+    return d.get(pid) if (pid and isinstance(d, dict)) else None
 
 
 _LAWS_TEXT = None
@@ -971,6 +1045,124 @@ def _fixed_text(sec: str, project: dict | None = None) -> str | None:
                 "prisk": project.get("risk_class") or "严重",
                 # 辐射源项: 本类项目(化学原料/树脂制造)无辐射源 → 按行业通例写「无」
                 "prad": "无",
+            })
+        # ── 12.1 评价结论 字段注入 (定式章节零 LLM) —— 复用 1.1 块算好的 _haz ──
+        if "{concl_intro}" in tpl or "{concl_risk}" in tpl:
+            _nm = project.get("name") or ""
+            # ①引导语: 评价范围概述
+            _c_intro = (f"本次预评价对{_nm}存在的主要职业病危害因素、"
+                        f"拟采取的职业病危害防护措施等进行了识别、分析和评价，评价结论如下：")
+            # ②风险分类: 行业分类(含GB/T 4754代码) + 严重程度
+            _ind_c = str(project.get("industry") or "").strip() or "本项目所属行业"
+            _c_risk = (f"本项目按照《国民经济行业分类》（GB/T 4754）的分类要求应属于{_ind_c}，"
+                       f"根据《建设项目职业病危害风险分类管理目录》，结合本项目生产工艺、生产物料、"
+                       f"生产设备、生产过程控制等资料，本次评价综合分析，"
+                       f"本项目属于职业病危害风险“严重”的建设项目。")
+            # ③关键控制点/主要评价因子 (自算, 不依赖块序): 取 detections 名称, 兜底行业通例
+            _haz_c = []
+            for _d in (project.get("detections") or [])[:12]:
+                _hn = (_d.get("name") or _d.get("factor") or _d.get("危害因素") or "") if isinstance(_d, dict) else ""
+                if _hn:
+                    _haz_c.append(str(_hn))
+            _fac_c = "、".join(_haz_c[:12]) if _haz_c else "苯乙烯、马来酸酐、邻苯二甲酸酐、噪声等"
+            _c_factors = (f"经过职业病危害因素识别，根据对本项目职业病危害因素的毒理学特征、"
+                          f"浓度（强度）、潜在危险性、职业病危害防护措施和发生职业病的危险程度，"
+                          f"确定本项目的主要评价因子为{_fac_c}。")
+            # ④正常工况可达标
+            _c_control = ("通过工程分析、职业病危害因素识别、类比企业调查及检测，在正常运行情况下，"
+                          "操作人员如能严格按照操作规程作业，工作场所各职业病危害因素的浓度（强度）"
+                          "能够达到《工作场所有害因素职业接触限值》（GBZ 2.1、GBZ 2.2）的要求。")
+            # ⑤+⑥ 防护措施合理 + 可行性总结论
+            _c_feasible = ("本项目拟采取的职业病危害防护措施基本合理，符合《中华人民共和国职业病防治法》、"
+                           "《工业企业设计卫生标准》（GBZ 1）等相关法律、标准的要求；不足部分已在报告书中"
+                           "提出，需在施工设计阶段予以补充、完善。本项目若能在设计、施工和正式生产中"
+                           "将已考虑到的职业病危害防护措施与本评价报告提出的补充建议一并实施和逐条落实，"
+                           "预计竣工投产后，在正常生产运行条件下，其工作场所职业病危害可以得到有效预防和控制。"
+                           "因此，从职业病防治角度分析，本项目在职业病危害防控方面是可行的。")
+            ph.update({
+                "concl_intro": _c_intro,
+                "concl_risk": _c_risk,
+                "concl_factors": _c_factors,
+                "concl_control": _c_control,
+                "concl_feasible": _c_feasible,
+            })
+        # ── 1.1 项目背景 字段注入 (定式章节零 LLM) ──
+        if "{bg_paras}" in tpl or "{risk_factors}" in tpl:
+            _pr_b = project.get("profile") or {}
+            _bg = None
+            try:
+                _bg = _load_project_background(str(project.get("_project_id") or project.get("id") or ""))
+            except Exception:
+                _bg = None
+            # 可研原文段: 逐段加段间换行(渲染层按 \n 分段落)
+            _bgtxt = ""
+            if _bg and _bg.get("paras"):
+                _bgtxt = "\n".join(str(p).strip() for p in _bg["paras"] if str(p).strip()) + "\n"
+            # 建设内容: 可研 p11「三、建设内容」核心句 (新增设备+加固+公辅)
+            _ed_b = [x for x in (project.get("equipment_detail") or [])
+                     if isinstance(x, dict) and not x.get("_group")]
+            _ne_b = None
+            try:
+                _ne_b = _load_new_equipment(project)
+            except Exception:
+                _ne_b = None
+            _n_new = (_ne_b or {}).get("count") if _ne_b else (len(_ed_b) or None)
+            _bs_b = [b for b in (project.get("buildings") or []) if isinstance(b, dict)]
+            _bn_b = [str(b.get("name") or "").strip() for b in _bs_b if b.get("name")]
+            _build_parts = []
+            if _bn_b:
+                _build_parts.append(f"新增及改造{('、'.join(_bn_b[:12]))}等建构筑物")
+            _pw = project.get("public_works") or []
+            if _pw:
+                _build_parts.append("配套公用及环保设施改造")
+            _build_txt = "；".join(_build_parts) + "。" if _build_parts else "待补充（材料未提供）。"
+            # 设备段 (本项目**新增**口径, 源可研表1.2-3)
+            if _ne_b and _n_new:
+                _imp = _ne_b.get("imported")
+                _dom = _ne_b.get("domestic")
+                _kw = _ne_b.get("power_kw")
+                _eq_txt = (f"本项目拟新增生产及公辅设备共计{_n_new}台（套）"
+                           + (f"（其中进口设备{_imp}台（套）、国产设备{_dom}台（套））" if _imp and _dom else "")
+                           + (f"，总装机容量{_kw}kW" if _kw else "")
+                           + "，涵盖反应、调配、输送、换热及环保处理等工序。")
+            elif _ed_b:
+                _eq_txt = f"本项目拟新增生产及公辅设备共计{len(_ed_b)}台（套）。"
+            else:
+                _eq_txt = ""
+            # 产能段: 用 capacity 字段拼「形成年产…的生产能力」(capacity 常含单位 → 去重「年产」后单位不重复)
+            _cap_b = str(project.get("capacity") or "").strip()
+            if _cap_b:
+                # capacity 形如 "12000吨/年" → 已含数量+单位, 直接「形成年产能X」避免「年产12000吨/年」
+                _cap_txt_b = f"，形成年产能{_cap_b}。"
+            else:
+                _cap_txt_b = "，可进一步提升企业生产能力，满足市场需求。"
+            # 危害因素: 从 detections/hazard 里取, 兜底用行业通例
+            _haz = []
+            try:
+                for _d in (project.get("detections") or [])[:8]:
+                    _nm = (_d.get("name") or _d.get("factor") or _d.get("危害因素") or "") if isinstance(_d, dict) else ""
+                    if _nm:
+                        _haz.append(str(_nm))
+            except Exception:
+                _haz = []
+            _rf = "、".join(_haz[:6]) if _haz else "粉尘、毒物、高温、噪声"
+            # 委托/评价单位: 材料未提供评价单位 → 只写「受…委托开展预评价工作」, 不编造机构名
+            _eo = str(project.get("eval_org") or "").strip()
+            _co = project.get("company") or (_pr_b.get("company") or "")
+            if _eo:
+                _entrust = f"受{_co}委托，{_eo}承担了本项目职业病危害预评价工作，并编制本评价报告书。"
+            else:
+                _entrust = f"受{_co}委托，开展了本项目职业病危害预评价工作，并编制本评价报告书。"
+            ph.update({
+                "bg_paras": _bgtxt,
+                "industry": project.get("industry") or (_pr_b.get("industry") or "—"),
+                "nature": _pr_b.get("nature") or "—",
+                "build_txt": _build_txt,
+                "eq_txt": _eq_txt,
+                "cap_txt": _cap_txt_b,
+                "risk_factors": _rf,
+                "company": _co or "—",
+                "entrust_clause": _entrust,
             })
         # 总投资与专项经费区间: 先算好 (3.1.1 与 9.2 共用, 单一口径)
         if any(k in tpl for k in ("{ohy_low_txt}", "{invest_txt}", "{pohy}")):

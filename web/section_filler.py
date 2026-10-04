@@ -952,31 +952,27 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                            "cols": ["生产单元", "生产岗位", "配置的防护用品", "单位", "数量", "更换周期"],
                            "rows": _pv_rows,
                            "vmerge_cols": [0, 1]})
-        # 类比企业PPE有效性分析 (原报告表4.2-5: 单元/岗位/因素/配备/符合性/有效性 定式评价)
+        # 类比企业PPE有效性分析 (原报告表4.2-5: 单元/岗位/产品/工段/因素/配备/符合性/有效性 定式评价)
         if _pv_rows:
             hg2 = (assess.get("_project_data") or {}).get("hazard_grid", [])
-            vrows = []
-            for i2, g in enumerate(hg2):
+            v9 = []
+            for g in hg2:
                 if not g.get("unit"):
                     continue
-                vrows.append([i2 + 1, g.get("unit", "—"), g.get("post", "—"), (g.get("factors", "") or "—")[:40],
-                              "按岗位接触的职业病危害因素种类配备相应防护用品",
-                              "符合GBZ 1、GBZ/T 194要求", "结合现场佩戴与发放记录判断，基本有效"])
-                if len(vrows) >= 12:
+                # 表头行会被导入层混入 hazard_grid (如 unit="评价单元"/post="岗位") → 滤除,
+                # 否则产物表首行出现「1 评价单元 岗位 — 主要职业病危害因素」的假数据行。
+                if str(g.get("unit")).strip() in ("评价单元", "序号", "单元") and \
+                   str(g.get("post")).strip() in ("岗位", "作业岗位", "工序"):
+                    continue
+                v9.append([len(v9) + 1, g.get("unit", "—"), g.get("post", "—"),
+                           g.get("product", "—"), g.get("stage") or "—",
+                           (g.get("factors", "") or "—")[:40],
+                           "按岗位接触的职业病危害因素种类配备相应防护用品",
+                           "符合GBZ 1、GBZ/T 194要求", "基本有效"])
+                if len(v9) >= 12:
                     break
-            if vrows:
-                # 原报告表4.2-5: 序号/评价单元/岗位/产品/工段/因素/配备/符合性/有效性
-                v9 = []
-                for i2, g in enumerate(hg2):
-                    if not g.get("unit"):
-                        continue
-                    v9.append([len(v9) + 1, g.get("unit", "—"), g.get("post", "—"),
-                               g.get("product", "—"), g.get("stage") or "—",
-                               (g.get("factors", "") or "—")[:40],
-                               "按岗位接触的职业病危害因素种类配备相应防护用品",
-                               "符合GBZ 1、GBZ/T 194要求", "基本有效"])
-                    if len(v9) >= 12:
-                        break
+            if v9:
+                # 表头两行: 上行「接触途径」跨产品/工段两列 (merge_rect), 下行细分产品/工段
                 tables.append({"name": "类比PPE有效性表",
                                "cols": ["序号", "评价单元", "岗位", "接触途径", "接触途径", "主要职业病危害因素", "个人防护用品配备", "符合性", "有效性"],
                                "header2": ["序号", "评价单元", "岗位", "产品", "工段", "主要职业病危害因素", "个人防护用品配备", "符合性", "有效性"],

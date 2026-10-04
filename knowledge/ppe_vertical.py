@@ -121,7 +121,9 @@ def build_ppe_rows(project_data: dict) -> tuple[list[list[str]], set[int]]:
         if cnt_raw:
             m = __import__("re").search(r"\d+", cnt_raw)
             cnt = m.group(0) if m else "1"
-            cnt_note = "" if cnt_raw == cnt else f"（原表：{cnt_raw}）"
+            # 不再把源表原值以「（原表：2套/人）」形式带进产物 —— 内部取证标注不得出现在交付物
+            # (形式层缺陷; 原始"每/人"语义已由「单位」「更换周期」两列承载)。
+            cnt_note = ""
         else:
             cnt, cnt_note = "1", ""
         key = (unit, post)

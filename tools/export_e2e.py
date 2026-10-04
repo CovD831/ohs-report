@@ -46,7 +46,18 @@ def build_project(pid: str) -> dict:
             "location": data.get("location", ""),
             "company": data.get("company", ""),
             "org_name": data.get("org_name", ""),
-            "report_no": data.get("report_no", "")}
+            "report_no": data.get("report_no", ""),
+            # ⚠ 必须与 app.py:1510-1538 逐字段一致 —— 曾漏 ppe/public_works/investment/
+            #   area/facilities/staffing/protection/emergency → 4.2.4 类比PPE表 / 项目组成表
+            #   /经费表 等静默退化为 0 行(表消失)。CLI 与线上不同源 = 假绿。
+            "ppe": data.get("ppe", []),
+            "staffing": data.get("staffing", []),
+            "protection": data.get("protection", ""),
+            "emergency": data.get("emergency", ""),
+            "facilities": data.get("facilities", []),
+            "public_works": data.get("public_works", []),
+            "investment": data.get("investment", ""),
+            "area": data.get("area", "")}
 
 
 def main():
