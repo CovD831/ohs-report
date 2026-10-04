@@ -13,6 +13,7 @@
   新10 补充建议      → 问题与建议表
   新11 结论          → 结论要素表
 """
+import json
 import re
 import sqlite3
 import sys
@@ -21,6 +22,86 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from knowledge.oel import connect  # noqa: E402
 from web.number_provenance import prov_rule  # noqa: E402
+
+# 可研「主要技术经济指标」表缓存 (tools/extract_tech_econ.py → data/tech_econ.json)
+_TECH_ECON_CACHE: dict | None = None
+# 现有厂区职业病防治经费实测表缓存 (tools/extract_ohy_invest.py → data/ohy_invest.json)
+_OHY_INVEST_CACHE: dict | None = None
+# 可研「扩产前后产能变化信息对照表」缓存 (tools/extract_product_plan.py → data/product_plan.json)
+_PRODUCT_PLAN_CACHE: dict | None = None
+
+
+def _load_ohy_invest(pd_: dict) -> dict | None:
+    """取现有厂区职业病防治经费实测表 (data/ohy_invest.json, C3现状评价 表11.11-1)
+
+    项目**无**专项投资明细时, 用现有厂区实测作参照 (值全来自材料表格)。
+    """
+    global _OHY_INVEST_CACHE
+    if _OHY_INVEST_CACHE is None:
+        try:
+            _OHY_INVEST_CACHE = json.loads(
+                (Path(__file__).resolve().parent.parent / "data" / "ohy_invest.json")
+                .read_text(encoding="utf-8"))
+        except Exception:
+            _OHY_INVEST_CACHE = {}
+    pid = str(pd_.get("_project_id") or pd_.get("id") or "")
+    return _OHY_INVEST_CACHE.get(pid)
+
+
+def _load_tech_econ(pd_: dict) -> dict | None:
+    """取本项目可研「主要技术经济指标」表 (表1.2-11, 全 15 大项)
+
+    数据源: data/tech_econ.json (按项目 id 键)。**这是本项目权威实测值**,
+    非 LLM 生成 (红线: 数字绝不给 LLM; 能计算的绝不生成)。
+    无则返回 None → 调用方走字段兜底。
+    """
+    global _TECH_ECON_CACHE
+    if _TECH_ECON_CACHE is None:
+        try:
+            _TECH_ECON_CACHE = json.loads(
+                (Path(__file__).resolve().parent.parent / "data" / "tech_econ.json")
+                .read_text(encoding="utf-8"))
+        except Exception:
+            _TECH_ECON_CACHE = {}
+    pid = pd_.get("_project_id") or pd_.get("id") or ""
+    hit = _TECH_ECON_CACHE.get(str(pid))
+    if hit and hit.get("rows"):
+        return hit
+    # 项目 id 未带上时: 只认唯一有 rows 的候选, 多候选则不猜 (防张冠李戴)
+    cands = [v for v in _TECH_ECON_CACHE.values() if v.get("rows")]
+    return cands[0] if len(cands) == 1 else None
+
+
+def _load_product_plan(pd_: dict) -> dict | None:
+    """取本项目可研「扩产前后产能变化信息对照表」(表1.2-1, 全厂口径)
+
+    数据源: data/product_plan.json (按项目 id 键)。**本项目权威实测值**,
+    非 LLM 生成。用于复刻真稿 表8.1-3 (本项目扩建前后全厂产品方案对比表)。
+    无则返回 None → 调用方走 products 字段兜底。
+    """
+    global _PRODUCT_PLAN_CACHE
+    if _PRODUCT_PLAN_CACHE is None:
+        try:
+            _PRODUCT_PLAN_CACHE = json.loads(
+                (Path(__file__).resolve().parent.parent / "data" / "product_plan.json")
+                .read_text(encoding="utf-8"))
+        except Exception:
+            _PRODUCT_PLAN_CACHE = {}
+    pid = str(pd_.get("_project_id") or pd_.get("id") or "")
+    hit = _PRODUCT_PLAN_CACHE.get(pid)
+    if hit and hit.get("rows"):
+        return hit
+    # 项目 id 未带上时: 只认唯一有 rows 的候选, 多候选则不猜 (防张冠李戴)
+    cands = [v for v in _PRODUCT_PLAN_CACHE.values() if v.get("rows")]
+    return cands[0] if len(cands) == 1 else None
+
+
+def _ohy_invest_cell(pd_: dict) -> str:
+    """职业病防治专项经费单元格 — 无材料实测值则诚实标注"""
+    v = pd_.get("ohy_investment")
+    if v not in (None, "", "None"):
+        return str(v)
+    return "待补充（材料未提供概算，见 9.2）"
 
 
 def _det_verdict(d: dict) -> str:
@@ -542,22 +623,84 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         else:
             invest_cell = invest
         if invest or cap or pd_.get("area") or _inv_flagged:
-            # 原报告表3.1-3 主要经济技术指标: 序号/项目名称/单位/指标/备注 (5行)
-            stf3 = pd_.get("staffing", [])
-            tot3 = 0
-            for s in stf3:
-                try:
-                    tot3 += int(str(s.get("count", "0")).replace("人", ""))
-                except Exception:
-                    pass
-            # 原报告表3.1-3 行式: 占地/新建面积/投资总额/职业病防治经费概算 (经费=预算数据, 材料无→待补充)
-            info_rows = [
-                ["1", "厂区总占地面积", "平方米", "依托现有", ""],
-                ["2", "新建建筑面积", "平方米", "依托现有", ""],
-                ["3", "项目投资总额", "万元", invest_cell, ""],
-                ["4", "职业病防治经费概算", "万元", "待补充（需企业核实）", ""],
-            ]
-            tables.append({"name": "项目概况表", "cols": ["序号", "项目名称", "单位", "指标", "备注"], "rows": info_rows})
+            # 原报告表3.1-3 主要技术经济指标 —— 数据源: 可研「表1.2-11」全 15 大项
+            #   (tools/extract_tech_econ.py → data/tech_econ.json, 是本项目权威实测值)
+            #   优先级: tech_econ.json (本项目可研) > 字段兜底 (investment/capacity)
+            #   ⚠ 单一产地: 本表只在此处生成; table_builder 的同名副本 2026-10 已删
+            te = _load_tech_econ(pd_)
+            info_rows: list[list[str]] = []
+            if te and te.get("rows"):
+                for r in te["rows"]:
+                    row = [str(c or "") for c in r]
+                    while len(row) < 5:
+                        row.append("")
+                    info_rows.append(row[:5])
+            else:
+                # 兜底: 可研无可提表 → 用字段 (保持旧口径, 但值来自真实字段)
+                area = pd_.get("area") or "依托现有"
+                info_rows = [
+                    ["一", "厂区总占地面积", "平方米", str(area), ""],
+                    ["二", "项目投资总额", "万元", invest_cell, ""],
+                    ["三", "职业病防治专项经费", "万元", _ohy_invest_cell(pd_), ""],
+                ]
+            if info_rows:
+                tables.append({"name": "项目概况表",
+                               "cols": ["序号", "项目名称", "单位", "指标", "备注"],
+                               "rows": info_rows})
+        # 原报告表8.1-3 本项目扩建前后全厂产品方案对比表 —— 挂 3.1.6
+        #   数据源: 可研「表1.2-1 扩产前后产能变化信息对照表」(p15, 全厂口径)
+        #     tools/extract_product_plan.py → data/product_plan.json (本项目权威实测)
+        #   优先级: product_plan.json (可研全厂表) > products 字段 (本项目口径兜底)
+        #   ⚠ 全厂口径 = 真稿表8.1-3 语义 (现有/新增/实施后全厂), 不再只给本项目 4 行
+        pp = _load_product_plan(pd_)
+        prods = [p for p in (pd_.get("products") or []) if isinstance(p, dict)]
+        if pp and pp.get("rows"):
+            pp_rows = []
+            for r in pp["rows"]:
+                row = [str(c or "") for c in r]
+                while row and row[-1] == "":
+                    row.pop()
+                while len(row) < 10:
+                    row.append("")
+                pp_rows.append(row[:10])
+            if pp_rows:
+                # 列与源表 表1.2-1 一一对应 (10 列); 名称/领证在源表为跨行合并 → 已前向填充
+                tables.append({"name": "产品方案表",
+                               "cols": ["序号", "产品名称", "产品类型", "安全生产\n许可证领证",
+                                        "单位", "主要成分", "扩产前", "扩产后", "变化量", "备注"],
+                               "rows": pp_rows})
+        elif prods:
+            # 兜底: 可研无可提表 → 用 products 字段 (本项目口径, 不伪造"全厂"列)
+            p_rows = []
+            for i, p in enumerate(prods, 1):
+                _dn = p.get("delta_num")
+                _dtxt = ""
+                if _dn not in (None, ""):
+                    try:
+                        _f = float(_dn)
+                        _dtxt = f"+{_f:g}" if _f > 0 else f"{_f:g}"
+                    except (TypeError, ValueError):
+                        _dtxt = str(_dn)
+                else:
+                    _dtxt = str(p.get("delta") or "").strip()
+                p_rows.append([str(i), str(p.get("name") or ""),
+                               str(p.get("output") or ""), _dtxt])
+            tables.append({"name": "产品方案表",
+                           "cols": ["序号", "产品名称", "产能（吨/年）", "本次新增（吨/年）"],
+                           "rows": p_rows})
+        # 原报告表8.1-4 本项目的项目组成和公用工程内容一览表 —— 挂 3.1.6
+        #   数据源: buildings (建构筑物实测) — 类别|设施名称|占地面积|建筑面积|结构/层数
+        bs = [b for b in (pd_.get("buildings") or []) if isinstance(b, dict)]
+        if bs:
+            b_rows = []
+            for i, b in enumerate(bs, 1):
+                b_rows.append([str(i), str(b.get("功能区") or ""), str(b.get("name") or ""),
+                               str(b.get("area") or ""), str(b.get("floor_area") or ""),
+                               str(b.get("floors") or ""), str(b.get("耐火等级") or "")])
+            tables.append({"name": "项目组成表",
+                           "cols": ["序号", "功能区", "设施名称", "占地面积（㎡）",
+                                    "建筑面积（㎡）", "层数", "耐火等级"],
+                           "rows": b_rows})
         # 设备明细表 (复刻真稿表8.4-2 本项目涉及的主要生产装置及设备)
         # 真稿口径 8 列: 序号|设备名称|规格|材质|数量/台|操作条件|内部物料|备注
         # ⚠ 旧版是 9 列双层(车间|位号|名称|规格|现有|扩建后全厂|变化|材质|备注),
@@ -1260,6 +1403,15 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         if surv:
             tables.append({"name": "职业健康监护表", "cols": ["序号", "危害因素", "检查类别", "周期"],
                            "rows": [[i, r[0], r[1], r[2] or "—"] for i, r in enumerate(surv, 1)]})
+        # 职业病防治经费表 (表9.2-1) —— 数据源: C3 现状评价报告 表11.11-1 (现有厂区实测)
+        #   注: 材料**无本项目**专项投资明细 (已全材料搜证) → 用现有厂区实测经费作参照,
+        #   与本项目按比例概算的区间交叉印证。值全部来自材料表格, 不编造。
+        ohy = _load_ohy_invest(_pd9)
+        if ohy and ohy.get("rows"):
+            _orows = [[str(c) for c in r] for r in ohy["rows"]]
+            tables.append({"name": "职业病防治经费表",
+                           "cols": ohy.get("cols") or ["序号", "项目", "投资（万元）"],
+                           "rows": _orows})
         return tables
 
     if sec == "10":

@@ -186,7 +186,38 @@ def _build_info(project: dict, assess: dict) -> str:
             f"四、{eq_desc}\n"
             f"五、{proc_str}\n"
             f"六、{mat_desc}\n"
+            f"{_table_ref_block()}"
             f"以上数据为系统从企业材料中机械提取与判定，部分限值未列出的按GBZ 2.1—2019执行。")
+
+
+# 正文可引用的表号清单 (章号平移后 LLM 常凭记忆写旧编号 → 悬空引用)。
+# 本块由 web.word_export._SUB_TABLE_MAP 与 web.orig_table_map.ORIG_TABLE_NOS 单一产地派生,
+# 供 prompt 显式列出「现行表号 + 表题」, 杜绝臆造。
+_TABLE_REF_BLOCK = None
+
+
+def _table_ref_block() -> str:
+    global _TABLE_REF_BLOCK
+    if _TABLE_REF_BLOCK is not None:
+        return _TABLE_REF_BLOCK
+    lines = []
+    try:
+        from web.orig_table_map import ORIG_TABLE_NOS, ORIG_CAPTIONS
+        for sn in sorted(ORIG_TABLE_NOS.keys()):
+            nos = ORIG_TABLE_NOS.get(sn) or []
+            caps = ORIG_CAPTIONS.get(sn) or []
+            for i, no in enumerate(nos):
+                cap = caps[i] if i < len(caps) else ""
+                lines.append(f"{no} {cap}".strip())
+    except Exception:
+        lines = []
+    if lines:
+        _TABLE_REF_BLOCK = ("七、正文可引用的表号（**只能**引用以下表号，"
+                            "不得自编/凭记忆写表号；未列出的表一律写「详见相应章节表格」）：\n"
+                            + "；".join(lines) + "。\n")
+    else:
+        _TABLE_REF_BLOCK = ""
+    return _TABLE_REF_BLOCK
 
 
 # ===== 通用章节 prompt (结构=标准角度, 数据=info动态) =====
@@ -216,18 +247,22 @@ _WRITING_GUIDE = """
 5f. **严禁在正文里写表格**(Markdown 竖线表/制表符表/逐行罗列明细): 表格由系统自动插入到对应位置。
     正文只写文字; 需要引用数据时统一用"见表X.X-X"指代, 不复制表格内容到正文
     (违反=重复+格式错乱: 正文里出现"| 序号 | 名称 |..."这类内容一律禁止)
-    ⚠ **也不要在正文里写表题占位**: 表题(如"表5.3-1 XXX")+表格本体都由系统在对应位置
+    ⚠ **也不要在正文里写表题占位**: 表题(如"表X.X-X XXX")+表格本体都由系统在对应位置
        自动插入。正文里出现"表X.X-X ..."字样会与系统插入的表题**重号重复**。
-       ✗ 反例(实测): 正文写"表 5.3-1 本项目…一览表（表格由系统自动插入）"
-         → 系统又插一条"表5.3-1 化学有害因素的接触限值" → **同一编号出现两次**
-       正确做法: 只写"…见表5.3-1。"(正文内指代), **不要另起一行写表题**
+       ✗ 反例(实测): 正文写"表 X.X-X 本项目…一览表（表格由系统自动插入）"
+         → 系统又插一条同编号表题 → **同一编号出现两次**
+       正确做法: 只写"…见表X.X-X。"(正文内指代), **不要另起一行写表题**
+    ⚠⚠ **严禁凭记忆或示例臆造表号**: 只能引用信息块里显式给出的表号;
+       信息块没给表号的, 写"（详见相应章节表格）"或"详见本章相关表格", **不许自己编一个**。
+       (实测事故: 模型照抄模板示例里的旧编号"表5.3-1", 而现行报告里检测结果表是"表4.4-1",
+        产生 55 处**悬空引用** — 引用的表号根本不存在。)
 5g. **严禁用句子复述表格数据**(本条是 5f 的补强: 不写表格 ≠ 可以逐条念表格):
     已做成表格的内容 — 各因素的**浓度值/接触限值/PC-TWA/判定结论** — 正文不得逐条重述。
     ✗ 反例(逐条念表, 实测一段能到 2000 字):
        "苯乙烯接触水平低于1.7 mg/m³，低于GBZ 2.1—2019规定的PC-TWA 50 mg/m³；
         乙二醇接触水平低于0.7 mg/m³，低于…PC-TWA 20 mg/m³；甲醇…"(同一句式重复 N 次)
-    ✓ 正例(提炼判断 + 指代表格):
-       "各化学因素接触水平均低于GBZ 2.1—2019限值要求(见表5.3-1)，其中苯乙烯、乙二醇、
+    ✓ 正例(提炼判断 + 指代表格, 表号用信息块给的):
+       "各化学因素接触水平均低于GBZ 2.1—2019限值要求(见表X.X-X)，其中苯乙烯、乙二醇、
         甲醇等主要因素检出值均在限值的10%以下。"
     判据: 正文出现"<因素名>接触水平…低于/符合…限值"句式**连续 >=3 次**即违规。
     **保留**: 因素名称清单(专家需要看涉及哪些因素)、关键项的定性判断、超标项(若有)必须单独点明。
@@ -694,9 +729,127 @@ FIXED_TEXTS = {
         "职业健康监护档案应一人一档，内容包括劳动者职业史、职业病危害接触史、"
         "体检结果及处理情况，档案保存期限按GBZ 188—2025及GBZ/T 225—2010执行。"
     ),
+    # ── 3.1.7 主要技术经济指标 (定式 — 复刻真稿8.1.5「无引导语, 直接上表」) ──
+    # 事故背景: LLM 稿曾写「见表3.1-1…部分指标尚待补充」——①表号错(实际为表3.1-3,
+    #   数据源是 3.1.6 之前的勘误) ②「尚待补充」不实: 可研表1.2-11 已提供全 15 大项实测值。
+    #   真稿 8.1.5 正文仅有标题+表, 无引导段 → 定式给一句来源说明即可, 零 LLM。
+    "3.1.7": (
+        "本项目主要技术经济指标依据项目申请报告（可行性研究）确定，见表3.1-5。"
+    ),
+    # ── 3.1.1 基本情况 (定式 — 复刻真稿8.1.1 字段清单式) ──
+    # 事故背景: LLM 稿曾写「项目投资额、占地面积、劳动定员及工作制度等基本信息待补充」——
+    #   但字段全有 (profile.investment/profile.nature/buildings/staffing/work_system),
+    #   属**不实陈述**。真稿 8.1.1 是「字段名：值」逐行式 → 改为字段驱动定式, 零 LLM。
+    # 注: 注册资本字段**不写** —— 材料值「4100万美元」被提取层 _parse_amount 误放大为
+    #   41000000(万元), 且与现状评价报告「2300万美元」不一致 → 未核实数字不进产物 (红线)。
+    "3.1.1": (
+        "项目名称：{pname}\n"
+        "项目性质：{pnature}\n"
+        "建设单位：{pcompany}\n"
+        "法定代表人：{plegal}\n"
+        "成立时间：{pfounded}\n"
+        "建设地点：{paddress}\n"
+        "所属行业：{pindustry}\n"
+        "建设规模及内容：{pcapacity}\n"
+        "项目总投资：{pinvest}\n"
+        "职业病防治经费概算：{pohy}\n"
+        "占地面积：{parea}\n"
+        "劳动定员及工作制度：{pstaff}\n"
+        "辐射源项：{prad}\n"
+        "本项目职业病危害风险类别：{prisk}"
+    ),
+    # ── 3.1.6 项目组成及主要工程内容 (定式 — 复刻真稿 8.1.4 两段式) ──
+    # 事故背景: LLM 稿 916 字但无表, 且与真稿「工程内容 + 设备台套 + 产品方案表 + 组成表」
+    #   结构不符。真稿 8.1.4 = 2 段叙述 + 表8.1-3(产品方案) + 表8.1-4(项目组成)。
+    #   此处只出叙述段; 两张表由 section_filler 生成后按表题插入。零 LLM。
+    "3.1.6": (
+        "{c316_build}\n"
+        "{c316_equip}\n"
+        "本项目扩建前后全厂产品方案对比见表3.1-3，项目组成及公用工程内容见表3.1-4。"
+    ),
+    # ── 3.4.1/3.4.2 引导语 (定式 — 修表号错引: 曾写「见表3.2-1」「见表3.3-1」) ──
+    # 事故背景: LLM 稿表号张冠李戴 (3.4.1 引 3.2-1 / 3.4.2 引 3.3-1), 违背「表编号逐张对齐」。
+    "3.4.1": (
+        "本项目共生产{nprod}种产品，各产品年产量及主要成分见表3.4-1。"
+    ),
+    "3.4.2": (
+        "本项目原辅材料使用情况见表3.4-2。\n"
+        "本项目共使用原辅材料{nmat}种，主要包括{matsample}等。"
+        "上述物料涉及的化学有害因素，其职业接触限值依据GBZ 2.1—2019判定、"
+        "危害程度分级依据GBZ/T 230—2025确定，具体危害因素识别与接触水平分析详见第5章。"
+        "各原辅材料的储存与使用应满足GB 12801—2025及GBZ 1—2010的相关要求，"
+        "涉及有机溶剂作业的岗位个人防护用品使用应执行GBZ/T 195—2007，"
+        "储存场所的防毒设施设置应执行GBZ/T 194—2007。"
+    ),
+    # ── 9.2 职业卫生专项投资分析与评价 (定式 — 方案A: 比例概算, 零 LLM) ──
+    # 事故背景: LLM 稿写「投资明细见表9.2-1」但该表**不存在** (built_tables/fill_section 均无),
+    #   且大段「待补充（需企业提供）」—— 材料真无专项投资明细 (已全材料搜证)。
+    # 口径 (用户拍板, 2026-10):
+    #   本项目可研总投资 = {invest_txt} (可研表1.2-11「工程项目总投资」, 有单位=权威);
+    #   行业比例区间取自两份真稿实测: 长兴 185/25000=0.74%, 浦发 1500/93512=1.6%;
+    #   现有厂区现状评价实测年均防治经费 80 万元 (表11.11-1, 9 科目) 作参照。
+    #   概算区间 = 总投资 × [0.74%, 1.6%], 与现企实测值交叉印证。不用 LLM 生成任何数字。
+    "9.2": (
+        "本项目总投资{invest_txt}，其中职业病防治专项经费按行业同类项目比例概算，"
+        "预计约为{ohy_low_txt}～{ohy_high_txt}（占项目总投资的0.74%～1.6%）。"
+        "职业病防治专项经费主要用于职业病防护设施建设与维护、个人劳动防护用品、"
+        "工作场所职业病危害因素检测与评价、职业卫生宣传培训、职工职业健康监护、"
+        "职业病危害警示标识及工伤保险等方面。\n"
+        "参照本项目现有厂区职业卫生专项经费实际投入情况（年均约80万元，"
+        "涵盖职业卫生管理机构组织工作、职业病防护设施、应急救援设施、个人防护用品、"
+        "警示标识、职业健康检查、职业卫生培训、评价检测及其他等科目，见表9.2-1），"
+        "本项目建成后应将上述经费纳入年度预算，并随防护设施设计深化与用工定员确定同步调整，"
+        "确保职业病防治投入与职业病危害防控需求相匹配。\n"
+        "职业病防治专项经费应专款专用，由建设单位职业卫生管理机构统一管理，"
+        "并接受职业卫生监督管理部门监督检查。"
+    ),
+    # ── 9.2 表 (本项目职业病防治经费概算 — 按真稿表12.6-1 9科目结构, 金额按比例区间分摊) ──
 }
 
 _FIXED_PROJ = {"proj": "该项目"}
+
+# 可研「主要技术经济指标」缓存 (data/tech_econ.json) — 与 section_filler 同源文件
+_TECH_ECON_DRAFT_CACHE: dict | None = None
+
+
+def _load_tech_econ_for_draft() -> dict:
+    """读 data/tech_econ.json (tools/extract_tech_econ.py 产物); 失败返回 {}"""
+    global _TECH_ECON_DRAFT_CACHE
+    if _TECH_ECON_DRAFT_CACHE is None:
+        try:
+            import json as _j
+            from pathlib import Path as _P
+            _TECH_ECON_DRAFT_CACHE = _j.loads(
+                _P(__file__).parent.parent.joinpath("data", "tech_econ.json")
+                .read_text(encoding="utf-8"))
+        except Exception:
+            _TECH_ECON_DRAFT_CACHE = {}
+    return _TECH_ECON_DRAFT_CACHE
+
+
+# 可研「主要新增设备表」(表1.2-3) 缓存 (data/new_equipment.json) — 本项目新增设备口径
+_NEW_EQUIP_DRAFT_CACHE: dict | None = None
+
+
+def _load_new_equipment(project: dict | None) -> dict | None:
+    """取本项目可研「主要新增设备」(27 台套) 统计; 缺则 None
+
+    ⚠ 与 project['equipment_detail'](**全厂现有**设备 172 项) 口径不同:
+       本函数 = 本项目新增; equipment_detail = 全厂现有(表3.6-2)。
+    """
+    global _NEW_EQUIP_DRAFT_CACHE
+    if _NEW_EQUIP_DRAFT_CACHE is None:
+        try:
+            import json as _j
+            from pathlib import Path as _P
+            _NEW_EQUIP_DRAFT_CACHE = _j.loads(
+                _P(__file__).parent.parent.joinpath("data", "new_equipment.json")
+                .read_text(encoding="utf-8"))
+        except Exception:
+            _NEW_EQUIP_DRAFT_CACHE = {}
+    pid = (project or {}).get("id")
+    d = _NEW_EQUIP_DRAFT_CACHE or {}
+    return d.get(pid) if pid else None
 
 
 _LAWS_TEXT = None
@@ -752,17 +905,189 @@ def _fixed_text(sec: str, project: dict | None = None) -> str | None:
                    if isinstance(x, dict) and not x.get("_group")]
             ph["eq_total"] = str(len(eqd)) if eqd else "—"
             ph["eq_rows"] = str(len(project.get("equipment_detail") or []))
+        # 3.1.1 基本情况字段注入 (定式章节零 LLM: 全部取自落库字段/可研提取)
+        if any(k in tpl for k in ("{pname}", "{pnature}", "{pinvest}", "{parea}")):
+            _pr = project.get("profile") or {}
+            def _pv(key, default="—"):
+                v = _pr.get(key)
+                if isinstance(v, dict):
+                    v = v.get("value")
+                return str(v) if v not in (None, "") else default
+            # 建设规模及内容: 复刻真稿 8.1.1 的详述式 (设备台套+淘汰+建构筑物+产能)
+            _ed_x = [x for x in (project.get("equipment_detail") or [])
+                     if isinstance(x, dict) and not x.get("_group")]
+            _bs_x = [b for b in (project.get("buildings") or []) if isinstance(b, dict)]
+            _cap_x = str(project.get("capacity") or _pv("capacity", "")).strip()
+            _capseg = []
+            if _cap_x and _cap_x != "—":
+                _capseg.append(_cap_x)
+            if _ed_x:
+                _capseg.append(f"购置生产及公辅设备{len(_ed_x)}台（套）")
+            if _bs_x:
+                _names_x = [str(b.get("name") or "").strip() for b in _bs_x if b.get("name")][:10]
+                _capseg.append(f"新建及改造{('、'.join(_names_x))}等建构筑物")
+            _cap_txt = "，".join(_capseg) + "。" if _capseg else "待补充（材料未提供）"
+            _un = (project.get("_untrusted_fields") or {})
+            # 总投资: 优先可研提取(有单位, 权威), 其次 profile(可能无单位→标注)
+            _te = None
+            try:
+                _te = _load_tech_econ_for_draft().get(str(project.get("_project_id") or project.get("id") or ""))
+            except Exception:
+                _te = None
+            _inv = ""
+            if _te and _te.get("rows"):
+                for _r in _te["rows"]:
+                    if str(_r[1] if len(_r) > 1 else "").strip() in ("工程项目总投资", "项目总投资"):
+                        _inv = f"{_r[3]}万元"
+                        break
+            if not _inv:
+                _iv = _pv("investment", "")
+                _inv = f"{_iv}万元（材料未标注单位，待核实）" if _iv else "待补充（材料未提供）"
+            _bs = project.get("buildings") or []
+            def _sum(f):
+                import re as _r2
+                t = 0.0
+                for _b in _bs:
+                    m = _r2.search(r"[\d.]+", str(_b.get(f) or ""))
+                    if m:
+                        t += float(m.group())
+                return t
+            _area = _sum("area")
+            _floor = _sum("floor_area")
+            _area_txt = (f"在现有厂区内改扩建，新增建筑面积约{_floor:g}㎡，"
+                         f"建构筑物占地面积约{_area:g}㎡，不新增用地。") if _area or _floor else "待补充（材料未提供）"
+            ph.update({
+                "pname": project.get("name") or "—",
+                "pnature": _pv("nature"),
+                "pcompany": _pv("company"),
+                "plegal": _pv("legal_rep"),
+                "pfounded": _pv("founded"),
+                "paddress": _pv("address") if _pv("address", "") else (f"{_pv('region', '')}"),
+                "pindustry": project.get("industry") or _pv("industry"),
+                "pcapacity": _cap_txt,
+                "pinvest": _inv,
+                "parea": _area_txt,
+                "pstaff": project.get("work_system") or "待补充（材料未提供）",
+                "prisk": project.get("risk_class") or "严重",
+                # 辐射源项: 本类项目(化学原料/树脂制造)无辐射源 → 按行业通例写「无」
+                "prad": "无",
+            })
+        # 总投资与专项经费区间: 先算好 (3.1.1 与 9.2 共用, 单一口径)
+        if any(k in tpl for k in ("{ohy_low_txt}", "{invest_txt}", "{pohy}")):
+            _inv_v = None
+            try:
+                _te2 = _load_tech_econ_for_draft().get(
+                    str(project.get("_project_id") or project.get("id") or ""))
+                if _te2 and _te2.get("rows"):
+                    for _r in _te2["rows"]:
+                        if str(_r[1] if len(_r) > 1 else "").strip() in ("工程项目总投资", "项目总投资"):
+                            import re as _r3
+                            _m = _r3.search(r"[\d.]+", str(_r[3]))
+                            if _m:
+                                _inv_v = float(_m.group())
+                            break
+            except Exception:
+                _inv_v = None
+            if _inv_v is None:
+                # 可研无 → 用 profile.investment (有单位才用, 否则不写)
+                _pv2 = (project.get("profile") or {}).get("investment") or {}
+                _pv2 = _pv2.get("value") if isinstance(_pv2, dict) else _pv2
+                _pv2u = (project.get("profile") or {}).get("investment") or {}
+                _unit2 = _pv2u.get("unit") if isinstance(_pv2u, dict) else ""
+                if _pv2 and _unit2 in ("万元", "亿元"):
+                    _inv_v = float(_pv2) * (10000 if _unit2 == "亿元" else 1)
+            if _inv_v:
+                _lo = _inv_v * 0.0074
+                _hi = _inv_v * 0.016
+                def _fmt(x):
+                    return f"{x:.1f}".rstrip("0").rstrip(".")
+                ph["invest_txt"] = f"{_fmt(_inv_v)}万元"
+                ph["ohy_low_txt"] = f"{_fmt(_lo)}万元"
+                ph["ohy_high_txt"] = f"{_fmt(_hi)}万元"
+                # 3.1.1 的「职业病防治经费概算」与 9.2 共用同一区间 (单一口径)
+                ph["pohy"] = f"{_fmt(_lo)}万元～{_fmt(_hi)}万元"
+            else:
+                ph["invest_txt"] = "（材料未提供）"
+                ph["ohy_low_txt"] = "待补充"
+                ph["ohy_high_txt"] = "待补充"
+                ph["pohy"] = "待补充（材料未提供）"
+        # 3.1.6 项目组成叙述段 (零 LLM: 由 buildings/equipment_detail/products 组装)
+        if any(k in tpl for k in ("{c316_build}", "{c316_equip}")):
+            _bs6 = [b for b in (project.get("buildings") or []) if isinstance(b, dict)]
+            _bseg = ""
+            if _bs6:
+                _names = "、".join(str(b.get("name") or "") for b in _bs6 if b.get("name"))[:400]
+                _zones = []
+                for _b in _bs6:
+                    _z = str(_b.get("功能区") or "").strip()
+                    if _z and _z not in _zones:
+                        _zones.append(_z)
+                _bseg = (f"本项目工程内容按功能划分为{'、'.join(_zones)}等功能区，"
+                         f"主要建构筑物包括{_names}等。")
+            _eqd6 = [x for x in (project.get("equipment_detail") or [])
+                     if isinstance(x, dict) and not x.get("_group")]
+            # 本项目**新增**设备口径源: 可研 表1.2-3 (27 台套, 进口5/国产22)
+            #   ⚠ equipment_detail 是**全厂现有**设备清单(172), 用于 表3.6-2, 不得当作本项目新增
+            _ne6 = _load_new_equipment(project)
+            _eseg = ""
+            if _ne6 and _ne6.get("count"):
+                _c = _ne6["count"]
+                _imp = _ne6.get("imported") or 0
+                _dom = _ne6.get("domestic") or 0
+                _pw = _ne6.get("power_kw")
+                _os = (f"（其中进口设备{_imp}台（套）、国产设备{_dom}台（套））"
+                       if (_imp or _dom) else "")
+                _pk = f"，总装机容量{_pw}kW" if _pw else ""
+                _eseg = (f"本项目拟新增生产及公辅设备共计{_c}台（套）{_os}{_pk}，"
+                         f"涵盖反应、调配、输送、换热及环保处理等工序；"
+                         f"上述设备与厂区现有装置（见表3.6-2）分属不同口径，"
+                         f"现有装置设备不重复计入本项目新增。")
+                if _eqd6 and len(_eqd6) != _c:
+                    _eseg += f"厂区现有主要生产及公辅设备共{len(_eqd6)}台（套），详见设备一览表。"
+            elif _eqd6:
+                _eseg = (f"本项目拟购（配）生产及公辅设备共计{len(_eqd6)}台（套），"
+                         f"涵盖反应、调配、输送、研磨分散、换热及环保处理等工序。")
+            ph["c316_build"] = _bseg or "本项目工程内容详见项目申请报告。"
+            ph["c316_equip"] = _eseg or "本项目设备配置详见设备明细表。"
+        # 3.4.1/3.4.2 计数/样例注入 (零 LLM)
+        if "{nprod}" in tpl:
+            ph["nprod"] = str(len([p for p in (project.get("products") or []) if isinstance(p, dict)]))
+        if "{nmat}" in tpl:
+            _mats = [m for m in (project.get("materials") or []) if isinstance(m, dict)]
+            ph["nmat"] = str(len(_mats)) if _mats else "—"
+            _names = [str(m.get("name") or "").strip() for m in _mats if m.get("name")]
+            ph["matsample"] = "、".join(_names[:12]) if _names else "—"
     ph["proj"] = name or _FIXED_PROJ["proj"]
     # 只对含占位的模板做 format, 避免正文里出现 '{' 时炸
     import re as _re
-    if _re.search(r"\{[a-z_]+\}", tpl):
+    if _re.search(r"\{[a-z_0-9]+\}", tpl):
         return tpl.format(**{k: v for k, v in ph.items() if k in tpl})
     return tpl
 
 
 def _strip_md_tables(text: str) -> str:
     """剥离 LLM 误写入正文的 Markdown 表格 + 表标题行 (表格由系统生成插入)
-    ① 行首为 '|' 的表格块 ② '表X.X-X ...' 标题行 (系统插表时会写真正的表标题)"""
+    ① 行首为 '|' 的表格块 ② '表X.X-X ...' 标题行 (系统插表时会写真正的表标题)
+    ③ 正文首行的节标题 (形如 '1.1 项目背景'/『# 第1章 …』) — 导出侧 _heading 会写标题,
+       正文再带一遍 → 双标题/脏数据。在此统一剥离 (单一合并点, 不再靠导出侧打补丁)。"""
+    # ③ 先剥首行标题: 连续剥掉开头的标题式行 (LLM 常写 '# 标题' 或 '1.1 标题')
+    _lines = text.split("\n")
+    _k = 0
+    while _k < len(_lines):
+        _s = _lines[_k].strip()
+        if not _s:
+            _k += 1
+            continue
+        if re.match(r"^#{1,6}\s", _s) or re.match(r"^第[一二三四五六七八九十\d]+章\s", _s):
+            _k += 1
+            continue
+        # 编号标题: '1.1 项目背景' / '3.1.6 项目组成及主要工程内容' — 短行且编号后仅短标题
+        if re.match(r"^\d+(\.\d+)*\s+\S", _s) and len(_s) < 40 and "\n" not in _s:
+            _k += 1
+            continue
+        break
+    if _k:
+        text = "\n".join(_lines[_k:]).lstrip("\n")
     if "|" in text or re.search(r"^表\d", text, re.M):
         lines = text.split("\n")
         out, i = [], 0

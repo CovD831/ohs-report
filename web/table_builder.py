@@ -214,16 +214,10 @@ def build_data_tables(pd: dict) -> dict:
             pass
         tables["班制定员表"] = {"cols": ["工种", "工作区域", "工作内容", "人/班", "生产班制", "总人数（人）", "最大班女工数（人）"],
                           "rows": rows}
-    # 主要经济技术指标 (表3.1-3)
-    invest = pd.get("investment") or ""
-    if invest or pd.get("capacity"):
-        tables["项目概况表"] = {"cols": ["序号", "项目名称", "单位", "指标", "备注"],
-                          "rows": [
-                              ["1", "厂区总占地面积", "平方米", "依托现有", ""],
-                              ["2", "新建建筑面积", "平方米", "依托现有", ""],
-                              ["3", "项目投资总额", "万元", invest or "—", ""],
-                              ["4", "职业病防治经费概算", "万元", "待补充（需企业核实）", ""],
-                          ]}
+    # 主要经济技术指标 (表3.1-3 项目概况表) —— ⚠ 单一产地原则:
+    #   该表唯一产地 = section_filler (读 data/tech_econ.json 可研表1.2-11 全 15 大项),
+    #   此处曾有一份 4 行硬编码副本 → 与 section_filler 各产一份 → 骨架/现算不一致
+    #   (同"设备表两份定义"事故)。2026-10 删除本副本, 只留 section_filler 一处。
 
     # ===== 原辅材料表 (表3.4-2) ← materials — 同源 section_filler sec3 =====
     mats2 = pd.get("materials") or []
@@ -358,10 +352,8 @@ def build_data_tables(pd: dict) -> dict:
     for _tname, _t in tables.items():
         if not isinstance(_t, dict):
             continue
-        if _tname == "项目概况表":
-            _t.setdefault("prov", {"_default": prov_rule(_RULE_EV)})
-            _t["prov"]["2_3"] = prov_rule(_UNTRACED_EV, field="investment", traceable=False)
-        else:
+        # 项目概况表 唯一产地 = section_filler (见上方说明); 此处只给其余表盖规则来源
+        if _tname != "项目概况表":
             _t.setdefault("prov", prov_rule(_RULE_EV))
     return tables
 
