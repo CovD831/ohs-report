@@ -42,7 +42,9 @@ _ASSESS_DRIVEN = {
 # 检查表类: 数据源 = GBZ 1 标准库条款 (_CHECK_COLS 四列), 不依赖项目评估结果。
 # 2026-09 修正: 原先归 await_assess → 面板显示"待评估填充", 但实测 18 张里
 # 绝大多数的数据源是 gbz1_rule 标准库 (纯查表), 导入时即可建 → status='standard'.
-# 只有"结果/评价"两列需人工把关, 与真实报告一致 (真实报告这两列也多为"待确认")。
+# 2026-10 修正: 「检查结果/评价」两列原硬编码 "待确认"/"待评价" 并错称与真实报告一致;
+#   真稿取证 (7 张表/59 行, 56 行有值: 符合46/合格9/基本符合1) 推翻该说法。
+#   现按条款号套 knowledge.check_result_templates 定式 (零 LLM, 可追溯, 单一产地)。
 _STANDARD_DRIVEN = {
     "选址检查表", "总体布局检查表", "建筑卫生学检查表", "辅助用室检查表",
     "辅助用室设置表", "管理制度检查表", "防护设施检查表",
@@ -87,7 +89,14 @@ def _build_check_table(name: str, conn) -> dict | None:
             clause, rule = str(r[0] or ""), str(r[1] or "")
             if not rule:
                 continue
-            rows.append([rule, f"GBZ 1—2010 {clause}", "待确认", "待评价"])
+            # 检查结果/评价两列: 按条款号套定式模板 (单一产地 knowledge.check_result_templates,
+            # 零 LLM, 可追溯)。真稿取证 46 行句式 → 未命中则诚实回退 "待补充"/"待评价"。
+            # (2026-10 事故修正: 此前硬编码 "待确认"/"待评价", 注释错称与真实报告一致)
+            from knowledge.check_result_templates import resolve as _cr
+            _clause_key = str(clause).strip()
+            _res, _vd = _cr(_clause_key)
+            rows.append([rule, f"GBZ 1—2010 {clause}",
+                         _res or "待补充", _vd or "待评价"])
     if not rows:
         return None
     from web.number_provenance import prov_std

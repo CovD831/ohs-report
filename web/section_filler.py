@@ -774,20 +774,19 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                        "rows": [[1, "—", (loc.split("项目性质")[0].strip() or "本项目位于现有厂区内") + "，周边情况需结合总平面图及现场调查补充", "—"]]})
         # 检查表: 选址/总体布局/建筑卫生学/辅助用室 (依据GBZ1标准库)
         # 原报告取证: 3.2-2 选址检查 4列无序号; 3.3-1/3.7-2/3.8-3 5列有序号(序号/卫生要求/检查依据/检查结果/评价)
+        # ⚠ 单一产地: 「检查结果/评价」两列一律走 knowledge.check_result_templates.resolve()
+        #   (用户 2026-10 拍板: 保留 4 列, 不引序号/分组行; 此前本处硬编码 "依托现有厂区…" 是第二份定义)
+        from knowledge.check_result_templates import resolve as _cr
         for theme, tname in [("选址", "选址检查表"), ("总体布局", "总体布局检查表"),
                              ("建筑卫生学", "建筑卫生学检查表"), ("辅助用室", "辅助用室检查表")]:
             g_rows = []
             for r in _rows_of(conn, "SELECT clause, rule, report_section FROM gbz1_rule WHERE theme LIKE ?", (theme + "%",)):
-                g_rows.append([r[0], r[1][:60], "本项目依托现有厂区，满足该条要求", "符合"])
+                _res, _vd = _cr(str(r[0]).strip())
+                g_rows.append([r[0], r[1][:60], _res or "待补充", _vd or "待评价"])
             if not g_rows:
                 continue
-            if tname == "选址检查表":
-                tables.append({"name": tname, "cols": ["检查依据", "卫生要求", "检查结果", "评价"],
-                               "rows": g_rows})
-            else:
-                tables.append({"name": tname,
-                               "cols": ["序号", "卫生要求", "检查依据", "检查结果", "评价"],
-                               "rows": [[i, r[1], r[0], r[2], r[3]] for i, r in enumerate(g_rows, 1)]})
+            tables.append({"name": tname, "cols": ["卫生要求", "检查依据", "检查结果", "评价"],
+                           "rows": [[r[1], f"GBZ 1—2010 {r[0]}", r[2], r[3]] for r in g_rows]})
         ill = conn.execute("SELECT room, plane, lx FROM illumination_std").fetchall()
         if ill:
             tables.append({"name": "照度标准表", "cols": ["序号", "房间/场所", "参考面", "照度lx"],
@@ -819,24 +818,23 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             nz_rows.append(r)
         if nz_rows:
             tables.append({"name": "噪声分级表", "cols": ["噪声限值", "说明"], "rows": nz_rows})
-        # 标准库检查表 (原报告 3.5-1 工艺检查 / 3.6-3 设备布局评价 / 3.8-3 辅助用室检查 — 同构检查表)
+        # 标准库检查表 (原报告 3.5-1 工艺检查 / 3.6-3 设备布局评价 — 同构检查表)
+        # ⚠ 单一产地: 结果/评价两列走 check_result_templates.resolve() (原为第二/三份硬编码)
+        from knowledge.check_result_templates import resolve as _cr
         g_rows = []
         for th in ("防尘防毒", "防噪声振动"):
             for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme=?", (th,)):
-                g_rows.append([len(g_rows) + 1, r[1][:60], f"GBZ1-2010 {r[0]}", "本项目工艺成熟、密闭化程度高", "符合"])
+                _res, _vd = _cr(str(r[0]).strip())
+                g_rows.append([r[1][:60], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
         if g_rows:
-            tables.append({"name": "工艺检查表", "cols": ["序号", "卫生要求", "检查依据", "检查情况", "评价"], "rows": g_rows})
+            tables.append({"name": "工艺检查表", "cols": ["卫生要求", "检查依据", "检查结果", "评价"], "rows": g_rows})
         b_rows = []
         for th in ("总体布局", "建筑卫生学"):
             for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme=?", (th,)):
-                b_rows.append([len(b_rows) + 1, r[1][:60], f"GBZ1-2010 {r[0]}", "本项目设备布局满足相关要求", "符合"])
+                _res, _vd = _cr(str(r[0]).strip())
+                b_rows.append([r[1][:60], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
         if b_rows:
-            tables.append({"name": "设备布局检查表", "cols": ["序号", "检查项目", "检查依据", "检查情况", "评价"], "rows": b_rows})
-        a_rows = []
-        for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme='辅助用室'"):
-            a_rows.append([len(a_rows) + 1, r[1][:60], f"GBZ1-2010 {r[0]}", "本项目卫生等级为2级，依托现有辅助用室", "符合"])
-        if a_rows:
-            tables.append({"name": "辅助用室检查表", "cols": ["序号", "卫生要求", "检查依据", "检查结果", "评价"], "rows": a_rows})
+            tables.append({"name": "设备布局检查表", "cols": ["卫生要求", "检查依据", "检查结果", "评价"], "rows": b_rows})
         return tables
 
     if sec == "4":
@@ -1286,18 +1284,24 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         tables = []
         for theme, tname in [("防尘防毒", "防尘防毒设施检查表"), ("防噪声振动", "防噪声振动检查表"),
                              ("防暑防寒", "防暑防寒检查表")]:
+            # ⚠ 单一产地: 结果/评价走 check_result_templates.resolve() (原硬编码 "待确认")
+            from knowledge.check_result_templates import resolve as _cr0
             g_rows = []
             for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme LIKE ?", (theme + "%",)):
-                g_rows.append([len(g_rows) + 1, r[1][:60], r[0], "待确认", "待确认"])
+                _res, _vd = _cr0(str(r[0]).strip())
+                g_rows.append([r[1][:60], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
             if g_rows:
-                tables.append({"name": tname, "cols": ["序号", "卫生要求", "检查依据", "检查结果", "评价"],
+                tables.append({"name": tname, "cols": ["卫生要求", "检查依据", "检查结果", "评价"],
                                "rows": g_rows})
         rows = _rows_of(conn, "SELECT hazard_category, check_point, std_code, clause FROM protection_rule")
-        # 原报告表6.2-1 5列: 序号/卫生要求/检查依据/检查结果/评价
+        # 原报告表6.2-1: 4列 (卫生要求/检查依据/检查结果/评价) — 用户 2026-10 拍板保留 4 列
+        # ⚠ 单一产地: 结果/评价走 check_result_templates.resolve() (原为第四份硬编码)
+        from knowledge.check_result_templates import resolve_protection as _crp
         p6 = []
         for r in rows:
-            p6.append([len(p6) + 1, r[1][:60], f"{r[2]} {r[3]}", "本项目拟设置相应防护设施", "符合"])
-        tables.append({"name": "防护设施检查表", "cols": ["序号", "卫生要求", "检查依据", "检查结果", "评价"],
+            _res, _vd = _crp(str(r[2]).strip(), str(r[3]).strip())
+            p6.append([r[1][:60], f"{r[2]} {r[3]}", _res or "待补充", _vd or "待评价"])
+        tables.append({"name": "防护设施检查表", "cols": ["卫生要求", "检查依据", "检查结果", "评价"],
                        "rows": p6})
         # 设施配置明细 (岗位×设施×数量×备注)
         facs = (assess.get("_project_data") or {}).get("facilities", [])
@@ -1314,10 +1318,15 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         tables = []
         rows = _rows_of(conn, "SELECT scenario, require, std_code, clause FROM emergency_rule")
         if rows:
-            # 原报告表7.2-1 5列: 序号/卫生要求/检查依据/检查结果/评价
-            tables.append({"name": "应急救援检查表", "cols": ["序号", "卫生要求", "检查依据", "检查结果", "评价"],
-                           "rows": [[i, r[1][:60], f"{r[2]} {r[3]}", "本项目依托现有企业的应急救援机构", "符合"]
-                                    for i, r in enumerate(rows, 1)]})
+            # 原报告表7.2-1: 4列 (卫生要求/检查依据/检查结果/评价) — 用户 2026-10 拍板保留 4 列
+            # ⚠ 单一产地: 应急救援句式走 check_result_templates.resolve_emergency()
+            from knowledge.check_result_templates import resolve_emergency as _cre
+            _erows = []
+            for r in rows:
+                _res, _vd = _cre(str(r[2]).strip(), str(r[3]).strip())
+                _erows.append([r[1][:60], f"{r[2]} {r[3]}", _res or "待补充", _vd or "待评价"])
+            tables.append({"name": "应急救援检查表", "cols": ["卫生要求", "检查依据", "检查结果", "评价"],
+                           "rows": _erows})
         emgs = pd_.get("emergency_supplies", [])
         if emgs:
             try:
