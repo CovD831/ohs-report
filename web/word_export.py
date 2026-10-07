@@ -989,6 +989,10 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
                 if d3_tables:
                     _write_tables_named(doc, num, d3_tables)
     conn.close()
+    # ── 悬空表号引用终检 (单一合并点): 引用了本次未产出的表 → 「详见相应章节表格」兜底
+    _dangling = _fix_dangling_table_refs(doc)
+    if _dangling:
+        print(f"  [dangling-refs] 改写 {len(_dangling)} 处: {_dangling[:6]}")
     # 文末书签 (fm5): 页脚「共Y页」PAGEREF 目标 — 域渲染值 = 正文末页页码
     _add_end_bookmark(doc)
     doc.save(str(out_path))
@@ -1011,6 +1015,63 @@ def _is_llm_table_title(line: str) -> bool:
 
 
 _TABLE_SEQ: dict = {}
+
+# 单元格值渲染守卫: 字面 None/NaN 类 → 空串 (缺数据留白, 不写伪值)。
+# 事故 (2026-10): c8 建构筑物表 5 格出现字面 "None" (提取层残留 → 表/正文多处泄漏)。
+# 单一产地 = web.llm_draft.nz (正文侧同用, 口径一致)。
+def _cell_str(v) -> str:
+    from web.llm_draft import nz
+    return nz(v)
+
+
+def _fix_dangling_table_refs(doc) -> list[str]:
+    """悬空表号引用终检 (单一合并点): 正文引用的表号不在**本次实际写出**的表题集合内
+    → 改写为「详见相应章节表格」。
+
+    事故 (2026-10, 全库复查 27 处): 薄数据项目 (32c6b130ac/4b16f075ad/59fc6f3b02)
+    的定式文本与存量生成文本引用了**未随本报告产出**的表 (表3.1-3/表9.2-1/表6.2-5…),
+    违背用户红线「表编号逐张对齐」。数据补齐后表会真实产出, 引用应由源头恢复,
+    此处只做**导出终端兜底** (判据 = 文档里真实存在的表题, 零猜测)。
+
+    覆盖形态: 见表X/详见X/参见X/如表X/另见X/见X + 范围连写 (至/到/和/与/及/、)。
+    不触碰: 表题行本身、表格单元格 (实测无引用)、无引用文本。幂等 (改写后不再命中)。
+    """
+    caps: set = set()
+    body = []
+    cap_re = re.compile(r"^表\s?(\d{1,2}(?:\.\d+)*\s*[-—–－]\s*\d+)\s")
+    for p in doc.paragraphs:
+        t = (p.text or "").strip()
+        if not t:
+            continue
+        m = cap_re.match(t)
+        if m:
+            caps.add(re.sub(r"[\s—–－]", "-", m.group(1)))
+            continue
+        body.append(p)
+
+    ref_re = re.compile(
+        r"(?:详见|参见|见表|如表|另见|见)\s*表\s?\d{1,2}(?:\.\d+)*\s*[-—–－]\s*\d+"
+        r"(?:\s*(?:至|到|和|与|及|、|，|,)\s*表\s?\d{1,2}(?:\.\d+)*\s*[-—–－]\s*\d+)*")
+    tok_re = re.compile(r"表\s?(\d{1,2}(?:\.\d+)*\s*[-—–－]\s*\d+)")
+    changed: list[str] = []
+    for p in body:
+        t = p.text
+        if "表" not in t or not p.runs:
+            continue
+
+        def _sub(m, _changed=changed):
+            nums = [re.sub(r"[\s—–－]", "-", x) for x in tok_re.findall(m.group(0))]
+            if all(n in caps for n in nums):
+                return m.group(0)
+            _changed.append(m.group(0)[:44])
+            return "详见相应章节表格"
+
+        nt = ref_re.sub(_sub, t)
+        if nt != t:
+            p.runs[0].text = nt
+            for r in p.runs[1:]:
+                r.text = ""
+    return changed
 
 
 def _write_tables_named(doc, sn: str, tables: list[dict]):
@@ -1096,7 +1157,7 @@ def _write_tables(doc, tables):
                 if i >= len(cells):
                     break
                 cells[i].text = ""
-                r = cells[i].paragraphs[0].add_run(str(v))
+                r = cells[i].paragraphs[0].add_run(_cell_str(v))
                 # 表格正文: 仿宋_GB2312 10.5pt (原报告取证: FangSong/仿宋 sz=21 半磅)
                 _set_font(r, FANGSONG, 10.5)
         # vmerge_cols: [c1,c2...] 纵向合并 — 相邻行同值的列合并 (原报告取证: PPE表 生产单元/生产岗位)

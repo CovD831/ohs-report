@@ -825,6 +825,8 @@ FIXED_TEXTS = {
     ),
     # ── 3.4.1/3.4.2 引导语 (定式 — 修表号错引: 曾写「见表3.2-1」「见表3.3-1」) ──
     # 事故背景: LLM 稿表号张冠李戴 (3.4.1 引 3.2-1 / 3.4.2 引 3.3-1), 违背「表编号逐张对齐」。
+    # 空数据守卫 (2026-10): 无 products/materials 时不得写「共生产0种产品」「共使用—种」——
+    #   不实陈述 (红线: 缺数据诚实标注「待补充（需企业提供）」, 不写错误事实)。
     "3.4.1": (
         "本项目共生产{nprod}种产品，各产品年产量及主要成分见表3.4-1。"
     ),
@@ -846,14 +848,11 @@ FIXED_TEXTS = {
     #   现有厂区现状评价实测年均防治经费 80 万元 (表11.11-1, 9 科目) 作参照。
     #   概算区间 = 总投资 × [0.74%, 1.6%], 与现企实测值交叉印证。不用 LLM 生成任何数字。
     "9.2": (
-        "本项目总投资{invest_txt}，其中职业病防治专项经费按行业同类项目比例概算，"
-        "预计约为{ohy_low_txt}～{ohy_high_txt}（占项目总投资的0.74%～1.6%）。"
+        "{ohy_intro_txt}\n"
         "职业病防治专项经费主要用于职业病防护设施建设与维护、个人劳动防护用品、"
         "工作场所职业病危害因素检测与评价、职业卫生宣传培训、职工职业健康监护、"
         "职业病危害警示标识及工伤保险等方面。\n"
-        "参照本项目现有厂区职业卫生专项经费实际投入情况（年均约80万元，"
-        "涵盖职业卫生管理机构组织工作、职业病防护设施、应急救援设施、个人防护用品、"
-        "警示标识、职业健康检查、职业卫生培训、评价检测及其他等科目，见表9.2-1），"
+        "{ohy_ref_txt}"
         "本项目建成后应将上述经费纳入年度预算，并随防护设施设计深化与用工定员确定同步调整，"
         "确保职业病防治投入与职业病危害防控需求相匹配。\n"
         "职业病防治专项经费应专款专用，由建设单位职业卫生管理机构统一管理，"
@@ -908,6 +907,26 @@ def _load_new_equipment(project: dict | None) -> dict | None:
     return d.get(pid) if pid else None
 
 
+# 现有厂区职业病防治经费实测表 缓存 (data/ohy_invest.json, C3现状评价 表11.11-1)
+_OHY_DRAFT_CACHE: dict | None = None
+
+
+def _load_ohy_invest_for_draft(project: dict | None) -> dict | None:
+    """取本项目现有厂区职业病防治经费实测 (9 科目+总计); 无则 None (不跨项目复用)"""
+    global _OHY_DRAFT_CACHE
+    if _OHY_DRAFT_CACHE is None:
+        try:
+            import json as _j
+            from pathlib import Path as _P
+            _OHY_DRAFT_CACHE = _j.loads(
+                _P(__file__).parent.parent.joinpath("data", "ohy_invest.json")
+                .read_text(encoding="utf-8"))
+        except Exception:
+            _OHY_DRAFT_CACHE = {}
+    pid = str((project or {}).get("_project_id") or (project or {}).get("id") or "")
+    return (_OHY_DRAFT_CACHE or {}).get(pid) if pid else None
+
+
 # 可研「一、项目背景」原文缓存 (data/project_background.json) — 1.1 定式数据源
 _BG_DRAFT_CACHE: dict | None = None
 
@@ -942,6 +961,20 @@ def _load_laws_text() -> str:
         except Exception:
             _LAWS_TEXT = ""
     return _LAWS_TEXT
+
+
+_NULLISH = {"none", "nan", "null", "nat", "<na>"}
+
+
+def nz(v) -> str:
+    """值 → 展示串 (单一产地): str 化 + 字面 None/NaN 类 → 空串。
+
+    事故 (2026-10): c8 buildings 数据带字面 "None" (提取层残留)
+    → 正文 (1.1/3.1.1/3.1.6) 与 建构筑物表 多处泄漏。数据侧已修,
+    此处守卫防再生 (表格侧 word_export._cell_str 同用本函数)。
+    """
+    s = "" if v is None else str(v).strip()
+    return "" if s.lower() in _NULLISH else s
 
 
 def _fixed_text(sec: str, project: dict | None = None) -> str | None:
@@ -987,7 +1020,8 @@ def _fixed_text(sec: str, project: dict | None = None) -> str | None:
                 v = _pr.get(key)
                 if isinstance(v, dict):
                     v = v.get("value")
-                return str(v) if v not in (None, "") else default
+                sv = nz(v)
+                return sv if sv else default
             # 建设规模及内容: 复刻真稿 8.1.1 的详述式 (设备台套+淘汰+建构筑物+产能)
             _ed_x = [x for x in (project.get("equipment_detail") or [])
                      if isinstance(x, dict) and not x.get("_group")]
@@ -999,7 +1033,7 @@ def _fixed_text(sec: str, project: dict | None = None) -> str | None:
             if _ed_x:
                 _capseg.append(f"购置生产及公辅设备{len(_ed_x)}台（套）")
             if _bs_x:
-                _names_x = [str(b.get("name") or "").strip() for b in _bs_x if b.get("name")][:10]
+                _names_x = [nz(b.get("name")) for b in _bs_x if nz(b.get("name"))][:10]
                 _capseg.append(f"新建及改造{('、'.join(_names_x))}等建构筑物")
             _cap_txt = "，".join(_capseg) + "。" if _capseg else "待补充（材料未提供）"
             _un = (project.get("_untrusted_fields") or {})
@@ -1109,7 +1143,7 @@ def _fixed_text(sec: str, project: dict | None = None) -> str | None:
                 _ne_b = None
             _n_new = (_ne_b or {}).get("count") if _ne_b else (len(_ed_b) or None)
             _bs_b = [b for b in (project.get("buildings") or []) if isinstance(b, dict)]
-            _bn_b = [str(b.get("name") or "").strip() for b in _bs_b if b.get("name")]
+            _bn_b = [nz(b.get("name")) for b in _bs_b if nz(b.get("name"))]
             _build_parts = []
             if _bn_b:
                 _build_parts.append(f"新增及改造{('、'.join(_bn_b[:12]))}等建构筑物")
@@ -1166,7 +1200,7 @@ def _fixed_text(sec: str, project: dict | None = None) -> str | None:
                 "entrust_clause": _entrust,
             })
         # 总投资与专项经费区间: 先算好 (3.1.1 与 9.2 共用, 单一口径)
-        if any(k in tpl for k in ("{ohy_low_txt}", "{invest_txt}", "{pohy}")):
+        if any(k in tpl for k in ("{ohy_low_txt}", "{invest_txt}", "{pohy}", "{ohy_ref_txt}")):
             _inv_v = None
             try:
                 _te2 = _load_tech_econ_for_draft().get(
@@ -1199,20 +1233,44 @@ def _fixed_text(sec: str, project: dict | None = None) -> str | None:
                 ph["ohy_high_txt"] = f"{_fmt(_hi)}万元"
                 # 3.1.1 的「职业病防治经费概算」与 9.2 共用同一区间 (单一口径)
                 ph["pohy"] = f"{_fmt(_lo)}万元～{_fmt(_hi)}万元"
+                ph["ohy_intro_txt"] = (
+                    f"本项目总投资{ph['invest_txt']}，其中职业病防治专项经费按行业同类项目比例概算，"
+                    f"预计约为{ph['ohy_low_txt']}～{ph['ohy_high_txt']}（占项目总投资的0.74%～1.6%）。")
             else:
                 ph["invest_txt"] = "（材料未提供）"
                 ph["ohy_low_txt"] = "待补充"
                 ph["ohy_high_txt"] = "待补充"
                 ph["pohy"] = "待补充（材料未提供）"
+                ph["ohy_intro_txt"] = "本项目职业病防治专项经费概算待补充（材料未提供项目总投资，暂无法按比例概算）。"
+            # 9.2 参照段: 仅当**本项目**有现有厂区经费实测表时才引用 (含表号);
+            # 无 → 不引表不写 80 万 (那是实测表数据, 不得跨项目复用 — 2026-10 修).
+            _ohy9 = _load_ohy_invest_for_draft(project)
+            _ohy_total = None
+            if _ohy9 and _ohy9.get("rows"):
+                for _r in _ohy9["rows"]:
+                    if str(_r[1] if len(_r) > 1 else "").strip() == "总计":
+                        try:
+                            _ohy_total = float(_r[2])
+                        except Exception:
+                            _ohy_total = None
+                        break
+            if _ohy_total:
+                _tot_txt = f"{_ohy_total:g}"
+                ph["ohy_ref_txt"] = (
+                    f"参照本项目现有厂区职业卫生专项经费实际投入情况（年均约{_tot_txt}万元，"
+                    "涵盖职业卫生管理机构组织工作、职业病防护设施、应急救援设施、个人防护用品、"
+                    "警示标识、职业健康检查、职业卫生培训、评价检测及其他等科目，见表9.2-1），")
+            else:
+                ph["ohy_ref_txt"] = ""
         # 3.1.6 项目组成叙述段 (零 LLM: 由 buildings/equipment_detail/products 组装)
         if any(k in tpl for k in ("{c316_build}", "{c316_equip}")):
             _bs6 = [b for b in (project.get("buildings") or []) if isinstance(b, dict)]
             _bseg = ""
             if _bs6:
-                _names = "、".join(str(b.get("name") or "") for b in _bs6 if b.get("name"))[:400]
+                _names = "、".join(nz(b.get("name")) for b in _bs6 if nz(b.get("name")))[:400]
                 _zones = []
                 for _b in _bs6:
-                    _z = str(_b.get("功能区") or "").strip()
+                    _z = nz(_b.get("功能区"))
                     if _z and _z not in _zones:
                         _zones.append(_z)
                 _bseg = (f"本项目工程内容按功能划分为{'、'.join(_zones)}等功能区，"
@@ -1242,14 +1300,26 @@ def _fixed_text(sec: str, project: dict | None = None) -> str | None:
                          f"涵盖反应、调配、输送、研磨分散、换热及环保处理等工序。")
             ph["c316_build"] = _bseg or "本项目工程内容详见项目申请报告。"
             ph["c316_equip"] = _eseg or "本项目设备配置详见设备明细表。"
-        # 3.4.1/3.4.2 计数/样例注入 (零 LLM)
+        # 3.4.1/3.4.2 计数/样例注入 (零 LLM) + 空数据守卫
+        # ⚠ 空数据守卫 (2026-10): 无数据时不得写「共生产0种产品」「共使用原辅材料—种」——
+        #   不实陈述 (红线: 缺数据诚实标注, 不写错误事实)。整体换诚实句式, 表号引用一并去掉
+        #   (表未产出, 悬空; 数据补齐后由模板恢复)。
         if "{nprod}" in tpl:
-            ph["nprod"] = str(len([p for p in (project.get("products") or []) if isinstance(p, dict)]))
+            _prods = [p for p in (project.get("products") or []) if isinstance(p, dict)]
+            if _prods:
+                ph["nprod"] = str(len(_prods))
+            else:
+                tpl = "本项目产品品种、年产量及主要成分待补充（需企业提供）。"
         if "{nmat}" in tpl:
             _mats = [m for m in (project.get("materials") or []) if isinstance(m, dict)]
-            ph["nmat"] = str(len(_mats)) if _mats else "—"
-            _names = [str(m.get("name") or "").strip() for m in _mats if m.get("name")]
-            ph["matsample"] = "、".join(_names[:12]) if _names else "—"
+            if _mats:
+                ph["nmat"] = str(len(_mats))
+                _names = [str(m.get("name") or "").strip() for m in _mats if m.get("name")]
+                ph["matsample"] = "、".join(_names[:12]) if _names else "—"
+            else:
+                tpl = ("本项目原辅材料清单待补充（需企业提供），具体物料种类及用量以补充资料为准；"
+                       "后续资料齐备后应按GB 12801—2025及GBZ 1—2010的相关要求，"
+                       "明确各原辅材料的储存与使用条件。")
     ph["proj"] = name or _FIXED_PROJ["proj"]
     # 只对含占位的模板做 format, 避免正文里出现 '{' 时炸
     import re as _re
