@@ -257,6 +257,13 @@ def update_section_state(pid: str, sec: str, state: str, generated_text: str = "
     st = {"state": state, "text": generated_text, "title": title}
     if validation:
         st["validation"] = validation
+    # 统一出口去污 (单一合并点): 内部术语不得进正文 (实测 LLM 照抄 prompt 里的"信息块")
+    # 与 web.llm_draft._deskew_jargon 同一定义 (惰性导入, 避免循环依赖)
+    try:
+        from web.llm_draft import _deskew_jargon as _dj
+        st["text"] = _dj(st["text"])
+    except Exception:
+        pass
     sec_states[sec] = st
     conn = _conn()
     conn.execute("UPDATE project SET data=?, updated=? WHERE id=?",

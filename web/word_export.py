@@ -119,13 +119,20 @@ def _refresh_stale_std_tables(tables: list[dict]) -> list[dict]:
         import sqlite3 as _sq
         import re as _re
         from pathlib import Path as _P
-        from web.standard_version import resolve_current, _base_code
+        from web.standard_version import resolve_current, _base_code, _year
         db = _P(__file__).resolve().parent.parent / "data" / "ohs.db"
         if not db.exists():
             return tables
         conn = _sq.connect(str(db))
     except Exception:
         return tables
+
+    # 状态索引: (base, 年份) → state。
+    # ⚠ 变体容错: 'GB/T 50034-2013' 与库中 'GB 50034-2013' 归一后同为 ('GB50034', 2013),
+    #   之前用原始字符串比对 → /T 或空格差异漏配 → 废止号漏替换 (2026-10 实测)。
+    _state_idx: dict[tuple, str] = {}
+    for _c, _s in conn.execute("SELECT code, state FROM standard_db"):
+        _state_idx.setdefault((_base_code(_c), _year(_c)), _s or "")
 
     # ⚠ 前缀分支必须用 () 包住, 否则 | 会把模式劈开只匹配到 "GB"
     re_ref = _re.compile(r"(?:GB(?:/T|/Z)?|GBZ(?:/T)?)\s*(\d+(?:\.\d+)?)"
@@ -140,22 +147,27 @@ def _refresh_stale_std_tables(tables: list[dict]) -> list[dict]:
             prefix = m.group(0)[:m.start(1) - m.start(0)].strip()
             full = f"{prefix}{m.group(1)}-{m.group(2)}"
             try:
-                row = conn.execute(
-                    "SELECT state FROM standard_db WHERE REPLACE(REPLACE(code,' ',''),char(12288),'')=?",
-                    (_base_code(full),)).fetchone()
-                if row is None:
-                    row = conn.execute("SELECT state FROM standard_db WHERE code=?", (full,)).fetchone()
-                if ((row[0] if row else "") or "") not in ("废止", "已废止"):
+                state = _state_idx.get((_base_code(full), int(m.group(2))), "")
+                if state not in ("废止", "已废止"):
                     return m.group(0)
                 cur = resolve_current(conn, full)
                 if not cur or not cur.get("code") or (cur.get("state") or "") in ("废止", "已废止"):
                     return m.group(0)      # 无现行后继 → 不动 (不伪造出处)
-                # 沿用原文前缀形态 ("GBZ 2.2—"), 只把年份段换成现行版年份
-                cur_code = cur["code"]
-                cur_yr = cur_code.split("-")[-1].strip() if "-" in cur_code else ""
+                # ⚠ 2026-10 修: 不能只换年份 —— 现行版若换过前缀/编号形态
+                # (分部合并回主版: GB/T 38144.1—2019 → GB 38144—2025), 只换年份会造出
+                # **不存在的伪标准号** GB/T 38144.1—2025。改为按现行版**自身**的前缀+编号
+                # 重建, 仅保留原文的空格/破折号书写风格 (与 standard_version.fix_standard_refs 同口径)。
+                cur_code = (cur["code"] or "").strip()
+                m2 = _re.match(r"^(GBZ/T|GB/T|GBZ|GB/Z|GB)\s*(\d+(?:\.\d+)?)", cur_code)
+                if not m2:
+                    return m.group(0)
+                pfx, rest = m2.group(1), m2.group(2)
+                cur_yr = cur_code[cur_code.rfind("-") + 1:].strip()
                 if not cur_yr.isdigit() or len(cur_yr) != 4:
                     return m.group(0)
-                return m.group(0)[:m.start(2) - m.start(0)] + cur_yr + m.group(0)[m.end(2) - m.start(0):]
+                spaced = bool(_re.match(r"^[A-Za-z/]+\s+\d", m.group(0)))
+                dash = "—" if "—" in m.group(0) else "-"
+                return f"{pfx} {rest}{dash}{cur_yr}" if spaced else f"{pfx}{rest}{dash}{cur_yr}"
             except Exception:
                 return m.group(0)
 

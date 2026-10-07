@@ -1679,72 +1679,14 @@ if _lifecycle["dropped_rows"] or _lifecycle["dropped_dirs"]:
 
 
 def _fix_standard_refs(text: str) -> tuple[str, list[str]]:
-    """把已生成的 text 中**废止/无效**标准号替换为现行版 (确定性, 不靠 LLM)
+    """废止/无效标准号 → 现行版 (确定性兜底)。
 
-    事故 (2026-10): LLM 凭记忆引废止版 (GBZ 2.2—2007 / GBZ 188—2014)。
-    已通过"标准版本基准"从源头减少, 但 LLM 仍可能偶发写错; 此处做**确定性兜底替换**:
-    用 standard_db 把文中的 废止标准号 → 其现行版标准号。
-
-    返回 (新文本, 改动说明列表); 无改动原样返回。
+    函数体已迁至 **web/standard_version.fix_standard_refs** (单一产地, 2026-10):
+    原实现留在 web/app.py 时, tools/ 侧脚本 import 会连带触发 app 的副作用
+    (_cleanup_expired / init_tasks)。此处保留同名薄包装, 调用点不变。
     """
-    import re as _re
-    try:
-        import sqlite3 as _sq
-        from pathlib import Path as _P
-        from web.standard_version import resolve_current, _base_code, _year
-        db = _P(__file__).resolve().parent.parent / "data" / "ohs.db"
-        if not db.exists():
-            return text, []
-        conn = _sq.connect(str(db))
-    except Exception:
-        return text, []
-
-    # 文档中出现形态: GBZ 2.2—2007 / GBZ2.2-2007 / GB/T 18664-2002 / GB/T18664—2002第4.2条 ...
-    # ⚠ 不能用 \b 收尾: 中文字符在 \w 内, '2002第' 之间无 \b → 紧跟中文的标准号会漏匹配。
-    #   改用 (?![0-9A-Za-z]) 排除字母数字 (中文/标点可跟随)。
-    re_ref = _re.compile(r"(?<![0-9A-Za-z])(GB(?:/T|/Z)?|GBZ(?:/T)?)\s*(\d+(?:\.\d+)?)"
-                         r"\s*[—\-–−－]\s*((?:19|20)\d{2})(?![0-9A-Za-z])")
-    changes: list[str] = []
-
-    def _sub(m):
-        prefix, num, yr = m.group(1), m.group(2), m.group(3)
-        full = f"{prefix}{num}-{yr}"
-        try:
-            row = conn.execute(
-                "SELECT state FROM standard_db WHERE REPLACE(REPLACE(code,' ',''),char(12288),'')=?",
-                (_base_code(full),)).fetchone()
-            # 按 base 精确匹配不了同一年份时再按全号查一次
-            if row is None:
-                row = conn.execute("SELECT state FROM standard_db WHERE code=?", (full,)).fetchone()
-            state = (row[0] if row else None) or ""
-            if state not in ("废止", "已废止"):
-                return m.group(0)
-            cur = resolve_current(conn, full)
-            if not cur or not cur.get("code"):
-                return m.group(0)
-            if (cur.get("state") or "") in ("废止", "已废止"):
-                return m.group(0)          # 解析到的仍是废止版 → 不动
-            new_code = cur["code"]
-            if _year(new_code) <= int(yr):
-                return m.group(0)          # 没更新 → 不动
-            # 保留原文书写风格: 若有"前缀 编号"的空格则保留, 破折号形态保留
-            spaced = bool(_re.match(r"^[A-Za-z/]+\s+\d", m.group(0)))
-            dash = "—" if "—" in m.group(0) else "-"
-            # 前缀与编号取**现行版自身**(不能用 _base_code, 它抹掉了 /T 标记)
-            m2 = _re.match(r"^(GBZ/T|GB/T|GBZ|GB/Z|GB)\s*(\d+(?:\.\d+)?)", new_code)
-            if not m2:
-                return m.group(0)
-            pfx, rest = m2.group(1), m2.group(2)
-            yr_new = new_code[new_code.rfind("-") + 1:]
-            new_full = f"{pfx} {rest}{dash}{yr_new}" if spaced else f"{pfx}{rest}{dash}{yr_new}"
-            changes.append(f"{m.group(0)} → {new_full}")
-            return new_full
-        except Exception:
-            return m.group(0)
-
-    out = re_ref.sub(_sub, text)
-    conn.close()
-    return out, changes
+    from web.standard_version import fix_standard_refs
+    return fix_standard_refs(text)
 
 
 def _gen_one(pid: str, sec: str, sub: str | None, title: str | None = None, cache: dict | None = None) -> str:

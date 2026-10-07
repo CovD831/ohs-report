@@ -29,9 +29,18 @@ PATCHES = [
         "source": "report_evidence",
         "evidence": "真实报告正文引用 GBZ 2.2—2019; 与 GBZ 2.1-2019 同批发布",
     },
+    {
+        "code": "GB 50034-2013",
+        "name": "建筑照明设计标准",
+        "state": "废止",
+        "source": "gov_pdf",
+        "evidence": "住建部公告(acquire/raw/gov_docs/gbt50034_2024.pdf): 「原国家标准《建筑照明设计标准》GB 50034-2013 同时废止」",
+    },
 ]
 # 需要改状态的旧版 (被上面新版代替)
 SUPERSEDE = {"GBZ2.2-2007": "GBZ2.2-2019"}
+# replace_of 回填: {现行版 code: 被它代替的旧版} (供 std_guard/迁移 反查「旧→新」)
+BACKFILL_REPLACE_OF = {"GB/T50034-2024": "GB 50034-2013"}
 
 
 def main() -> int:
@@ -60,6 +69,12 @@ def main() -> int:
         if r and (r[1] or "") != "废止":
             conn.execute("UPDATE standard_db SET state='废止' WHERE id=?", (r[0],))
             print(f"  ~ 标废止 {old}  (被 {new} 代替)")
+
+    for cur, old in BACKFILL_REPLACE_OF.items():
+        r = conn.execute("SELECT id,replace_of FROM standard_db WHERE code=?", (cur,)).fetchone()
+        if r and not (r[1] or "").strip():
+            conn.execute("UPDATE standard_db SET replace_of=? WHERE id=?", (old, r[0]))
+            print(f"  ~ 回填 replace_of: {cur} ← {old}")
 
     conn.commit()
     print("\n=== 复核 GBZ2.2 系列 ===")

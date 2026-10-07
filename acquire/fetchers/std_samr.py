@@ -100,14 +100,26 @@ def fetch(standards: list[str] | None = None) -> dict:
     out = {}
     for code in (standards or NEEDED):
         try:
-            url = f"{BASE}?searchText={urllib.parse.quote(code)}&type=all"
+            # ⚠ 查询串用**纯数字**而非完整号 (2026-10 事故): SAMR 按号检索时,
+            # "GB/T 38144" 只命中带 /T 的旧版; 该标准 2025 换版为**强制性 GB 38144-2025**
+            # (去掉 /T) 后, 用完整号查会**漏掉现行版**, 导致下游解析成"仅有废止版→待补充"。
+            # 改为抽取数字查询 (仍返回全部同号版本: 现行+废止), 由 strip_tags 归一化。
+            m_num = re.search(r"(\d{3,}(?:\.\d+)?)", code)
+            q = m_num.group(1) if m_num else code
+            url = f"{BASE}?searchText={urllib.parse.quote(q)}&type=all"
             data = fetcher.get_json(url)
             # 响应结构: 有时顶层直接带 total/rows, 有时包在 data 里 (实测定两态)
             payload = data.get("data") if isinstance(data.get("data"), dict) else data
             rows = []
             for r in payload.get("rows", []):
+                c = strip_tags(r.get("C_STD_CODE"))
+                # ⚠ 纯数字检索会带回无关标准 (如查 50087 → GB/T 29403), 必须按号精确筛:
+                #   行号数字 == 查询号 (38144) 或为其分部 (38144.1) 才收。
+                rn = re.search(r"\d{3,}(?:\.\d+)?", c)
+                if not rn or not (rn.group(0) == q or rn.group(0).startswith(q + ".")):
+                    continue
                 rows.append({
-                    "code": strip_tags(r.get("C_STD_CODE")),
+                    "code": c,
                     "name": r.get("C_C_NAME"),
                     "state": r.get("STATE"),          # 现行 / 废止
                     "nature": r.get("STD_NATURE"),    # 推荐性/强制性
