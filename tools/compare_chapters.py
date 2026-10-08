@@ -36,7 +36,14 @@ def extract_sections(path):
             t = p.text.strip()
             if not t:
                 continue
-            m = re.match(r"^(\d{1,2}(?:\.\d{1,2}){0,3})\s+(.+)$", t)
+            # ⚠ 2026-10-08 修: 有 outlineLvl = 真标题 (放宽取号); 无 outlineLvl 用严格
+            #   正则兜底 (排除「1）…」「1、…」类正文列举项与「20 台设备」类正文误判)
+            pPr = el.find(qn("w:pPr"))
+            has_lvl = (pPr is not None and pPr.find(qn("w:outlineLvl")) is not None)
+            if has_lvl:
+                m = re.match(r"^(\d{1,2}(?:\.\d{1,2}){0,3})\s*(.+)$", t)
+            else:
+                m = re.match(r"^(\d{1,2}(?:\.\d{1,2}){0,3})(?=[\s\u4e00-\u9fff“”《])\s*(.+)$", t)
             if m and len(m.group(2)) < 45:
                 if cur:
                     cur["tables"] = tables

@@ -17,6 +17,24 @@ from lxml import etree
 W = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
 
 
+# ── 节标题判定 (2026-10-08 修): outlineLvl 优先, 正则兜底 ──────────────────
+# ⚠ 旧版只看「数字开头且<60字」→ 正文内列举项「1）……」「1、反应方程式」被误判为
+#   节标题 → 真稿 5.6 受限空间被切成 43 字(实际 1631 字), 字数比虚报 2477%。
+_NUMH = re.compile(r'^(\d+(?:\.\d+)*)(?=[\s\u4e00-\u9fff“”《])\s*(\S.*)?$')
+
+
+def _heading_num(el, t):
+    """返回节编号; 非节标题返回 None。有 outlineLvl 即标题(最可靠判据)。"""
+    pPr = el.find(W + 'pPr')
+    if pPr is not None and pPr.find(W + 'outlineLvl') is not None:
+        m = _NUMH.match(t)
+        return m.group(1) if m else None
+    m = _NUMH.match(t)
+    if m and len(t) < 60 and m.group(2):
+        return m.group(1)
+    return None
+
+
 def load(path):
     z = zipfile.ZipFile(path)
     x = etree.fromstring(z.read('word/document.xml'))
@@ -26,11 +44,11 @@ def load(path):
         tag = etree.QName(el).localname
         if tag == 'p':
             t = ''.join(n.text or '' for n in el.iter(W + 't')).strip()
-            m = re.match(r'^(\d+(?:\.\d+)*)\s*(\S.*)?$', t)
-            if m and len(t) < 60 and m.group(2):
+            num = _heading_num(el, t) if t else None
+            if num:
                 if cur:
                     out.append(cur)
-                cur = [m.group(1), t, 0, 0]
+                cur = [num, t, 0, 0]
             elif cur is not None:
                 cur[2] += len(t)
         elif tag == 'tbl':
@@ -94,7 +112,7 @@ def main():
         ("3.3.2 竖向布置",      "8.2.2"),
         ("3.7.2 通风空调",      "8.3.1"),
         ("3.7.3 采光照明",      "8.3.2"),
-        ("4.2.3 类比防护设施",   "9.2.3"),
+        ("4.2.3 类比防护设施",   "9.2.3/8.1.6.3"),
         ("4.2.5 类比应急救援",   "9.2.5"),
         ("4.6 类比综合结论",     "9.6"),
         ("5.1.2 识别-生产环境",  "10.1.2"),

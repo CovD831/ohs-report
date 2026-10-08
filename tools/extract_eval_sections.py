@@ -24,7 +24,19 @@ FILES = [
     "长兴--预评（备案稿7-31）",
 ]
 
-HEAD = re.compile(r"^\s*(\d+(?:\.\d+){0,3})\s*[、.．]?\s*(\S.{0,48})$")
+# ⚠ 2026-10-08 修 (同 compare_real_report): 旧式「数字开头即标题」把正文列举项
+#   误判为节标题 (如「1、反应方程式」「1）职业健康检查…」)。有 outlineLvl 以它为准,
+#   否则严格正则: 编号后必须紧跟 空格/中文/引号/书名号。
+HEAD = re.compile(r"^\s*(\d+(?:\.\d+){0,3})(?=[\s\u4e00-\u9fff“”《])\s*(\S.{0,48})$")
+
+
+def _head_match(el, t):
+    """段落是否节标题: outlineLvl 优先, 正则兜底。返回 match 或 None。"""
+    pPr = el.find(qn("w:pPr"))
+    if pPr is not None and pPr.find(qn("w:outlineLvl")) is not None:
+        return HEAD.match(t)
+    m = HEAD.match(t)
+    return m if m and len(t) < 60 else None
 
 
 def blocks(doc):
@@ -35,8 +47,8 @@ def blocks(doc):
             t = p.text.strip()
             if not t:
                 continue
-            m = HEAD.match(t)
-            if m and len(t) < 60:
+            m = _head_match(el, t)
+            if m:
                 yield ("h", m.group(1), m.group(2).strip())
             else:
                 yield ("p", t)
