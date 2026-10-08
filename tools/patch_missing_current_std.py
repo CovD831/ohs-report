@@ -12,6 +12,9 @@
 
 原则: **不编造** —— 仅补齐有独立证据的条目, 并标注来源为 report_evidence。
       查不到确切信息的 (如 GB/T 38144 现行版) 一律不补, 留"待补充"让系统如实标注。
+
+2026-10-09 追加 WS/T 757-2016 —— 两个独立源核验 (chinesestandard.net: 发布2016-08-29/实施2017-03-01;
+食品伙伴网: 废止日期"暂无"), 且 C3 现状评价报告正文 4 处引用, 有据可补。
 """
 from __future__ import annotations
 
@@ -36,6 +39,15 @@ PATCHES = [
         "source": "gov_pdf",
         "evidence": "住建部公告(acquire/raw/gov_docs/gbt50034_2024.pdf): 「原国家标准《建筑照明设计标准》GB 50034-2013 同时废止」",
     },
+    {
+        "code": "WS/T757-2016",
+        "name": "局部排风设施控制风速检测与评估技术规范",
+        "state": "现行",
+        "pubdate": "2016-08-29",
+        "effdate": "2017-03-01",
+        "source": "confirmed_2026-10(多源核实)",
+        "evidence": "chinesestandard.net: 发布2016-08-29/实施2017-03-01; 食品伙伴网: 废止日期暂无(现行); C3现状评价报告正文4处引用(para93/625, table52/68)",
+    },
 ]
 # 需要改状态的旧版 (被上面新版代替)
 SUPERSEDE = {"GBZ2.2-2007": "GBZ2.2-2019"}
@@ -55,7 +67,7 @@ def main() -> int:
         else:
             fields = ["code", "name", "state"]
             vals = [p["code"], p["name"], p["state"]]
-            for extra in ("source", "evidence"):
+            for extra in ("source", "evidence", "pubdate", "effdate"):
                 if extra in cols and extra in p:
                     fields.append(extra)
                     vals.append(p[extra])

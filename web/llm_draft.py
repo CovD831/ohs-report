@@ -588,6 +588,8 @@ def _assess_cached(pid: str, _cache: dict | None = None):
                "hazard_grid": d.get("hazard_grid", []),
                "emergency_supplies": d.get("emergency_supplies", []),
                "profile": d.get("profile", {}),
+               "_project_id": pid,
+               "id": pid,
                "built_tables": d.get("built_tables", {}), "location": d.get("location", "")}
     assess = assess_project(conn, project)
     conn.close()
@@ -927,6 +929,62 @@ def _load_ohy_invest_for_draft(project: dict | None) -> dict | None:
     return (_OHY_DRAFT_CACHE or {}).get(pid) if pid else None
 
 
+# C3 现状评价「职业卫生管理情况」事实 缓存 (data/mgmt_facts.json, tools/extract_mgmt_facts.py 产物)
+_MGMT_FACTS_DRAFT_CACHE: dict | None = None
+
+
+def _load_mgmt_facts(project: dict | None) -> dict | None:
+    """取本项目 C3 现状评价 11.x 职业卫生管理事实 (12 节 + 制度表); 无则 None (不跨项目复用)"""
+    global _MGMT_FACTS_DRAFT_CACHE
+    if _MGMT_FACTS_DRAFT_CACHE is None:
+        try:
+            import json as _j
+            from pathlib import Path as _P
+            _MGMT_FACTS_DRAFT_CACHE = _j.loads(
+                _P(__file__).parent.parent.joinpath("data", "mgmt_facts.json")
+                .read_text(encoding="utf-8"))
+        except Exception:
+            _MGMT_FACTS_DRAFT_CACHE = {}
+    pid = str((project or {}).get("_project_id") or (project or {}).get("id") or "")
+    return (_MGMT_FACTS_DRAFT_CACHE or {}).get(pid) if pid else None
+
+
+def _assemble_mgmt_facts_text(rec: dict | None) -> str | None:
+    """2.2 职业卫生管理情况: C3 现状评价 11.x 管理事实 → 零 LLM 规则拼装。
+
+    与真稿 8.1.6.2 一比一 (12 编号项); 数字/条款全部来自 C3 原文, 不经 LLM。
+    清洗: 悬空表引用「表F8.3-1」→「下表」; 原文 typo「危告知」→「危害告知」; 汉字间冗余空格。
+    """
+    if not rec:
+        return None
+    secs = rec.get("sections") or []
+
+    def _clean(s: str) -> str:
+        s = s.replace("表F8.3-1", "下表").replace("危告知", "危害告知")
+        s = re.sub(r"(?<=[\u4e00-\u9fff])[ \u3000]+(?=[\u4e00-\u9fff])", "", s)
+        # 标点旁空格 (对标真稿 8.1.6.2: 。，、；． 旁 0 空格; 》 后接括号的注录形态除外)
+        s = re.sub(r"(?<=[\u4e00-\u9fff\d》])[ \u3000]+(?=[。；，、．])", "", s)
+        s = re.sub(r"(?<=[。；，、．])[ \u3000]+(?=[\u4e00-\u9fff])", "", s)
+        s = re.sub(r"(?<=》)[ \u3000]+(?=[\u4e00-\u9fff])", "", s)
+        return s
+
+    lines = []
+    n = 0
+    for s in secs:
+        title = str(s.get("title") or "").strip()
+        paras = [str(p) for p in s.get("paras") or [] if str(p).strip()]
+        if not title and not paras:
+            continue
+        n += 1
+        lines.append(f"（{n}）{_clean(title)}")
+        for p in paras:
+            for ln in p.split(" / "):
+                ln = _clean(ln.strip())
+                if ln:
+                    lines.append(ln)
+    return "\n".join(lines) if lines else None
+
+
 # 可研「一、项目背景」原文缓存 (data/project_background.json) — 1.1 定式数据源
 _BG_DRAFT_CACHE: dict | None = None
 
@@ -998,6 +1056,11 @@ def _fixed_text(sec: str, project: dict | None = None) -> str | None:
             return ("本项目的评价依据主要包括以下技术规范和标准（均以现行有效版本为准）：\n"
                     + std
                     + "\n评价中涉及的具体限值与检测方法，以上述标准现行有效版本为准。")
+    if sec == "2.2":
+        # 2.2 职业卫生管理情况: C3 现状评价管理事实 零 LLM 规则拼装 (真稿 8.1.6.2 一比一)
+        _mfx = _assemble_mgmt_facts_text(_load_mgmt_facts(project))
+        if _mfx:
+            return _mfx
     tpl = FIXED_TEXTS.get(sec)
     if not tpl:
         return None
@@ -1418,10 +1481,11 @@ def _strip_md_tables(text: str) -> str:
 def draft_sub(pid: str, sec: str, sub: str, _cache: dict | None = None) -> str:
     """二级小节 LLM 草稿 (可传预计算 _cache 提速)
     固定文本先行: 1.2评价目的/1.3.1法律依据 = GBZ/T 196 定式, 不走 LLM (防乱说话/编造)"""
-    _fixed = _fixed_text(sub or sec)
+    # 定式文本需 project(含 _project_id 供装载器) — 先取评估缓存再填定式
+    c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
+    _fixed = _fixed_text(sub or sec, c["project"])
     if _fixed:
         return _fixed
-    c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
     from web.structure_data import get_chapter_info
     info = get_chapter_info(sub or sec, c["project"], c["assess"])
     from web.structure_data import chapter_must_cover
@@ -1481,11 +1545,12 @@ def draft_detail(pid: str, key: str, title: str, _cache: dict | None = None) -> 
     key 形如 '2.1.1'/'5.8.2.1'/'8.4.1.1', title 为该项标题.
     固定文本先行: 1.3.1 等定式章节不走 LLM (与 draft_sub 同规则, 防乱说话).
     """
-    _fixed = _fixed_text(key)
+    # 定式文本需 project(含 _project_id 供装载器) — 先取评估缓存再填定式
+    c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
+    _fixed = _fixed_text(key, c["project"])
     if _fixed:
         return _fixed
     from web.report_struct import section_title, sub_title, sub3_title, sub4_title
-    c = _assess_cached(pid, _cache) if _cache is not None else _assess_cached(pid)
     from web.structure_data import get_chapter_info
     info = get_chapter_info(key, c["project"], c["assess"])
     from web.structure_data import chapter_must_cover
