@@ -2015,11 +2015,15 @@ def sub_section_content(pid: str, sec: str, sub: str, request: Request):
         has_sub3 = any(parent == sub for parent, _ in SUBS3.values())
         # 与导出同规则: 有子节的父节超长正文只作引导语, 不整体输出
         if not (has_sub3 and len(text) > 150):
+            from web.word_export import _is_llm_table_title as _ilt
             for line in text.split("\n"):
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
                 if re.match(r"^\d+(\.\d+)*\s+\S", line) and len(line) < 40:
+                    continue
+                # 与导出同源: LLM 假表题行 (含裸编号形态) 不输出 (系统会插真表题)
+                if _ilt(line):
                     continue
                 paragraphs.append(line)
     src = "section_states"

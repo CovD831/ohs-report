@@ -239,7 +239,39 @@ def build_skeletons(data: dict, assess: dict | None = None) -> dict:
             continue
 
         # 外部取数表 (需联网/LLM): 占位, 后台填 (用户设计: 异步联网 + 同时建表)
+        # ⚠ 修复 (2026-10): 旧实现无条件重建占位 → **每次 build_skeletons 调用**
+        #   (导入/评估回填/重建工具) 都把已填的 filled 表打回空占位 → 数据反复丢失,
+        #   实测库中多个项目气象表永久卡 filling/rows=0。现在: 旧值已有行且地区未变
+        #   → 保留旧值 (含其 prov 溯源); 无行/地区变了 → 重建占位, 交给缓存快补/后台线程。
         if name in EXTERNAL_TABLES:
+            _old = (data.get("built_tables") or {}).get(name)
+            if isinstance(_old, dict) and (_old.get("rows") or []):
+                _cur_region = ""
+                if name == "气象因素表":
+                    try:
+                        from web.external_tables import _region_of as _rg
+                        _cur_region = _rg(data)
+                    except Exception:
+                        _cur_region = ""
+                # 旧表带 region 且与新地区不一致 → 不保留 (地区变=数据过期, 重新取)
+                _keep = (not _cur_region) or (not _old.get("region")) \
+                    or (_old.get("region") == _cur_region)
+                if _keep:
+                    t = dict(_old)
+                    t["section"] = t.get("section") or section
+                    out[name] = t
+                    continue
+            # 缓存快补: 同步可得 (缓存命中/材料事实) → 直接填, 不进后台队列
+            # (事故 2026-10: 卡 filling 的项目在评估回填/重建时也应能自愈)
+            try:
+                from web.external_tables import fill_from_cache as _ffc
+                _t = _ffc(name, data)
+                if _t and (_t.get("rows") or []):
+                    _t["section"] = _t.get("section") or section
+                    out[name] = _t
+                    continue
+            except Exception:
+                pass
             ph = _ext_ph(name)
             ph["section"] = section
             out[name] = ph

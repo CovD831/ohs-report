@@ -213,6 +213,22 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
         else:
             _merged.append(t)
     tables = _merged
+    # 外部取数表缓存快补 (单一出口兜底): 骨架无行 → 现算按历史是硬编码"待补充"占位;
+    #   若缓存/材料事实同步可得 (毫秒级), 直接用真实数据覆盖, 不再等后台线程。
+    #   (事故 2026-10: 气象表卡 filling → 产物 14 处"待补充", 而缓存里数据早已就位。)
+    for _i, _t in enumerate(tables):
+        if _t.get("name") != "气象因素表":
+            continue
+        if (built.get("气象因素表") or {}).get("rows"):
+            break  # 骨架已有真实行, 不覆盖
+        try:
+            from web.external_tables import fill_from_cache
+            _wt = fill_from_cache("气象因素表", pd_data)
+            if _wt and (_wt.get("rows") or []) and any("待补充" not in str(r[2]) for r in _wt["rows"]):
+                tables[_i] = dict(_wt) | {"name": "气象因素表"}
+        except Exception:
+            pass
+        break
     # 标准版本护栏 (单一合并点): 骨架建于旧标准版时, 引用会随骨架"永生"。
     #   事故: 噪声/高温接触限值表骨架含 GBZ 2.2—2007, 标准升 2019 后产物仍 21 处废止引用。
     #   此处是骨架→产物的唯一出口, 故护栏挂这里 (与 table_skeleton 同判据: 仅当该号确已废止才刷)。
@@ -1006,10 +1022,23 @@ def _is_llm_table_title(line: str) -> bool:
     ⚠ "表" 与编号间**可能有空格** (实测 LLM 写出 "表 5.3-1 XXX（表格由系统自动插入）"),
       旧正则 ^表\\d 要求紧跟数字 → 漏网 → 与系统插入的表题**重号** (表5.3-1 出现两次)。
       同时覆盖全角括号/中文空格/半角空格几种变体。
+
+    ⚠ 2026-10 扩展: **裸编号表题** —— LLM 凭记忆写 "表1 建设项目建构筑物及环境
+      相关情况汇总表" (系统表题一律 表N-M 带横杠; 裸号必为 LLM 幻觉, 与真实表号
+      体系不符, 且挂载的表体与标题所指内容不一致 —— 实测 ada 3.1.3 表题写"建构
+      筑物"而挂的是气象表)。判据收紧防误伤: 编号后须跟**空格+标题文字**(≥3字),
+      整行短(<60), 且剩余文本不得以引用连接词开头 (中/为/所/是… 类正文句)。
     """
     s = line.strip().replace("\u3000", " ").replace(" ", "")
     if re.match(r"^表\d{1,2}(\.\d+)*[-—－]\d+", s):
         return True
+    # 裸编号表题: "表1 建设项目…" / "表 12 xxx" (仅当整行呈表题形态)
+    raw = line.strip().replace("\u3000", " ")
+    m = re.match(r"^表\s?\d{1,2}\s+(.+)$", raw)
+    if m and len(raw) < 60:
+        rest = m.group(1).strip()
+        if len(rest) >= 3 and not re.match(r"^[中为所是和与及列给示如此按依见详见附录的，。；：,.;:]", rest):
+            return True
     # 兜底: 明确喊话"表格由系统插入"的行, 无论形态一律丢弃
     return "表格由系统" in line or "表格由系统自动插入" in line
 
@@ -1052,6 +1081,11 @@ def _fix_dangling_table_refs(doc) -> list[str]:
     ref_re = re.compile(
         r"(?:详见|参见|见表|如表|另见|见)\s*表\s?\d{1,2}(?:\.\d+)*\s*[-—–－]\s*\d+"
         r"(?:\s*(?:至|到|和|与|及|、|，|,)\s*表\s?\d{1,2}(?:\.\d+)*\s*[-—–－]\s*\d+)*")
+    # 裸表号引用 (无横杠): LLM 幻觉形态 "汇总见表1。" — 不在本次表题集合内 → 改写。
+    # ⚠ 防误伤: 标准引用 "GBZ 1—2010表10" / "附录表6" 等**带标准/附录前缀**的不算
+    #   (实测 32c6/4b16/59fc/c8 的存量文本含大量此类合法引用); 判据: 匹配前 12 字符内
+    #   出现 GB/GBZ/附录/条款数字即跳过。
+    bare_re = re.compile(r"(?:详见|参见|见表|如表|另见|见)\s*表\s?(\d{1,2})(?![\d.\-—–－])")
     tok_re = re.compile(r"表\s?(\d{1,2}(?:\.\d+)*\s*[-—–－]\s*\d+)")
     changed: list[str] = []
     for p in body:
@@ -1066,7 +1100,21 @@ def _fix_dangling_table_refs(doc) -> list[str]:
             _changed.append(m.group(0)[:44])
             return "详见相应章节表格"
 
+        def _sub_bare(m, _changed=changed, _caps=caps):
+            # 标准/附录语境豁免 (上下文取当前搜索串; nt 在 sub 调用时即被搜索的字符串)
+            _ctx = nt
+            pre = _ctx[max(0, m.start() - 14):m.start()]
+            if re.search(r"(?:GB|附录|表题|标准)[^，。；]{0,8}$", pre):
+                return m.group(0)
+            num = m.group(1)
+            # 裸号对应系统表号 "表N-M" 任一在本次表题集合 → 视为合法 (宽松保留)
+            if any(c.startswith(f"{num}-") or c == num for c in _caps):
+                return m.group(0)
+            _changed.append(m.group(0)[:44])
+            return "详见相应章节表格"
+
         nt = ref_re.sub(_sub, t)
+        nt = bare_re.sub(_sub_bare, nt)
         if nt != t:
             p.runs[0].text = nt
             for r in p.runs[1:]:

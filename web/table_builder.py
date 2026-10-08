@@ -28,6 +28,21 @@ from web.number_provenance import prov_llm, prov_rule  # noqa: E402
 TABLES_KEY = "built_tables"  # 存在 project.data 里
 
 _CACHE_PATH = Path(__file__).resolve().parent.parent / "data" / "llm_tables_cache.json"
+_REGION_FACTS_PATH = Path(__file__).resolve().parent.parent / "data" / "region_facts.json"
+
+
+def load_region_facts(region: str) -> dict:
+    """材料提取的区域基础数据 (data/region_facts.json, 由 tools/extract_region_facts.py 生成)
+
+    与 weather:region 缓存同 key 空间 (按地区名)。材料真数据优先于 LLM 公开资料:
+    可研/地勘里明写的气温/风速/地震烈度/水文等, 直接带页码溯源写入本表。
+    """
+    try:
+        d = json.loads(_REGION_FACTS_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    f = d.get(region) if isinstance(d, dict) else None
+    return f if isinstance(f, dict) else {}
 
 # LLM 环境复用 llm_draft 的配置 (BASE 默认走 workbuddy2api, 与 docker-compose 一致)
 BASE = os.environ.get("LLM_BASE_URL", "https://workbuddy2api.henryai.top/v1/chat/completions")
@@ -124,57 +139,145 @@ def _llm_json(prompt: str, system: str) -> dict | None:
         return None
 
 
-def build_weather_table(region: str) -> dict:
-    """表3.1-1 所在地常年主要气象因素 — LLM 公开资料 + 强约束 (缺→待补充)"""
-    if not region:
+def _fact(facts: dict, key: str):
+    """材料提取的区域基础事实 → (值, 证据) ; 无 → ("", None)
+
+    facts 形状: {field: {"value": "...", "file": "...", "page": N, "text": "原文片段"}}
+    (由 tools/extract_region_facts.py 从可研等材料提取, 存 project.data.region_facts)
+    """
+    f = (facts or {}).get(key)
+    if isinstance(f, dict):
+        v = str(f.get("value") or "").strip()
+        if v:
+            ev = {k: f.get(k) for k in ("file", "page", "text")}
+            return v, ev
+    return "", None
+
+
+def build_weather_table(region: str, cache_only: bool = False,
+                        facts: dict | None = None) -> dict | None:
+    """表3.1-1 所在地常年主要气象因素 — 材料事实 > LLM 公开资料 > 待补充 (强约束)
+
+    cache_only=True: 只读缓存, 未命中返回 None (不联网) — 供导出/评估等
+    同步路径做"缓存快补" (事故修复 2026-10: 库中气象表卡 filling 永久"待补充",
+    而缓存里数据早已就位; 同步路径不能等 90s 联网, 故加纯缓存模式)。
+    facts: 材料 (可研/地勘) 提取的区域基础数据 — 规则来源, 优先级最高;
+    材料给了地质/水文等, 就不再写"待补充"(LLM 仍禁填这两类, 但材料可以)。
+    磁盘 facts (data/region_facts.json) 自动合并, 显式传参优先。
+    """
+    facts = {**load_region_facts(region), **{k: v for k, v in (facts or {}).items() if isinstance(v, dict)}}
+    if not region and not facts:
         return {"cols": ["序号", "项目", "情况和数据", "备注"],
                 "rows": [[i, n, "待补充（需项目所在地气象资料）", "/"]
                          for i, n in enumerate(["气候", "地质", "地震", "气温", "风", "降水", "雷雨", "湿度", "水文", "大气环境", "积雪"], 1)]}
     cache = _cache_load()
-    wx = cache.get(f"weather:{region}")
-    if not wx:
+    wx = cache.get(f"weather:{region}") if region else None
+    if not wx and cache_only and not facts:
+        return None  # 未命中且不联网 → 交给调用方占位/后台线程
+    if not wx and not cache_only and region:
         schema_txt = "\n".join(f"  {k}: {v}" for k, v in _WEATHER_SCHEMA.items())
         wx = _llm_json(
             f"地区: {region}\n请按以下字段输出该地区公开气候常年值 JSON (值不确定就填 待补充):\n{schema_txt}",
             _WEATHER_SYSTEM) or {}
         if wx:
             _cache_save(f"weather:{region}", wx)
-    # 地质/水文/大气环境永远待补充 (项目地勘/环评数据, LLM 禁填)
-    W = lambda k: str(wx.get(k) or "待补充")  # noqa: E731
-    rows = [
-        ["1", "气候", W("climate"), "/"],
-        ["2", "地质", "待补充（以项目地勘报告为准）", "/"],
-        ["3", "地震", W("climate") != "待补充" and "该地区地震烈度资料见当地抗震设防烈度区划" or "待补充", ""],
-        ["4", "气温", f"平均气温 {W('temp_avg')}；年平均最高 {W('temp_max_avg')}；年平均最低 {W('temp_min_avg')}；"
-                     f"极端最高 {W('temp_extreme_max')}；极端最低 {W('temp_extreme_min')}", ""],
-        ["5", "风", f"年平均风速 {W('wind_speed_avg')}；年主导风向 {W('wind_prevailing')}", ""],
-        ["6", "降水", f"年平均降水量 {W('rain_avg')}", ""],
-        ["7", "雷雨", f"该地区年平均雷暴日数为 {W('thunder_days')}", ""],
-        ["8", "湿度", f"年平均相对湿度 {W('humidity_avg')}", ""],
-        ["9", "水文", "待补充（以当地水文部门资料为准）", ""],
-        ["10", "大气环境", "待补充（以项目环评资料为准）", ""],
-        ["11", "积雪", f"往年最大积雪量 {W('snow_max')}", ""],
-    ]
-    # 数字溯源标记: 地质/水文/大气环境 = 代码写死"待补充"(规则);
-    # 其余行的气象值来自 LLM 公开资料 → 标 llm 并附来源说明 (审计要求带 evidence)
-    llm_ev = {"file": f"公开气候资料:{region}", "page": None,
-              "text": f"地区 {region} 公开气候常年统计值 (LLM 获取, 需人工核实)"}
-    _RULE_ROWS = {1, 2, 8, 9}      # 索引(0基): 地质/地震/水文/大气环境 — 代码固定
+    wx = wx or {}
+
+    def C(k: str):
+        """字段取数: 材料事实 → LLM缓存 → 待补充; 返回 (value, evidence|None, from_material)"""
+        v, e = _fact(facts, k)
+        if v:
+            return v, e, True
+        wv = str(wx.get(k) or "").strip()
+        if wv and "待补充" not in wv:
+            return wv, None, False
+        return "待补充", None, False
+
+    rows: list = []
     prov = {"_default": prov_rule({"file": "build_weather_table 固定规则",
                                    "text": "代码固定值/待补充 (非LLM生成)"})}
-    for i in range(len(rows)):
-        if i in _RULE_ROWS:
-            continue
-        prov[f"{i}_2"] = prov_llm(llm_ev, field="气象常年值")
+    llm_ev = {"file": f"公开气候资料:{region}", "page": None,
+              "text": f"地区 {region} 公开气候常年统计值 (LLM 获取, 需人工核实)"}
+    _mat_fallback = {"file": "项目材料(区域基础数据)", "page": None, "text": ""}
+
+    def _finish(idx: int, cells: list, used: list):
+        """used: [(value, evidence, from_material), ...] → 行内来源归并 (材料>LLM>规则)"""
+        rows.append(cells)
+        _has = lambda v: "待补充" not in str(v)  # noqa: E731 (改写过的占位前缀也算缺)
+        mat_ev = next((e for (v, e, m) in used if m and _has(v)), None)
+        any_mat = any(m and _has(v) for (v, _, m) in used)
+        any_cache = any((not m) and _has(v) for (v, _, m) in used)
+        if any_mat:
+            prov[f"{idx}_2"] = prov_rule(mat_ev or _mat_fallback, field="气象/区域基础数据")
+        elif any_cache:
+            prov[f"{idx}_2"] = prov_llm(llm_ev, field="气象常年值")
+
+    # 1 气候
+    v, e, m = C("climate")
+    _finish(0, ["1", "气候", v, "/"], [(v, e, m)])
+    # 2 地质 (LLM 禁填; 材料给了就用材料)
+    v, e, m = C("geo")
+    if v == "待补充":
+        v, e, m = "待补充（以项目地勘报告为准）", None, False
+    _finish(1, ["2", "地质", v, "/"], [(v, e, m)])
+    # 3 地震 (材料给了烈度/加速度则直书; 否则沿用原规则句式)
+    v, e, m = C("seismic")
+    if v == "待补充":
+        cl_v, _, _ = C("climate")
+        v = "该地区地震烈度资料见当地抗震设防烈度区划" if cl_v != "待补充" else "待补充"
+    _finish(2, ["3", "地震", v, ""], [(v, e, m)])
+    # 4 气温
+    used = []
+    parts = []
+    for label, k in (("平均气温", "temp_avg"), ("年平均最高", "temp_max_avg"),
+                     ("年平均最低", "temp_min_avg"), ("极端最高", "temp_extreme_max"),
+                     ("极端最低", "temp_extreme_min")):
+        v, e, m = C(k)
+        used.append((v, e, m))
+        parts.append(f"{label} {v}")
+    _finish(3, ["4", "气温", "；".join(parts), ""], used)
+    # 5 风
+    used = []
+    parts = []
+    for label, k in (("年平均风速", "wind_speed_avg"), ("年主导风向", "wind_prevailing")):
+        v, e, m = C(k)
+        used.append((v, e, m))
+        parts.append(f"{label} {v}")
+    _finish(4, ["5", "风", "；".join(parts), ""], used)
+    # 6 降水
+    v, e, m = C("rain_avg")
+    _finish(5, ["6", "降水", f"年平均降水量 {v}", ""], [(v, e, m)])
+    # 7 雷雨
+    v, e, m = C("thunder_days")
+    _finish(6, ["7", "雷雨", f"该地区年平均雷暴日数为 {v}", ""], [(v, e, m)])
+    # 8 湿度
+    v, e, m = C("humidity_avg")
+    _finish(7, ["8", "湿度", f"年平均相对湿度 {v}", ""], [(v, e, m)])
+    # 9 水文 (LLM 禁填; 材料给了就用材料)
+    v, e, m = C("hydrology")
+    if v == "待补充":
+        v, e, m = "待补充（以当地水文部门资料为准）", None, False
+    _finish(8, ["9", "水文", v, ""], [(v, e, m)])
+    # 10 大气环境 (LLM 禁填; 材料给了就用材料)
+    v, e, m = C("air")
+    if v == "待补充":
+        v, e, m = "待补充（以项目环评资料为准）", None, False
+    _finish(9, ["10", "大气环境", v, ""], [(v, e, m)])
+    # 11 积雪
+    v, e, m = C("snow_max")
+    _finish(10, ["11", "积雪", f"往年最大积雪量 {v}", ""], [(v, e, m)])
+
+    any_data = any("待补充" not in r[2] for r in rows)
+    note = f"区域基础数据来源: {region or '项目材料'}" if any_data else ""
     return {"cols": ["序号", "项目", "情况和数据", "备注"], "rows": rows, "prov": prov,
-            "note": f"气象数据来源: {region}公开气候资料" if any("待补充" not in r[2] for r in rows) else ""}
+            "note": note, "region": region}
 
 
 if __name__ == "__main__":
     r = extract_region("江苏省常熟经济开发区沿江工业区兴港路 15 号长兴合成树脂(常熟)有限公司现有厂区内")
     print("region:", r)
     t = build_weather_table(r)
-    for row in t["rows"]:
+    for row in (t or {}).get("rows") or []:
         print(row)
 
 

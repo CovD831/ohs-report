@@ -86,18 +86,48 @@ def fill_one(name: str, data: dict) -> dict | None:
     return t
 
 
+def fill_from_cache(name: str, data: dict) -> dict | None:
+    """纯缓存快补 (不联网, 可能毫秒级返回) — 供导出/评估等同步路径兜底。
+
+    事故 (2026-10): 气象表卡 filling 永久"待补充" —— 导出侧不重试、缓存里
+    却早有数据。同步路径不能等 90s 联网 → 只读缓存命中即填, 未命中返回 None
+    (交给后台线程/下次导入)。材料真数据优先于 LLM 公开资料 (溯源原则)。
+    """
+    if name == "气象因素表":
+        region = _region_of(data)
+        if not region:
+            return None
+        try:
+            from web.table_builder import build_weather_table
+            t = build_weather_table(region, cache_only=True)  # 磁盘 facts 自动合并
+        except Exception:
+            return None
+        if t and (t.get("rows") or []):
+            # 全"待补充"的表 = 没取到数据 → 不返回 (交给后台线程/下次导入)
+            if not any("待补充" not in str(r[2]) for r in t["rows"]):
+                return None
+            t = dict(t)
+            t["status"] = "filled"
+            return t
+    return None
+
+
 def fill_external_async(pid: str, data: dict, on_done=None) -> None:
     """后台填所有外部表 → patch 进库 (不阻塞调用方)
 
     pid: 项目 id; data: 当前 project data (用于取地区名等)
     on_done(pid, {表名: 表}) 可选回调
     """
-    todo = [n for n in EXTERNAL_TABLES if n not in _inflight]
+    # ⚠ inflight 去重必须**按项目** — 旧实现只存表名 (全局 set):
+    #   两个项目并发导入时, B 项目看到 A 的"气象因素表"在跑 → 直接跳过 B 的派发,
+    #   A 跑完后 B 的 filled 结果基于 A 的地区名, 或永不再派发 → B 卡 filling。
+    #   (实测: 批量导入后多个项目气象表 filling 不落库, 导出全"待补充"。)
+    todo = [n for n in EXTERNAL_TABLES if f"{pid}::{n}" not in _inflight]
     if not todo:
         return
     with _lock:
         for n in todo:
-            _inflight.add(n)
+            _inflight.add(f"{pid}::{n}")
 
     def _worker():
         result = {}
@@ -113,7 +143,7 @@ def fill_external_async(pid: str, data: dict, on_done=None) -> None:
         finally:
             with _lock:
                 for n in todo:
-                    _inflight.discard(n)
+                    _inflight.discard(f"{pid}::{n}")
 
     threading.Thread(target=_worker, name=f"ext-fill-{pid}", daemon=True).start()
 
