@@ -747,17 +747,23 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                         return n // k or n
                 return n  # 常白班等人/班=总数
             s_rows = []
+            _has_total = False
             for s in pd_.get("staffing", []):
                 sysm = next((x.get("system", "") for x in sf if x.get("post") == s.get("post")), "—")
+                if "合计" in str(s.get("post") or "") or "合计" in str(s.get("dept") or ""):
+                    _has_total = True
                 s_rows.append([s.get("post", ""), s.get("dept", ""), "—",
                                _per_shift(sysm, s.get("count", "")), sysm, s.get("count", ""), "/"])
-            # 合计行
-            try:
-                tot = sum(int(str(s.get("count", "0")).replace("人", "")) for s in pd_.get("staffing", [])
-                          if str(s.get("count", "0")).strip().isdigit())
-                s_rows.append(["合计", "/", "/", "/", "/", str(tot), "/"])
-            except Exception:
-                pass
+            # 合计行: 材料自带「合计」条目 → 不再追加 (防双合计行);
+            # 无 → 明细求和兜底 (剔除合计条目防双计; 2026-10 实测 293=144+149)
+            if not _has_total:
+                try:
+                    tot = sum(int(str(s.get("count", "0")).replace("人", ""))
+                              for s in pd_.get("staffing", [])
+                              if str(s.get("count", "0")).strip().isdigit())
+                    s_rows.append(["合计", "/", "/", "/", "/", str(tot), "/"])
+                except Exception:
+                    pass
             tables.append({"name": "班制定员表",
                            "cols": ["工种", "工作区域", "工作内容", "人/班", "生产班制", "总人数（人）", "最大班女工数（人）"],
                            "rows": s_rows})
@@ -782,7 +788,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             g_rows = []
             for r in _rows_of(conn, "SELECT clause, rule, report_section FROM gbz1_rule WHERE theme LIKE ?", (theme + "%",)):
                 _res, _vd = _cr(str(r[0]).strip())
-                g_rows.append([r[0], r[1][:60], _res or "待补充", _vd or "待评价"])
+                g_rows.append([r[0], r[1], _res or "待补充", _vd or "待评价"])
             if not g_rows:
                 continue
             tables.append({"name": tname, "cols": ["卫生要求", "检查依据", "检查结果", "评价"],
@@ -825,14 +831,14 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         for th in ("防尘防毒", "防噪声振动"):
             for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme=?", (th,)):
                 _res, _vd = _cr(str(r[0]).strip())
-                g_rows.append([r[1][:60], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
+                g_rows.append([r[1], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
         if g_rows:
             tables.append({"name": "工艺检查表", "cols": ["卫生要求", "检查依据", "检查结果", "评价"], "rows": g_rows})
         b_rows = []
         for th in ("总体布局", "建筑卫生学"):
             for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme=?", (th,)):
                 _res, _vd = _cr(str(r[0]).strip())
-                b_rows.append([r[1][:60], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
+                b_rows.append([r[1], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
         if b_rows:
             tables.append({"name": "设备布局检查表", "cols": ["卫生要求", "检查依据", "检查结果", "评价"], "rows": b_rows})
         return tables
@@ -916,7 +922,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             # 原报告表4.2-3 8列双层: 单元|岗位|接触途径(产品·工段)|因素|作业方式|人数|频次
             hg_rows.append([g.get("unit") or "生产车间主厂房", g.get("post", "—"),
                             g.get("product", "—"), g.get("stage") or "—",
-                            (g.get("factors", "") or "—")[:80],
+                            (g.get("factors", "") or "—"),
                             "计量、投料、巡检", "/", "/"])
         if hg_rows:
             tables.append({"name": "类比危害分布表",
@@ -964,7 +970,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                     continue
                 v9.append([len(v9) + 1, g.get("unit", "—"), g.get("post", "—"),
                            g.get("product", "—"), g.get("stage") or "—",
-                           (g.get("factors", "") or "—")[:40],
+                           (g.get("factors", "") or "—"),
                            "按岗位接触的职业病危害因素种类配备相应防护用品",
                            "符合GBZ 1、GBZ/T 194要求", "基本有效"])
                 if len(v9) >= 12:
@@ -1035,8 +1041,8 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             for g in grid:
                 # 原报告表5.1-1 7列: 车间/产品/工序/设备密闭/物料或中间产物/产生环节/主要因素
                 g_rows.append(["生产车间主厂房", g.get("product") or "—", g["process"],
-                               g["enclosed"] or "密闭", "、".join(g["materials"][:4]),
-                               g["process"] + "过程中", "、".join(g["factors"][:6])])
+                               g["enclosed"] or "密闭", "、".join(g["materials"]),
+                               g["process"] + "过程中", "、".join(g["factors"])])
             tables.append({"name": "危害因素识别表",
                            "cols": ["生产车间", "生产车间", "工序", "设备密闭", "物料或中间产物", "职业病危害因素产生环节", "主要职业病危害因素"],
                            "header2": ["生产车间", "生产车间", "工序", "设备密闭", "物料或中间产物", "职业病危害因素产生环节", "主要职业病危害因素"],
@@ -1289,7 +1295,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             g_rows = []
             for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme LIKE ?", (theme + "%",)):
                 _res, _vd = _cr0(str(r[0]).strip())
-                g_rows.append([r[1][:60], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
+                g_rows.append([r[1], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
             if g_rows:
                 tables.append({"name": tname, "cols": ["卫生要求", "检查依据", "检查结果", "评价"],
                                "rows": g_rows})
@@ -1300,7 +1306,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         p6 = []
         for r in rows:
             _res, _vd = _crp(str(r[2]).strip(), str(r[3]).strip())
-            p6.append([r[1][:60], f"{r[2]} {r[3]}", _res or "待补充", _vd or "待评价"])
+            p6.append([r[1], f"{r[2]} {r[3]}", _res or "待补充", _vd or "待评价"])
         tables.append({"name": "防护设施检查表", "cols": ["卫生要求", "检查依据", "检查结果", "评价"],
                        "rows": p6})
         # 设施配置明细 (岗位×设施×数量×备注)
@@ -1324,7 +1330,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             _erows = []
             for r in rows:
                 _res, _vd = _cre(str(r[2]).strip(), str(r[3]).strip())
-                _erows.append([r[1][:60], f"{r[2]} {r[3]}", _res or "待补充", _vd or "待评价"])
+                _erows.append([r[1], f"{r[2]} {r[3]}", _res or "待补充", _vd or "待评价"])
             tables.append({"name": "应急救援检查表", "cols": ["卫生要求", "检查依据", "检查结果", "评价"],
                            "rows": _erows})
         emgs = pd_.get("emergency_supplies", [])
@@ -1401,7 +1407,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         # 原报告表9.1-1 5列: 序号/检查项目/检查依据/检查结果/结论
         m9 = []
         for i, r in enumerate(rows, 1):
-            m9.append([i, f"{r[0]}：{r[1][:50]}", f"{r[2]} {r[3]}", "企业已建立相应管理制度", "合格"])
+            m9.append([i, f"{r[0]}：{r[1]}", f"{r[2]} {r[3]}", "企业已建立相应管理制度", "合格"])
         tables.append({"name": "管理制度检查表", "cols": ["序号", "检查项目", "检查依据", "检查结果", "结论"],
                        "rows": m9})
         surv = _rows_of(conn, "SELECT factor, check_type, cycle FROM surveillance_rule")

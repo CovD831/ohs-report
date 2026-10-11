@@ -106,6 +106,73 @@ def _match_wanted(wanted: list, name: str):
     return None
 
 
+def _unfreeze_truncated_rows(sk: dict, t: dict) -> dict:
+    """截断解冻护栏: 骨架行是现算行的**严格前缀** → 骨架来自旧截断代码, 让位现算。
+
+    事故 (2026-10): 「管理制度检查表」骨架建于 section_filler [:50] 截断时代,
+    "骨架优先"让旧截断值永生 (导出物 10 处被切, 修复文本永不可见)。
+    判据保守: 行数/列数一致, 且**所有**差异单元格都是「骨架值 ⊂ 现算值为其严格
+    前缀」且至少一处 → 整表用现算; 只要有一处差异非前缀关系 (数据确实不同源,
+    例如导入时沉淀的独立数据) 就保留骨架 (骨架优先原则不破)。
+
+    追加场景 (2026-10, 班制定员表): 骨架含**多余尾部合计行** (旧双计 bug 产物,
+    293 = 明细和 144 + 材料合计条目 149), 现算已修正为单合计行。判据同样保守:
+    共同部分逐格相等或前缀, 且骨架多出的尾部行**全部**含「合计」→ 用现算。
+    """
+    try:
+        srows = sk.get("rows") or []
+        nrows = t.get("rows") or []
+        if not srows or not nrows:
+            return sk
+
+        def _comparable(sr, nr) -> bool:
+            if len(sr) != len(nr):
+                return False
+            for a, b in zip(sr, nr):
+                a2 = str(a if a is not None else "")
+                b2 = str(b if b is not None else "")
+                if a2 == b2:
+                    continue
+                if a2 and b2.startswith(a2) and len(b2) > len(a2):
+                    continue        # 前缀差异 = 截断残留, 允许
+                return False
+            return True
+
+        if len(srows) == len(nrows):
+            # 场景1: 同行数, 至少一处前缀差异 → 用现算
+            has_prefix = False
+            for sr, nr in zip(srows, nrows):
+                ok = True
+                for a, b in zip(sr, nr):
+                    a2 = str(a if a is not None else "")
+                    b2 = str(b if b is not None else "")
+                    if a2 == b2:
+                        continue
+                    if a2 and b2.startswith(a2) and len(b2) > len(a2):
+                        has_prefix = True
+                    else:
+                        ok = False
+                        break
+                if not ok:
+                    return sk
+            return t if has_prefix else sk
+
+        if len(srows) > len(nrows):
+            # 场景2: 骨架多尾部行 — 多出行须全为「合计」行, 共同部分可前缀
+            extra = srows[len(nrows):]
+            if all("合计" in str((er[0] if er else "")) or "合计" in str((er[1] if len(er) > 1 else ""))
+                   for er in extra):
+                for sr, nr in zip(srows[:len(nrows)], nrows):
+                    if not _comparable(sr, nr):
+                        return sk
+                return t
+            return sk
+
+        return sk      # 现算比骨架还多行 — 不动 (骨架优先)
+    except Exception:
+        return sk
+
+
 def _refresh_stale_std_tables(tables: list[dict]) -> list[dict]:
     """标准版本护栏: 表内引用**已废止**标准号 → 替换为现行版 (确定性, 不靠 LLM)
 
@@ -209,6 +276,9 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
         w = t["name"]
         sk = built.get(w)
         if isinstance(sk, dict) and (sk.get("rows") or []):
+            # 截断解冻: 骨架若是旧截断代码的产物 (现算行以其为严格前缀),
+            # 用现算全文覆盖, 防旧截断值被"骨架优先"冻结续命 (2026-10 事故)
+            sk = _unfreeze_truncated_rows(sk, t)
             _merged.append(dict(sk) | {"name": w})
         else:
             _merged.append(t)

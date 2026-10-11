@@ -37,7 +37,7 @@ echo "    包大小: ${_sz}MB"
 [ "$_sz" -gt 20 ] && echo "  ⚠ 包偏大(${_sz}MB) — 检查是否漏排大目录, 大包易传断"
 
 # 部署前校验: 关键源码目录必须在包里 (防"漏送目录"类静默失败)
-for _must in web/app.py knowledge/project_assess.py tools/audit_numbers.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py web/section_filler.py web/section_style_spec.json web/llm_draft.py web/word_export.py web/standard_version.py; do
+for _must in web/app.py knowledge/project_assess.py knowledge/gbz1_loader.py tools/audit_numbers.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py web/section_filler.py web/section_style_spec.json web/llm_draft.py web/word_export.py web/standard_version.py; do
   if ! tar tzf /tmp/ohs_src.tgz "$_must" >/dev/null 2>&1; then
     echo "❌ 包内缺少 $_must — 打包规则有误, 中止"; exit 1
   fi
@@ -78,7 +78,7 @@ curl -s -o /dev/null -w '公网: %{http_code}\n' https://paiyipai.xyz/login
 #   tools/(extract_mgmt_facts/patch_missing_current_std/compare_real_report)。
 echo "=== 6. 源码一致性校验 (本地 vs 容器) ==="
 _mismatch=0
-for _f in web/app.py knowledge/project_assess.py web/table_skeleton.py web/section_filler.py web/section_style_spec.json web/word_export.py web/llm_draft.py web/standard_version.py web/orig_table_map.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py tools/compare_real_report.py; do
+for _f in web/app.py knowledge/project_assess.py knowledge/gbz1_loader.py web/table_skeleton.py web/section_filler.py web/section_style_spec.json web/word_export.py web/llm_draft.py web/standard_version.py web/orig_table_map.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py tools/compare_real_report.py; do
   _l=$(md5 -q "$_f" 2>/dev/null || md5sum "$_f" | cut -d' ' -f1)
   _r=$(ssh $SRV "docker exec ohs-report md5sum /app/$_f 2>/dev/null | cut -d' ' -f1")
   if [ "$_l" = "$_r" ]; then
