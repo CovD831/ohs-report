@@ -320,8 +320,8 @@ def _extract_product_units(proj_data: dict) -> list[tuple]:
             if m and m.group(1) not in seen and len(m.group(1)) >= 2:
                 items.append(m.group(1))
                 seen.add(m.group(1))
-    # 去重保序, 最多 8 个 (控制规模)
-    items = list(dict.fromkeys(items))[:8]
+    # 去重保序; 不再限 8 个 (2026-10 全量: 产品数超 8 时原帽静默丢产品子节 — 新泰实测 13 产品被切到 8)
+    items = list(dict.fromkeys(items))
     out = []
     # 数据驱动三级: 3.5.x 产品工艺
     for i, name in enumerate(items, 1):

@@ -118,6 +118,10 @@ def _unfreeze_truncated_rows(sk: dict, t: dict) -> dict:
     追加场景 (2026-10, 班制定员表): 骨架含**多余尾部合计行** (旧双计 bug 产物,
     293 = 明细和 144 + 材料合计条目 149), 现算已修正为单合计行。判据同样保守:
     共同部分逐格相等或前缀, 且骨架多出的尾部行**全部**含「合计」→ 用现算。
+
+    扩展场景3 (2026-10, 类比可比性表): 现算比骨架**多行** — 骨架全部行须能在现算中
+    按序匹配 (逐格相等或前缀 = 骨架是现算的保序子集), 即骨架为旧代码结构产物
+    (旧版无「厂址」行), 用现算 (含新增行); 任一骨架行匹配不上 → 保留骨架。
     """
     try:
         srows = sk.get("rows") or []
@@ -168,7 +172,20 @@ def _unfreeze_truncated_rows(sk: dict, t: dict) -> dict:
                 return t
             return sk
 
-        return sk      # 现算比骨架还多行 — 不动 (骨架优先)
+        if len(nrows) > len(srows):
+            # 场景3 (2026-10): 现算比骨架多行 — 骨架全部行须在现算中**按序匹配**
+            #   (逐格相等/前缀 = 骨架是现算的保序子集), 即骨架为旧代码结构产物
+            #   (如类比可比性表旧版无「厂址」行被骨架冻结) → 用现算 (含新增行)。
+            #   任一骨架行找不到保序匹配 → 数据确实不同源, 保留骨架 (骨架优先不破)。
+            si = 0
+            for nr in nrows:
+                if si < len(srows) and _comparable(srows[si], nr):
+                    si += 1
+                    if si == len(srows):
+                        return t
+            return sk
+
+        return sk
     except Exception:
         return sk
 

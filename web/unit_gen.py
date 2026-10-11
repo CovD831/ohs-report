@@ -53,7 +53,7 @@ def extract_units(project: dict, assess: dict) -> list[dict]:
     for ln in (project.get("process_text") or "").splitlines():
         m = re.match(r"- 车间\s*(\S+)\s*\|\s*工序\s*(\S+)\s*\|\s*密闭\s*(\S+)\s*\|\s*危害\s*(.+)$", ln.strip())
         if m:
-            hz_str = m.group(4).strip()[:40]
+            hz_str = m.group(4).strip()
             if hz_str == "密闭":
                 hz_str = "见危害识别表"
             proc_units.append({"type": "工序", "title": f"{m.group(1)}·{m.group(2)}",

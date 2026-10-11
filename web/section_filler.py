@@ -770,7 +770,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         # 主要职业病危害因素表 (危害→来源→类别; 改名避免与'原辅材料表'冲突, 该表用 hazards)
         mats = assess.get("hazards", [])
         if mats:
-            rows = [[i, h["factor"], "; ".join(h.get("sources", [])[:2]),
+            rows = [[i, h["factor"], "; ".join(h.get("sources", [])),
                      h.get("hazard_element", "化学毒物")] for i, h in enumerate(mats, 1)]
             tables.append({"name": "主要职业病危害因素表", "cols": ["序号", "名称", "来源", "危害类别"], "rows": rows})
         # 表3.2-1 厂区周边环境 (序号/方位/周边情况/最近距离(m)) — 周边明细=现场调查/总平面图, 材料未含标待补充
@@ -846,12 +846,12 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
     if sec == "4":
         # 类比调查: 类比可比性表 + 检测结果 + 职业健康监护
         tables = []
-        elems = ["自然环境状况", "产品及原辅材料", "生产规模", "劳动定员",
+        elems = ["厂址", "自然环境状况", "产品及原辅材料", "生产规模", "劳动定员",
                  "生产制度", "生产工艺", "生产设备", "防护措施", "管理水平"]
         # 原报告表4.1-1: 类比项目(要素)/本项目/类比企业/比较结果 — 本项目侧用项目数据, 类比侧=同类园区同企业参数
         _pd4 = assess.get("_project_data") or {}
         _proj_side = {
-            "厂址": (_pd4.get("location") or "—").split("项目性质")[0][:30] or "常熟经济开发区沿江工业区",
+            "厂址": (_pd4.get("location") or "—").split("项目性质")[0].strip() or "—",
             "生产规模": _pd4.get("capacity") or "—",
             "劳动定员": str(len(_pd4.get("staffing") or [])) + "个岗位" if _pd4.get("staffing") else "—",
         }
@@ -933,7 +933,8 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         # 类比企业工作日写实 (staffing×shifts 派生: 部门/岗位/人数/班制; 写实时段无实测记录标"—" — 原报告表4.2-1)
         stf = (assess.get("_project_data") or {}).get("staffing", [])
         wl_rows = []
-        for s in stf[:30]:
+        # 全量(2026-10): 不再截 30 行; 材料自带「合计」条目按行出现
+        for s in stf:
             sysm = next((x.get("system", "—") for x in (assess.get("_project_data") or {}).get("shifts", [])
                          if x.get("post") == s.get("post")), "—")
             wl_rows.append([s.get("dept", "—"), s.get("post", "—"), s.get("count", "—"), sysm, "—"])
@@ -1165,7 +1166,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             gw_rows = []
             for g in grid:
                 for p in (g.get("posts") or ["各岗位"])[:2]:
-                    gw_rows.append([g["unit"], p, "、".join(g["factors"][:6])])
+                    gw_rows.append([g["unit"], p, "、".join(g["factors"])])
             if gw_rows:
                 tables.append({"name": "工种危害表", "cols": ["评价单元", "岗位/工种", "主要危害因素"], "rows": gw_rows,
                                # 逐格 provenance: 岗位→危害 由 hazard_grid 网格关联 (规则), 非 LLM
@@ -1177,7 +1178,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         he_rows = []
         seen_he = set()
         from web.entity_link import link_health_effect, link_disease, is_physical
-        for fac in hazards[:30]:
+        for fac in hazards:
             if fac in seen_he:
                 continue
             # 真稿表5.2-1 只列**化学物质/粉尘**(新泰取证: 石灰石粉尘/氟化氢/氯化氢及盐酸/氧化钙),
@@ -1189,11 +1190,11 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             hes = link_health_effect(conn, fac)
             ds = link_disease(conn, fac)
             if hes:
-                he_rows.append([fac, (hes[0].get("effect") or "—")[:60],
-                                "、".join(ds)[:30] if ds else "—",
+                he_rows.append([fac, (hes[0].get("effect") or "—"),
+                                "、".join(ds) if ds else "—",
                                 (hes[0].get("route") or "—")])
             elif ds:  # 物理因素: 无化学健康影响但有职业病(噪声聋/中暑)
-                he_rows.append([fac, is_physical(fac) and "—", "、".join(ds)[:30], "—"])
+                he_rows.append([fac, is_physical(fac) and "—", "、".join(ds), "—"])
         if he_rows:
             # 原报告表5.2-1 6列逐格取证(新泰备案稿):
             #   名称 | 形态 | 危害特性 | 对人体健康的影响 | 危害程度 | 可能引起的职业病或职业性病损
@@ -1216,15 +1217,15 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         # 原报告表5.4-1 7列: 车间/产品/工序/设备密闭/接触方式/因素/关键控制措施 (hazard_grid+judgement 派生)
         kc_rows = []
         hg5 = (assess.get("_project_data") or {}).get("hazard_grid") or []
-        for g in hg5[:12]:
+        for g in hg5:
             if not g.get("unit") and not g.get("post"):
                 continue
             facs = (g.get("factors") or "")
             kc_rows.append(["生产车间主厂房", g.get("product", "—") or "—", g.get("stage") or g.get("post", "—"),
-                            "密闭", "投料、巡检", (facs[:60] or "—"),
+                            "密闭", "投料、巡检", (facs or "—"),
                             "自动化、密闭化、机械化；个人防护、警示告知"])
         if not kc_rows:
-            for i, j in enumerate(js[:10]):
+            for i, j in enumerate(js):
                 kc_rows.append(["生产车间主厂房", "—", "—", "密闭", "—", j["factor"],
                                 (j.get("level") or {}).get("control", "") or "密闭化、自动化；个人防护"])
         if kc_rows:
@@ -1276,7 +1277,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             gw_rows = []
             for g in grid:
                 for p in (g.get("posts") or ["各岗位"])[:2]:
-                    gw_rows.append([g["unit"], p, "、".join(g["factors"][:6])])
+                    gw_rows.append([g["unit"], p, "、".join(g["factors"])])
             if gw_rows:
                 tables.append({"name": "工种危害表", "cols": ["评价单元", "岗位/工种", "主要危害因素"], "rows": gw_rows,
                                # 逐格 provenance: 岗位→危害 由 hazard_grid 网格关联 (规则), 非 LLM
@@ -1379,7 +1380,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                             "cols": ["生产单元", "生产岗位", "配置的防护用品", "单位", "数量", "更换周期"],
                             "rows": _pv8, "vmerge_cols": [0, 1]}]
             else:
-                tables8 = [{"name": "PPE配备表", "cols": ["序号", "岗位/作业", "防护装备", "配备标准"], "rows": p_rows[:60]}]
+                tables8 = [{"name": "PPE配备表", "cols": ["序号", "岗位/作业", "防护装备", "配备标准"], "rows": p_rows}]
         else:
             tables8 = []
         # 表8.2-1 拟配置检查表 (GB 39800—2020 通用配备要求, 检查表定式: 通用规则非项目编造)
@@ -1454,7 +1455,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             if not ctrl and g.get("name"):
                 ctrl = str(g["name"])            # 如 "中度危害作业"
             basis = str(lv.get("basis") or g.get("note") or "")
-            rows.append([f, lvl_txt, ctrl[:80] or "—", basis[:60] or "—"])
+            rows.append([f, lvl_txt, ctrl or "—", basis or "—"])
         # 物理因素补充 (噪声/高温等, 来自 hazards 里的物理项)
         _phys = ("噪声", "高温", "工频电场", "振动", "紫外辐射")
         _has = {str(h.get("factor") or "") for h in (assess.get("hazards") or [])}

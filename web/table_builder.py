@@ -418,7 +418,7 @@ def build_data_tables(pd: dict) -> dict:
         # 原报告表4.2-3 8列双层: 单元|岗位|接触途径(产品·工段)|因素|作业方式|人数|频次
         hg_rows.append([g.get("unit") or "生产车间主厂房", g.get("post", "—"),
                         g.get("product", "—"), g.get("stage") or "—",
-                        (g.get("factors", "") or "—")[:80],
+                        (g.get("factors", "") or "—"),
                         "计量、投料、巡检", "/", "/"])
     if hg_rows:
         tables["类比危害分布表"] = {

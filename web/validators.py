@@ -170,7 +170,7 @@ def _check_factors(text: str, project_data: dict, assess: dict | None) -> list[d
                 if f and len(f) >= 2:
                     allowed.add(f)
     mats = project_data.get("materials") or []
-    for m in mats[:60]:
+    for m in mats:
         nm = str(m.get("name") if isinstance(m, dict) else m).split("|")[0].strip()
         if nm:
             allowed.add(nm)

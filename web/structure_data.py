@@ -295,9 +295,8 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
         if field == "analogous_test":
             return dets
         if field == "process_text":
-            # 工艺文本压到前1500字(一段长文, 取全部但限制)
-            t = (project.get("process_text") or "").strip()
-            return t[:1500] + ("…" if len(t) > 1500 else "")
+            # 全量(2026-10): 原 1500 字帽 — 工艺文本是核心材料, 不截断
+            return (project.get("process_text") or "").strip()
         if field == "aux_units":
             # 辅助工段数据: hazard_grid 中含辅助关键词的单元行 (公辅/储运/化验/检维修等)
             _AUX = ("公用", "辅助", "污水", "废水", "废气", "储运", "储罐区", "锅炉", "制冷",
@@ -309,10 +308,10 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
                 u = str(g.get("unit") or "")
                 if not u or not any(k in u for k in _AUX):
                     continue
-                row = {k: str(v)[:60] for k, v in g.items() if v and k != "unit"}
+                row = {k: str(v) for k, v in g.items() if v and k != "unit"}
                 row["单元"] = u
                 out.append(row)
-            return out[:20] or [{"说明": "辅助工段数据待补充"}]
+            return out or [{"说明": "辅助工段数据待补充"}]
         if field == "existing_products":
             # 现有企业产品: products 的现有产量(扩产前), 不写本项目新增/扩产后语境
             out = []
@@ -331,7 +330,8 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
                     nm = str(m).split("|")[0].strip()
                 if nm and len(nm) >= 2 and nm not in out:
                     out.append(nm)
-            return out[:80] or [{"说明": "项目原材料待补充"}]
+            # 全量(2026-10): 原 [:80] 帽 — ada 219 材料会被切成 80
+            return out or [{"说明": "项目原材料待补充"}]
         if field == "critical_points":
             # 关键控制点 (11章结论/5.4: 从 assess judgements 生成 — 岗位×关键因子×控制级别)
             out = []
@@ -339,8 +339,8 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
                 if isinstance(j, dict) and j.get("factor"):
                     lv = (j.get("level") or {}).get("level", "") if isinstance(j.get("level"), dict) else ""
                     out.append({"关键控制因子": str(j["factor"]), "控制级别": str(lv or "—"),
-                                "控制措施": str((j.get("level") or {}).get("control", "") if isinstance(j.get("level"), dict) else "")[:60]})
-            return out[:15] or [{"说明": "关键控制点待补充(需危害判定完成)"}]
+                                "控制措施": str((j.get("level") or {}).get("control", "") if isinstance(j.get("level"), dict) else "")})
+            return out or [{"说明": "关键控制点待补充(需危害判定完成)"}]
         if field == "attachment_list":
             # 附件清单 (11章结论: 从上传材料分类生成, 通用)
             # 材料分类文件列表由 uploads 提供; 这里用 mapping 描述标准预评价附件
@@ -368,8 +368,8 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
                         f"SELECT require, std_code, clause FROM management_rule WHERE " +
                         " OR ".join(["require LIKE ?"] * len(kws)), tuple(f"%{k}%" for k in kws)).fetchall()
                     _mc.close()
-                    for r, std, clause in rows[:8]:
-                        mg += f"\n- [{std} {clause}] {r[:80]}" if std else f"\n- {r[:80]}"
+                    for r, std, clause in rows:
+                        mg += f"\n- [{std} {clause}] {r}" if std else f"\n- {r}"
                 except Exception:
                     pass
             return mg or "职业卫生管理制度待补充(需企业提供)"
@@ -497,7 +497,7 @@ def _std_clauses(sec: str) -> str:
         return -s                                           # 升序排 → 取负
 
     rows = sorted(rows, key=_score)[:24]
-    lines = [f"- [{r[1]} {r[2]}] {r[0][:90]}" for r in rows if r and r[0]]
+    lines = [f"- [{r[1]} {r[2]}] {r[0]}" for r in rows if r and r[0]]
     # 条款展开指令: 逐条覆盖 (颗粒度通用化 — LLM按条款号逐条展开, 不许挑着写)
     head = "\n【标准依据(数值以此为准, 逐条覆盖, 每条给出条款号引用)】\n"
     return head + "\n".join(lines) if lines else ""

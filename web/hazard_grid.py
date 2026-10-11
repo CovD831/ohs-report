@@ -381,7 +381,7 @@ def _grid_from_equipment(conn, eqs: list, mats: list) -> list[dict]:
                 if fm not in facs:
                     facs.append(fm)
         grid.append({"unit": p + "生产单元", "process": p, "posts": [],
-                     "materials": mats_u[:4], "factors": facs, "enclosed": _detect_enclosed(eqlist)})
+                     "materials": mats_u, "factors": facs, "enclosed": _detect_enclosed(eqlist)})
     # 辅助单元: 查 aux_unit_hazard 得危害
     for uname, facs in auxu.items():
         grid.append({"unit": uname, "process": "辅助", "posts": [],

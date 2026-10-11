@@ -516,9 +516,7 @@ def parse_report_file(path) -> dict:
                 p["delta"] = dv
                 p["delta_num"] = float(num) if num and num.isdigit() else 0.0
             prods.append(p)
-        if len(prods) >= 20:
-            break
-    out["products"] = prods[:20]
+    out["products"] = prods
 
     # ===== 额外字段: 定员/班制/检测/建构筑物/防护设施/PPE/体检 (现状报告表格) =====
     # 这些表格在 现状评价报告 docx 里 (定员表/检测表/建构筑物表/防护/PPE/体检)
@@ -800,33 +798,33 @@ def parse_report_file(path) -> dict:
                 cells = [str(c).replace("\n", " ").strip() for c in row]
                 if len(cells) >= 2 and cells[1]:
                     health_check.append({"factor": cells[0], "category": cells[1]})
+    # 全量(2026-10): 源头字段不再截断 (原 [:50]/[:30]/[:80]) — 报告=全量材料
     if staffing:
-        out["staffing"] = staffing[:50]
+        out["staffing"] = staffing
     if shifts:
-        out["shifts"] = shifts[:30]
+        out["shifts"] = shifts
     if detections:
-        out["detections"] = detections[:50]
+        out["detections"] = detections
     if buildings:
-        out["buildings"] = buildings[:50]
+        out["buildings"] = buildings
     if facilities:
-        out["facilities"] = facilities[:50]
+        out["facilities"] = facilities
     if ppe:
-        out["ppe"] = ppe[:50]
+        out["ppe"] = ppe
     if health_check:
-        out["health_check"] = health_check[:50]
+        out["health_check"] = health_check
     if hazard_grid_list:
-        out["hazard_grid"] = hazard_grid_list[:80]
+        out["hazard_grid"] = hazard_grid_list
 
     # ===== 公辅工程 (给水/排水/循环水/供配电/供热/压缩空气 段落) =====
+    # 全量(2026-10): 不再限 6 段 (原 break/[:6]) — 源文相关段全收
     pw = []
     for m in re.finditer(r"([^\n。]{20,200}(?:给水|排水|循环冷却水|供配电|供电|供热|蒸汽|压缩空气|新鲜水|软水)[^\n。]{15,200}[。])", text):
         seg = m.group(1).strip()
         if len(seg) > 40 and seg not in pw:
             pw.append(seg)
-        if len(pw) >= 6:
-            break
     if pw:
-        out["public_works"] = pw[:6]
+        out["public_works"] = pw
 
     # ===== 应急/管理 (应急救援设施段 / 职业卫生管理措施段) =====
     # 排除"评价内容主要包括"这类描述段(不是真正的措施/管理), 找实质措施段
