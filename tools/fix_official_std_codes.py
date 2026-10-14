@@ -166,14 +166,16 @@ def main() -> int:
     for t, pk, rid, col, _old, new in writable:
         cur.execute(f"UPDATE {t} SET {col}=? WHERE {pk}=?", (new, rid))
     conn.commit()
+    # 复扫只针对 A 组范围: C 组(内容复核) 与 B 组(数值行) 是**刻意保留**的,
+    # 把它们算进"残留"会把正确的拒绝报成失败 (首跑实测就是 7 处误报)
     left = 0
-    for t, col, pk in TARGETS:
-        if not table_exists(conn, t) or t in VALUE_BEARING:
-            continue                       # B 组本来就不该"清零", 它由复核流程负责
-        for (val,) in conn.execute(f"SELECT {col} FROM {t}"):
-            if val and fix(str(val))[1]:
-                left += 1
-    print(f"  已写 A 组 {len(writable)} 处; A 组复扫残留 {left} 处 (应为 0)")
+    for t, pk, rid, col, _old, _new in writable:
+        val = conn.execute(f"SELECT {col} FROM {t} WHERE {pk}=?", (rid,)).fetchone()[0]
+        if val and fix(str(val))[1]:
+            left += 1
+            print(f"     ✗ {t}#{rid} 仍是 {val!r}")
+    print(f"  已写 A 组 {len(writable)} 处; A 组复扫残留 {left} 处 (应为 0; "
+          f"C 组 {len(content_review)} 处与 B 组 {len(refused)} 处按设计保留)")
     conn.close()
     return 1 if left else 0
 
