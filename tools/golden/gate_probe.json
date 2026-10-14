@@ -1,0 +1,235 @@
+{
+ "aux_unit_hazard": {
+  "seen": false,
+  "text_cols": 4,
+  "rows_marked": 44,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "bio_limit": {
+  "seen": false,
+  "text_cols": 7,
+  "rows_marked": 231,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "emergency_rule": {
+  "seen": true,
+  "text_cols": 6,
+  "rows_marked": 168,
+  "changed_in_projects": [
+   "ada54603a9",
+   "c8c7ff0a4d",
+   "2863a36451",
+   "57ffa2b3b0"
+  ],
+  "note": ""
+ },
+ "exposure_level": {
+  "seen": false,
+  "text_cols": 5,
+  "rows_marked": 25,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "gbz1_rule": {
+  "seen": true,
+  "text_cols": 5,
+  "rows_marked": 380,
+  "changed_in_projects": [
+   "ada54603a9",
+   "c8c7ff0a4d",
+   "2863a36451",
+   "57ffa2b3b0"
+  ],
+  "note": ""
+ },
+ "ghs_class": {
+  "seen": true,
+  "text_cols": 7,
+  "rows_marked": 19824,
+  "changed_in_projects": [
+   "ada54603a9",
+   "c8c7ff0a4d",
+   "2863a36451",
+   "57ffa2b3b0"
+  ],
+  "note": ""
+ },
+ "hazard_factor": {
+  "seen": true,
+  "text_cols": 5,
+  "rows_marked": 2295,
+  "changed_in_projects": [
+   "ada54603a9",
+   "c8c7ff0a4d",
+   "57ffa2b3b0"
+  ],
+  "note": ""
+ },
+ "hazard_factor_alias": {
+  "seen": false,
+  "text_cols": 4,
+  "rows_marked": 1028,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "hazard_toxicity": {
+  "seen": true,
+  "text_cols": 6,
+  "rows_marked": 624,
+  "changed_in_projects": [
+   "ada54603a9",
+   "c8c7ff0a4d",
+   "57ffa2b3b0"
+  ],
+  "note": ""
+ },
+ "hazchem_item": {
+  "seen": false,
+  "text_cols": 5,
+  "rows_marked": 14140,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "health_effect": {
+  "seen": true,
+  "text_cols": 7,
+  "rows_marked": 2499,
+  "changed_in_projects": [
+   "ada54603a9",
+   "c8c7ff0a4d",
+   "2863a36451",
+   "57ffa2b3b0"
+  ],
+  "note": ""
+ },
+ "illumination_std": {
+  "seen": false,
+  "text_cols": 9,
+  "rows_marked": 909,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "industry_class": {
+  "seen": false,
+  "text_cols": 5,
+  "rows_marked": 14000,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "management_rule": {
+  "seen": true,
+  "text_cols": 5,
+  "rows_marked": 230,
+  "changed_in_projects": [
+   "ada54603a9",
+   "c8c7ff0a4d",
+   "2863a36451",
+   "57ffa2b3b0"
+  ],
+  "note": ""
+ },
+ "material_dictionary": {
+  "seen": false,
+  "text_cols": 4,
+  "rows_marked": 220,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "method_catalog": {
+  "seen": false,
+  "text_cols": 5,
+  "rows_marked": 525,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "occupational_disease": {
+  "seen": true,
+  "text_cols": 5,
+  "rows_marked": 675,
+  "changed_in_projects": [
+   "ada54603a9",
+   "57ffa2b3b0"
+  ],
+  "note": ""
+ },
+ "oel_limit": {
+  "seen": true,
+  "text_cols": 10,
+  "rows_marked": 6380,
+  "changed_in_projects": [
+   "ada54603a9",
+   "c8c7ff0a4d",
+   "2863a36451",
+   "57ffa2b3b0"
+  ],
+  "note": ""
+ },
+ "ppe_item": {
+  "seen": false,
+  "text_cols": 8,
+  "rows_marked": 280,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "ppe_work_matrix": {
+  "seen": false,
+  "text_cols": 4,
+  "rows_marked": 324,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "protection_rule": {
+  "seen": true,
+  "text_cols": 6,
+  "rows_marked": 156,
+  "changed_in_projects": [
+   "ada54603a9",
+   "c8c7ff0a4d",
+   "2863a36451",
+   "57ffa2b3b0"
+  ],
+  "note": ""
+ },
+ "risk_category": {
+  "seen": false,
+  "text_cols": 4,
+  "rows_marked": 1160,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "standard_db": {
+  "seen": true,
+  "text_cols": 8,
+  "rows_marked": 17776,
+  "changed_in_projects": [
+   "ada54603a9",
+   "c8c7ff0a4d",
+   "2863a36451",
+   "57ffa2b3b0"
+  ],
+  "note": ""
+ },
+ "standard_ref": {
+  "seen": false,
+  "text_cols": 5,
+  "rows_marked": 135,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "surveillance_rule": {
+  "seen": false,
+  "text_cols": 7,
+  "rows_marked": 1211,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ },
+ "work_unit_rule": {
+  "seen": false,
+  "text_cols": 8,
+  "rows_marked": 96,
+  "changed_in_projects": [],
+  "note": "全部文本列都打了标记而 4 项目指纹均未变 → 该表数据没上纸"
+ }
+}

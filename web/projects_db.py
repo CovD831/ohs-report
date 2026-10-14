@@ -105,6 +105,23 @@ def get_project(pid: str) -> dict | None:
             "owner_id": r["owner_id"]}
 
 
+def get_project_data(pid: str) -> dict:
+    """项目输入 (评估管线取数格式): dict(project.data) + name。
+
+    原 `web/app.py:_get_project_data` 迁入 (S1a, 2026-10-15) —— 不是为整洁, 是因为
+    `web/app.py` 在 import 期就跑 `_auth.init_users() / _tasks.init_tasks() /
+    cleanup_expired()` (**写库**)。实测每次导出验收都会改动 users/task_job 行,
+    一个"只读取证工具"不该有写副作用; 官方数据层虽未受影响 (data_stamp --check 已验),
+    但门要可信, 取数就必须能从无副作用的模块进来。
+    """
+    p = get_project(pid)
+    if not p:
+        return {}
+    data = dict(p["data"])
+    data["name"] = p["name"]
+    return data
+
+
 def get_or_create_report(user: dict | None, name: str = "", industry: str = "") -> dict:
     """按身份取回唯一的报告；不存在则创建。重传覆盖 (一个身份=一份报告)"""
     owner = _owner_key(user)

@@ -106,7 +106,7 @@ def export(pid: str, out_dir: Path) -> Path:
     from knowledge.oel import connect
     from knowledge.project_assess import assess_project
     from tools.export_e2e import build_project
-    from web.app import _get_project_data
+    from web.projects_db import get_project_data as _get_project_data
     from web.word_export import export_docx
 
     conn = connect()

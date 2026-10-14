@@ -19,6 +19,8 @@ MD5_FILES=(web/app.py knowledge/project_assess.py knowledge/gbz1_loader.py knowl
            tools/compare_real_report.py tools/data_stamp.py tools/fix_official_std_codes.py
            tools/test_std_currentize.py tools/test_std_ref_parity.py data_stamp.json
            tools/export_fingerprint.py tools/report_bench.py tools/test_gate_sensitivity.py
+           tools/gate_coverage.py tools/test_gate_coverage_selftest.py
+           tools/golden/gate_coverage.json tools/golden/gate_probe.json
            tools/golden/ada54603a9.fp.json.gz tools/golden/c8c7ff0a4d.fp.json.gz
            tools/golden/2863a36451.fp.json.gz tools/golden/57ffa2b3b0.fp.json.gz)
 
@@ -28,7 +30,7 @@ GUARD_TESTS=(test_std_ref_parity test_std_currentize test_std_supersede test_std
              test_toxicity_cell test_toxicity_match test_unfreeze_cells test_v01_staffing
              test_ppe_vertical test_must_cover_parity test_export_payload_parity
              test_number_provenance test_health_table_header test_front_matter
-             test_gate_sensitivity)
+             test_gate_sensitivity test_gate_coverage_selftest)
 
 # ⚠⚠ 教训 (2026-10-14): 部署中途 scp 连续 "Connection closed", 排查确认是**本机源 IP
 #   被服务器 fail2ban 全 TCP 封禁** (ICMP 仍通, 换 IP 立刻可连)。根因不是网络抖动,

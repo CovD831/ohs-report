@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.stdout.reconfigure(encoding="utf-8")
 
-from web.app import _get_project_data  # noqa: E402
+from web.projects_db import get_project_data as _get_project_data  # noqa: E402
 from web.validators import _check_factors, _load_factor_vocab, _sourced_factors  # noqa: E402
 
 n_pass = n_fail = 0

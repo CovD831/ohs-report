@@ -8,3 +8,6 @@ raw/
 data/
 knowledge/gbz22_pages/
 .env*
+
+# gate_coverage 的原始 SQL trace 缓存 (1 MB, 可由 --write 重生成; 内含标准库文本片段, 不入库)
+tools/golden/gate_trace.json

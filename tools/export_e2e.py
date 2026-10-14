@@ -18,7 +18,9 @@ pid = sys.argv[1] if len(sys.argv) > 1 else "ada54603a9"
 out = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "data" / f"report_{pid}.docx"
 
 from knowledge.oel import connect  # noqa: E402
-from web.app import _get_project_data  # noqa: E402
+# 走 projects_db 而不是 web.app: import web.app 会触发 init_users/init_tasks/
+# cleanup_expired 的写库副作用 —— 取证工具必须只读 (2026-10-15)
+from web.projects_db import get_project_data as _get_project_data  # noqa: E402
 from knowledge.project_assess import assess_project  # noqa: E402
 
 

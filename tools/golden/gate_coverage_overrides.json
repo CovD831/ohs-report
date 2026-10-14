@@ -1,0 +1,14 @@
+{
+  "web/table_skeleton.py:370": {
+    "kind": "branch",
+    "why": "_dead_keys 只参与 `bool(... & _dead_keys)` → if _dead 判断 (骨架刷新条件), 值不上纸。附带记录: :369 是**生产函数内自开 sqlite3.connect**, 且整段被 except Exception: _dead=False 包住 —— 与 report_bench 同一味静默降级, S1a/S1b 要收掉"
+  },
+  "web/validators.py:308": {
+    "kind": "branch",
+    "why": "建 standard_db 索引供 V-05 校验用; 校验器是咨询性输出(面板 issue), 不写进 docx → 指纹看不见。该站点的行为由 test_std_ref_parity 守, 不靠 --check"
+  },
+  "knowledge/check_result_templates.py:228": {
+    "kind": "cli",
+    "why": "位于 if __name__ == \"__main__\" 块内 (读 clauses 只为打印命中率), 非生产路径 → 不参与迁移统计"
+  }
+}

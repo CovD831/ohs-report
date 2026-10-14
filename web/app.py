@@ -29,6 +29,7 @@ from web.report_struct import CHAPTERS, SUBS, SUBS3, SUBS4  # noqa: E402
 from knowledge.project_assess import assess_project  # noqa: E402
 from knowledge.oel import connect  # noqa: E402
 from web.projects_db import get_project, create_project, update_project, seed_demo, get_or_create_report, update_section_state
+from web.projects_db import get_project_data as _get_project_data_pdb
 
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / "data" / "ohs.db"
@@ -97,16 +98,10 @@ _cache = {}
 
 
 def _get_project_data(pid: str) -> dict:
-    """从数据库读项目输入 (评估管线输入格式) — 返回全部提取字段, 供 coverage/assess/生成取数"""
-    p = get_project(pid)
-    if not p:
-        return {}
-    d = p["data"]
-    # 返回项目 data 的全部字段 (materials/staffing/protection/ppe/emergency/management/public_works/buildings/products/health_check/detections/equipment/process_text...)
-    # 关键: coverage_report(project=...) 依赖这些字段匹配类别(_ext_cat), 只返回部分字段会导致类别缺失误判
-    data = dict(d)
-    data["name"] = p["name"]
-    return data
+    """从数据库读项目输入 (评估管线输入格式) — 单一实现在 web.projects_db.get_project_data,
+    这里只留薄包装给 app.py 内部与既有调用点 (迁出原因: 验收/导出工具 import web.app
+    会连带触发 init_users/init_tasks/cleanup_expired 的**写库副作用**)。"""
+    return _get_project_data_pdb(pid)
 
 
 def _save_project_data(pid: str, data: dict) -> bool:

@@ -1,0 +1,2391 @@
+{
+ "stats": {
+  "total_sites": 196,
+  "by_kind": {
+   "printed": 152,
+   "branch": 32,
+   "prompt": 2,
+   "cli": 1,
+   "unknown": 9
+  },
+  "by_file": {
+   "knowledge/project_assess.py": 26,
+   "web/section_filler.py": 21,
+   "web/entity_link.py": 8,
+   "tools/fill_toxicity_from_ghs.py": 8,
+   "web/standard_version.py": 6,
+   "web/advice_gen.py": 5,
+   "web/hazard_grid.py": 5,
+   "web/unit_gen.py": 5,
+   "knowledge/process_material_extractor.py": 5,
+   "knowledge/judge_cli.py": 4,
+   "tools/fix_std_23466.py": 4,
+   "tools/load_hazard_toxicity.py": 4,
+   "tools/patch_missing_current_std.py": 4,
+   "tools/test_std_currentize.py": 4,
+   "web/llm_draft.py": 3,
+   "web/table_skeleton.py": 3,
+   "web/thi_rating.py": 3,
+   "web/validators.py": 3,
+   "tools/backfill_hazard_toxicity.py": 3,
+   "tools/fix_hazard_toxicity_basis.py": 3
+  },
+  "gate_visible": 91,
+  "trace_sql": 14407,
+  "protected_now": 71
+ },
+ "sites": [
+  {
+   "file": "web/advice_gen.py",
+   "line": 71,
+   "tables": [
+    "management_rule"
+   ],
+   "fn": "fill_10211",
+   "sql": "SELECT category FROM management_rule LIMIT 3",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/advice_gen.py",
+   "line": 76,
+   "tables": [
+    "protection_rule"
+   ],
+   "fn": "fill_10211",
+   "sql": "SELECT hazard_category FROM protection_rule LIMIT 3",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/advice_gen.py",
+   "line": 28,
+   "tables": [
+    "protection_rule"
+   ],
+   "fn": "query_measures",
+   "sql": "SELECT check_point, std_code, clause FROM protection_rule WHERE hazard_category IN ('化学毒物','粉尘')",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/advice_gen.py",
+   "line": 32,
+   "tables": [
+    "protection_rule"
+   ],
+   "fn": "query_measures",
+   "sql": "SELECT check_point, std_code, clause FROM protection_rule WHERE hazard_category IN ('噪声','高温','振动','辐射')",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/advice_gen.py",
+   "line": 36,
+   "tables": [
+    "management_rule"
+   ],
+   "fn": "query_measures",
+   "sql": "SELECT require, std_code, clause FROM management_rule",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 41,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "link_oel",
+   "sql": "SELECT cas FROM hazard_factor WHERE name=? OR name LIKE ?",
+   "kind": "branch",
+   "why": "row 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 56,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "link_health_effect",
+   "sql": "SELECT cas FROM hazard_factor WHERE name=?",
+   "kind": "branch",
+   "why": "row 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 78,
+   "tables": [
+    "occupational_disease"
+   ],
+   "fn": "link_disease",
+   "sql": "SELECT name FROM occupational_disease WHERE category LIKE '%化学中毒%'",
+   "kind": "printed",
+   "why": "ds 走向 forit (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 105,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "scan_chain",
+   "sql": "SELECT DISTINCT name FROM hazard_factor",
+   "kind": "printed",
+   "why": "names 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 46,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "link_oel",
+   "sql": "SELECT oel_type, value, unit FROM oel_limit WHERE cas=?",
+   "kind": "printed",
+   "why": "rows 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 49,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "link_oel",
+   "sql": "SELECT oel_type, value, unit FROM oel_limit WHERE factor_name LIKE ?",
+   "kind": "printed",
+   "why": "rows 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 59,
+   "tables": [
+    "health_effect"
+   ],
+   "fn": "link_health_effect",
+   "sql": "SELECT effect, route FROM health_effect WHERE cas=?",
+   "kind": "printed",
+   "why": "rows 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 62,
+   "tables": [
+    "health_effect"
+   ],
+   "fn": "link_health_effect",
+   "sql": "SELECT effect, route FROM health_effect WHERE factor LIKE ?",
+   "kind": "printed",
+   "why": "rows 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/hazard_grid.py",
+   "line": 88,
+   "tables": [
+    "hazard_factor_alias"
+   ],
+   "fn": "factors_from_material",
+   "sql": "SELECT catalog_name FROM hazard_factor_alias WHERE oel_name LIKE ? LIMIT 5",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/hazard_grid.py",
+   "line": 323,
+   "tables": [
+    "aux_unit_hazard"
+   ],
+   "fn": "_grid_from_equipment",
+   "sql": "SELECT unit, keywords, factors FROM aux_unit_hazard",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/hazard_grid.py",
+   "line": 80,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "factors_from_material",
+   "sql": "SELECT name FROM hazard_factor WHERE name=? LIMIT 5",
+   "kind": "branch",
+   "why": "rows 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "web/hazard_grid.py",
+   "line": 114,
+   "tables": [
+    "health_effect"
+   ],
+   "fn": "health_effect",
+   "sql": "SELECT effect FROM health_effect WHERE factor LIKE ? LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 return (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/hazard_grid.py",
+   "line": 83,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "factors_from_material",
+   "sql": "SELECT name FROM hazard_factor WHERE name LIKE ? LIMIT 5",
+   "kind": "branch",
+   "why": "rows 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "web/llm_draft.py",
+   "line": 293,
+   "tables": [
+    "protection_rule"
+   ],
+   "fn": "_design_base",
+   "sql": "SELECT check_point, std_code, clause FROM protection_rule",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/llm_draft.py",
+   "line": 295,
+   "tables": [
+    "management_rule"
+   ],
+   "fn": "_design_base",
+   "sql": "SELECT require, std_code, clause FROM management_rule",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/llm_draft.py",
+   "line": 142,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "_build_info",
+   "sql": "SELECT oel_type, value, unit FROM oel_limit WHERE factor_name LIKE ? LIMIT 1",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/paragraph_gen.py",
+   "line": 79,
+   "tables": [
+    "standard_ref"
+   ],
+   "fn": "gen_paragraphs",
+   "sql": "SELECT code FROM standard_ref ORDER BY id",
+   "kind": "printed",
+   "why": "refs 走向 return/text (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/report_parser.py",
+   "line": 161,
+   "tables": [
+    "industry_class"
+   ],
+   "fn": "parse_report_file",
+   "sql": "SELECT name FROM industry_class WHERE code=? LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 text (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 505,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "form_of",
+   "sql": "SELECT factor_name, aliases, form FROM hazard_toxicity WHERE form IS NOT NULL",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 543,
+   "tables": [
+    "standard_ref"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT code, name FROM standard_ref ORDER BY id",
+   "kind": "printed",
+   "why": "refs 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 893,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT value, note FROM oel_limit WHERE factor_name LIKE '%噪声%' LIMIT 3",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 982,
+   "tables": [
+    "surveillance_rule"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT factor, check_type, cycle FROM surveillance_rule",
+   "kind": "printed",
+   "why": "surv 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1374,
+   "tables": [
+    "protection_rule"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT hazard_category, check_point, std_code, clause FROM protection_rule",
+   "kind": "printed",
+   "why": "rows 走向 forit/return/sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1397,
+   "tables": [
+    "emergency_rule"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT scenario, require, std_code, clause FROM emergency_rule",
+   "kind": "printed",
+   "why": "rows 走向 forit/return/sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1472,
+   "tables": [
+    "management_rule"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT category, require, std_code, clause FROM management_rule",
+   "kind": "printed",
+   "why": "rows 走向 forit/return/sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1486,
+   "tables": [
+    "surveillance_rule"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT factor, check_type, cycle FROM surveillance_rule",
+   "kind": "printed",
+   "why": "surv 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 466,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "lookup_toxicity",
+   "sql": "SELECT factor_name, aliases, level, source FROM hazard_toxicity",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 859,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT clause, rule, report_section FROM gbz1_rule WHERE theme LIKE ?",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 902,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT clause, rule FROM gbz1_rule WHERE theme=?",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 909,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT clause, rule FROM gbz1_rule WHERE theme=?",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1198,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT oel_type, value, source_standard FROM oel_limit WHERE factor_name LIKE ?",
+   "kind": "printed",
+   "why": "recs 走向 forit (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1368,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT clause, rule FROM gbz1_rule WHERE theme LIKE ?",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 407,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "_cas_from_oel",
+   "sql": "SELECT cas FROM oel_limit WHERE factor_name=? AND cas IS NOT NULL AND trim(cas) != '' LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 462,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "lookup_toxicity",
+   "sql": "SELECT level, source FROM hazard_toxicity WHERE factor_name=?",
+   "kind": "branch",
+   "why": "r 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 520,
+   "tables": [
+    "hazchem_item"
+   ],
+   "fn": "form_of",
+   "sql": "SELECT alias FROM hazchem_item WHERE name=?",
+   "kind": "branch",
+   "why": "r 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 866,
+   "tables": [
+    "illumination_std"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT room, plane, lx FROM illumination_std",
+   "kind": "printed",
+   "why": "ill 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 268,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "_physical_det_table",
+   "sql": "SELECT oel_type, value, unit FROM oel_limit WHERE factor_name LIKE ?",
+   "kind": "branch",
+   "why": "_recs 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 943,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT category FROM hazard_factor WHERE name LIKE ? LIMIT 1",
+   "kind": "branch",
+   "why": "cat 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1140,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "fill_section",
+   "sql": "SELECT category FROM hazard_factor WHERE name LIKE ? LIMIT 1",
+   "kind": "branch",
+   "why": "cat 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "web/standard_version.py",
+   "line": 114,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "supersession_index",
+   "sql": "SELECT code, state, replace_of FROM standard_db WHERE replace_of IS NOT NULL AND trim(replace_of) != ''",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/standard_version.py",
+   "line": 212,
+   "tables": [
+    "standard_ref"
+   ],
+   "fn": "resolve_all_refs",
+   "sql": "SELECT code, name FROM standard_ref ORDER BY id",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/standard_version.py",
+   "line": 239,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "make_ref_fixer",
+   "sql": "SELECT code, state FROM standard_db",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/standard_version.py",
+   "line": 160,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "resolve_current",
+   "sql": "SELECT code, name, state, replace_of FROM standard_db",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/standard_version.py",
+   "line": 109,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "supersession_index",
+   "sql": "select count(*) from standard_db",
+   "kind": "branch",
+   "why": "COUNT/EXISTS 聚合",
+   "gate_visible": true
+  },
+  {
+   "file": "web/standard_version.py",
+   "line": 250,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "make_ref_fixer",
+   "sql": "SELECT state FROM standard_db WHERE code=?",
+   "kind": "branch",
+   "why": "row 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "web/std_guard.py",
+   "line": 37,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "superseded_map",
+   "sql": "SELECT code, replace_of FROM standard_db WHERE replace_of IS NOT NULL AND replace_of!=''",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/std_guard.py",
+   "line": 43,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "superseded_map",
+   "sql": "SELECT code FROM standard_db WHERE state='废止'",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/structure_data.py",
+   "line": 622,
+   "tables": [
+    "management_rule"
+   ],
+   "fn": "_std_clauses",
+   "sql": "SELECT require, std_code, clause FROM management_rule WHERE category='受限空间' OR",
+   "kind": "printed",
+   "why": "落到容器变量 rows",
+   "gate_visible": true
+  },
+  {
+   "file": "web/structure_data.py",
+   "line": 373,
+   "tables": [
+    "management_rule"
+   ],
+   "fn": "get_chapter_info",
+   "sql": "SELECT require, std_code, clause FROM management_rule WHERE",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/table_skeleton.py",
+   "line": 87,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "fn": "_build_check_table",
+   "sql": "SELECT clause, rule FROM gbz1_rule WHERE theme=? ORDER BY clause",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/table_skeleton.py",
+   "line": 126,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "_build_phys_limit_table",
+   "sql": "SELECT factor_name, oel_type, value, unit, conditions, source_standard FROM oel_limit WHERE factor_name=? ORDER BY oel_type",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/table_skeleton.py",
+   "line": 370,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "_fill_assess_tables",
+   "sql": "SELECT code FROM standard_db WHERE state IN ('废止','已废止')",
+   "kind": "branch",
+   "why": "人工定性: _dead_keys 只参与 `bool(... & _dead_keys)` → if _dead 判断 (骨架刷新条件), 值不上纸。附带记录: :369 是**生产函数内自开 sqlite3.connect**, 且整段被 except Exception: _dead=False 包住 —— 与 report_bench 同一味静默降级, S1a/S1b 要收掉",
+   "gate_visible": false
+  },
+  {
+   "file": "web/thi_rating.py",
+   "line": 239,
+   "tables": [
+    "ghs_class"
+   ],
+   "fn": "_find_ghs",
+   "sql": "SELECT name, alias, cas, hazard_raw, is_highly_toxic, is_carcinogen FROM ghs_class WHERE name LIKE ? LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/thi_rating.py",
+   "line": 224,
+   "tables": [
+    "ghs_class"
+   ],
+   "fn": "_find_ghs",
+   "sql": "SELECT name, alias, cas, hazard_raw, is_highly_toxic, is_carcinogen FROM ghs_class WHERE cas=? LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/thi_rating.py",
+   "line": 232,
+   "tables": [
+    "ghs_class"
+   ],
+   "fn": "_find_ghs",
+   "sql": "SELECT name, alias, cas, hazard_raw, is_highly_toxic, is_carcinogen FROM ghs_class WHERE name=? LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/unit_gen.py",
+   "line": 40,
+   "tables": [
+    "health_effect"
+   ],
+   "fn": "extract_units",
+   "sql": "SELECT factor FROM health_effect WHERE factor LIKE ?",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/unit_gen.py",
+   "line": 110,
+   "tables": [
+    "health_effect"
+   ],
+   "fn": "llm_material_text",
+   "sql": "SELECT factor, english, cas, effect, note, source FROM health_effect WHERE factor=? LIMIT 1",
+   "kind": "prompt",
+   "why": "落到 eff (草稿/prompt 侧)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/unit_gen.py",
+   "line": 112,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "llm_material_text",
+   "sql": "SELECT oel_type, value, unit FROM oel_limit WHERE factor_name=? LIMIT 4",
+   "kind": "prompt",
+   "why": "落到 lims (草稿/prompt 侧)",
+   "gate_visible": true
+  },
+  {
+   "file": "web/unit_gen.py",
+   "line": 35,
+   "tables": [
+    "health_effect"
+   ],
+   "fn": "extract_units",
+   "sql": "SELECT effect, note, source FROM health_effect WHERE factor=? LIMIT 1",
+   "kind": "printed",
+   "why": "eff 走向 sink/text (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/unit_gen.py",
+   "line": 42,
+   "tables": [
+    "health_effect"
+   ],
+   "fn": "extract_units",
+   "sql": "SELECT effect, note, source FROM health_effect WHERE factor=? LIMIT 1",
+   "kind": "printed",
+   "why": "eff 走向 sink/text (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/validators.py",
+   "line": 149,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "_load_factor_vocab",
+   "sql": "select distinct name from hazard_factor where category in ('物理因素','放射性因素')",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/validators.py",
+   "line": 308,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "_check_standards",
+   "sql": "SELECT code, name, state FROM standard_db",
+   "kind": "branch",
+   "why": "人工定性: 建 standard_db 索引供 V-05 校验用; 校验器是咨询性输出(面板 issue), 不写进 docx → 指纹看不见。该站点的行为由 test_std_ref_parity 守, 不靠 --check",
+   "gate_visible": false
+  },
+  {
+   "file": "web/validators.py",
+   "line": 264,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "_suggest_standard",
+   "sql": "SELECT code, name, state FROM standard_db WHERE code LIKE ? LIMIT 6",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "web/word_export.py",
+   "line": 305,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "_refresh_stale_std_tables",
+   "sql": "SELECT code, state FROM standard_db",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/bei_parser.py",
+   "line": 184,
+   "tables": [
+    "bio_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor_name, indicator, limit_value, sample_time FROM bio_limit WHERE factor_name=?",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/check_result_templates.py",
+   "line": 228,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "fn": "",
+   "sql": "SELECT clause FROM gbz1_rule ORDER BY clause",
+   "kind": "cli",
+   "why": "人工定性: 位于 if __name__ == \"__main__\" 块内 (读 clauses 只为打印命中率), 非生产路径 → 不参与迁移统计",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/compare_report.py",
+   "line": 65,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "compare_oel",
+   "sql": "SELECT oel_type, value FROM oel_limit WHERE factor_name=? ORDER BY oel_type LIMIT 2",
+   "kind": "branch",
+   "why": "row 只用于判断",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/emergency_rule_loader.py",
+   "line": 59,
+   "tables": [
+    "emergency_rule"
+   ],
+   "fn": "main",
+   "sql": "SELECT scenario, item, require, std_code, clause FROM emergency_rule LIMIT 8",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/equipment_kb_loader.py",
+   "line": 140,
+   "tables": [
+    "work_unit_rule"
+   ],
+   "fn": "main",
+   "sql": "SELECT unit, process, factors FROM work_unit_rule LIMIT 4",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/fix_mapping.py",
+   "line": 53,
+   "tables": [
+    "material_dictionary"
+   ],
+   "fn": "main",
+   "sql": "SELECT material, oel_factor, verified FROM material_dictionary WHERE material IN ('碳酸钠','丙烯酸丁酯','甲苯二异氰酸酯','丁酮','6-己二醇','1,6-己二醇')",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/gbz188_loader.py",
+   "line": 113,
+   "tables": [
+    "surveillance_rule"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor, check_type, cycle, must_items FROM surveillance_rule WHERE factor LIKE ? LIMIT 2",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/gbz1_loader.py",
+   "line": 81,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "fn": "main",
+   "sql": "SELECT theme, COUNT(*) FROM gbz1_rule GROUP BY theme",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/gbz22_loader.py",
+   "line": 43,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT COUNT(DISTINCT factor_name), COUNT(*) FROM oel_limit WHERE source_standard=?",
+   "kind": "branch",
+   "why": "COUNT/EXISTS 聚合",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/gbz22_loader.py",
+   "line": 49,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor_name, oel_type, value, unit, COALESCE(conditions,'') FROM oel_limit WHERE source_standard=? AND factor_name=? ORDER BY oel_type LIMIT 2",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/hazard_factor_alias.py",
+   "line": 47,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT DISTINCT factor_name FROM oel_limit WHERE factor_type='化学有害因素'",
+   "kind": "printed",
+   "why": "oel 走向 forit (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/hazard_factor_alias.py",
+   "line": 49,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "main",
+   "sql": "SELECT name FROM hazard_factor WHERE category='化学因素'",
+   "kind": "printed",
+   "why": "cats 走向 forit (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/hazard_factor_loader.py",
+   "line": 67,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "main",
+   "sql": "SELECT category, COUNT(*) FROM hazard_factor GROUP BY category",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/hazard_factor_loader.py",
+   "line": 71,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "main",
+   "sql": "SELECT category, seq, name, cas FROM hazard_factor WHERE name IN ('矽尘（游离SiO2含量≥10%）','苯','噪声','布鲁氏菌')",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/hazchem_loader.py",
+   "line": 85,
+   "tables": [
+    "hazchem_item"
+   ],
+   "fn": "main",
+   "sql": "SELECT seq, name, cas, note FROM hazchem_item WHERE name=? LIMIT 1",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/health_effect_loader.py",
+   "line": 84,
+   "tables": [
+    "health_effect"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor, effect, route FROM health_effect WHERE factor=? LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 text (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/identify_demo.py",
+   "line": 57,
+   "tables": [
+    "work_unit_rule"
+   ],
+   "fn": "main",
+   "sql": "SELECT unit, process, factors FROM work_unit_rule WHERE process LIKE '%焚烧%'",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/identify_demo.py",
+   "line": 40,
+   "tables": [
+    "material_dictionary"
+   ],
+   "fn": "identify",
+   "sql": "SELECT oel_factor, cas, fuzzy FROM material_dictionary WHERE material=?",
+   "kind": "printed",
+   "why": "hit 走向 sink (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/illumination_loader.py",
+   "line": 92,
+   "tables": [
+    "illumination_std"
+   ],
+   "fn": "main",
+   "sql": "SELECT room, place, lx FROM illumination_std LIMIT 8",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/industry_loader.py",
+   "line": 116,
+   "tables": [
+    "industry_class"
+   ],
+   "fn": "main",
+   "sql": "SELECT level, COUNT(*) FROM industry_class GROUP BY level",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/industry_loader.py",
+   "line": 120,
+   "tables": [
+    "industry_class"
+   ],
+   "fn": "main",
+   "sql": "SELECT code, name FROM industry_class WHERE code=? LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 text (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/judge_cli.py",
+   "line": 30,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "get_oel",
+   "sql": "SELECT oel_type, value, unit, conditions, source_standard FROM oel_limit WHERE factor_name=? AND oel_type=?",
+   "kind": "printed",
+   "why": "rows 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/judge_cli.py",
+   "line": 34,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "get_oel",
+   "sql": "SELECT oel_type, value, unit, conditions, source_standard FROM oel_limit WHERE factor_name=?",
+   "kind": "printed",
+   "why": "rows 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/judge_cli.py",
+   "line": 209,
+   "tables": [
+    "bio_limit"
+   ],
+   "fn": "judge_bio",
+   "sql": "SELECT indicator, limit_value, sample_time FROM bio_limit WHERE factor_name=? AND indicator=?",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/judge_cli.py",
+   "line": 213,
+   "tables": [
+    "bio_limit"
+   ],
+   "fn": "judge_bio",
+   "sql": "SELECT indicator, limit_value, sample_time FROM bio_limit WHERE factor_name=?",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/management_rule_loader.py",
+   "line": 76,
+   "tables": [
+    "management_rule"
+   ],
+   "fn": "main",
+   "sql": "SELECT category, COUNT(*) FROM management_rule GROUP BY category",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/material_dict_loader.py",
+   "line": 96,
+   "tables": [
+    "material_dictionary"
+   ],
+   "fn": "main",
+   "sql": "SELECT material, oel_factor, cas, fuzzy FROM material_dictionary WHERE fuzzy=0 LIMIT 12",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/material_dict_loader.py",
+   "line": 59,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT DISTINCT factor_name, cas FROM oel_limit WHERE factor_type IN ('化学有害因素','粉尘','生物因素') AND factor_name IS NOT NULL",
+   "kind": "printed",
+   "why": "oels 走向 sink (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/method_catalog_loader.py",
+   "line": 90,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor_name, oel_type, value, unit FROM oel_limit WHERE factor_name LIKE '%糠醛%'",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/method_catalog_loader.py",
+   "line": 85,
+   "tables": [
+    "method_catalog"
+   ],
+   "fn": "main",
+   "sql": "SELECT standard_code, factor FROM method_catalog WHERE part_num=?",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/occupational_disease_loader.py",
+   "line": 77,
+   "tables": [
+    "occupational_disease"
+   ],
+   "fn": "main",
+   "sql": "SELECT category, COUNT(*) FROM occupational_disease GROUP BY category",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/occupational_disease_loader.py",
+   "line": 84,
+   "tables": [
+    "occupational_disease"
+   ],
+   "fn": "main",
+   "sql": "SELECT category, name, note FROM occupational_disease WHERE name IN ('矽肺','噪声聋','金属烟热','职业性腕管综合征')",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/oel.py",
+   "line": 58,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "summary",
+   "sql": "SELECT source_standard, factor_type, COUNT(*) FROM oel_limit GROUP BY source_standard, factor_type",
+   "kind": "printed",
+   "why": "cur 走向 return (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/oel_parser.py",
+   "line": 252,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor_type, COUNT(DISTINCT factor_name), COUNT(*) FROM oel_limit WHERE source_standard='GBZ 2.1—2019' GROUP BY factor_type",
+   "kind": "printed",
+   "why": "cur 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/oel_parser.py",
+   "line": 259,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor_name, oel_type, value, unit, COALESCE(conditions,''), note FROM oel_limit WHERE factor_name LIKE ? ORDER BY oel_type",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/ppe_loader.py",
+   "line": 133,
+   "tables": [
+    "ppe_item"
+   ],
+   "fn": "main",
+   "sql": "SELECT cat_code, category, COUNT(*) FROM ppe_item GROUP BY cat_code",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/ppe_matrix_loader.py",
+   "line": 121,
+   "tables": [
+    "ppe_work_matrix"
+   ],
+   "fn": "matrix_from_db",
+   "sql": "SELECT work_type, item, mark FROM ppe_work_matrix ORDER BY id",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/process_material_extractor.py",
+   "line": 27,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "extract_from_text",
+   "sql": "SELECT DISTINCT factor_name FROM oel_limit ORDER BY LENGTH(factor_name) DESC",
+   "kind": "printed",
+   "why": "oel_names 走向 forit (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/process_material_extractor.py",
+   "line": 34,
+   "tables": [
+    "hazchem_item"
+   ],
+   "fn": "extract_from_text",
+   "sql": "SELECT DISTINCT name FROM hazchem_item ORDER BY LENGTH(name) DESC LIMIT 200",
+   "kind": "printed",
+   "why": "hz_names 走向 forit (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/process_material_extractor.py",
+   "line": 55,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "extract_from_report",
+   "sql": "SELECT oel_type, value, unit FROM oel_limit WHERE factor_name=? LIMIT 3",
+   "kind": "printed",
+   "why": "oel 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/process_material_extractor.py",
+   "line": 57,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "extract_from_report",
+   "sql": "SELECT cas FROM oel_limit WHERE factor_name=? AND cas IS NOT NULL LIMIT 1",
+   "kind": "printed",
+   "why": "cas 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/process_material_extractor.py",
+   "line": 59,
+   "tables": [
+    "hazchem_item"
+   ],
+   "fn": "extract_from_report",
+   "sql": "SELECT name, is_toxic FROM hazchem_item WHERE name=? LIMIT 1",
+   "kind": "printed",
+   "why": "hz 走向 sink (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 294,
+   "tables": [
+    "occupational_disease"
+   ],
+   "fn": "identify_hazards",
+   "sql": "SELECT category, name FROM occupational_disease WHERE name LIKE ? OR name LIKE ? LIMIT 3",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 131,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "_auto_factor",
+   "sql": "SELECT factor_name FROM oel_limit WHERE factor_name=? LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 135,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "_auto_factor",
+   "sql": "SELECT factor_name FROM oel_limit WHERE factor_name LIKE ? LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 139,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "_auto_factor",
+   "sql": "SELECT name FROM hazard_factor WHERE name=? LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 143,
+   "tables": [
+    "material_dictionary"
+   ],
+   "fn": "_auto_factor",
+   "sql": "SELECT oel_factor FROM material_dictionary WHERE material=? LIMIT 1",
+   "kind": "printed",
+   "why": "r 走向 return (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 329,
+   "tables": [
+    "industry_class"
+   ],
+   "fn": "industry_chain",
+   "sql": "SELECT code, name FROM industry_class WHERE code=? AND level='中类' LIMIT 1",
+   "kind": "printed",
+   "why": "mid 走向 return/text (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 354,
+   "tables": [
+    "industry_class"
+   ],
+   "fn": "industry_chain",
+   "sql": "SELECT code, name FROM industry_class WHERE code=? AND level='大类' LIMIT 1",
+   "kind": "printed",
+   "why": "big 走向 return/text (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 259,
+   "tables": [
+    "method_catalog"
+   ],
+   "fn": "identify_hazards",
+   "sql": "SELECT standard_code FROM method_catalog WHERE factor LIKE ? LIMIT 1",
+   "kind": "printed",
+   "why": "method 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 266,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "identify_hazards",
+   "sql": "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1",
+   "kind": "printed",
+   "why": "cat_row 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 277,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "identify_hazards",
+   "sql": "SELECT cas FROM oel_limit WHERE factor_name=? AND cas IS NOT NULL LIMIT 1",
+   "kind": "branch",
+   "why": "cas 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 289,
+   "tables": [
+    "surveillance_rule"
+   ],
+   "fn": "identify_hazards",
+   "sql": "SELECT check_type, cycle, must_items, target_disease FROM surveillance_rule WHERE factor LIKE ? AND check_type='在岗期间' LIMIT 1",
+   "kind": "printed",
+   "why": "surv 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 358,
+   "tables": [
+    "industry_class"
+   ],
+   "fn": "industry_chain",
+   "sql": "SELECT code, name FROM industry_class WHERE code=? AND level='大类' LIMIT 1",
+   "kind": "printed",
+   "why": "big 走向 return/text (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 368,
+   "tables": [
+    "industry_class"
+   ],
+   "fn": "industry_chain",
+   "sql": "SELECT code, name FROM industry_class WHERE code=? AND level='门类' LIMIT 1",
+   "kind": "printed",
+   "why": "gate 走向 return/text (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 195,
+   "tables": [
+    "work_unit_rule"
+   ],
+   "fn": "identify_hazards",
+   "sql": "SELECT unit, process, factors FROM work_unit_rule WHERE (unit LIKE ? OR ?='') AND (process LIKE ? OR ?='')",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 263,
+   "tables": [
+    "bio_limit"
+   ],
+   "fn": "identify_hazards",
+   "sql": "SELECT COUNT(*) FROM bio_limit WHERE factor_name=?",
+   "kind": "branch",
+   "why": "COUNT/EXISTS 聚合",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 269,
+   "tables": [
+    "hazard_factor_alias"
+   ],
+   "fn": "identify_hazards",
+   "sql": "SELECT catalog_name FROM hazard_factor_alias WHERE oel_name=? AND match_type IN ('exact','core_eq') LIMIT 1",
+   "kind": "branch",
+   "why": "alias 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 282,
+   "tables": [
+    "hazchem_item"
+   ],
+   "fn": "identify_hazards",
+   "sql": "SELECT name, note, is_toxic FROM hazchem_item WHERE cas=? LIMIT 1",
+   "kind": "branch",
+   "why": "h 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 335,
+   "tables": [
+    "industry_class"
+   ],
+   "fn": "industry_chain",
+   "sql": "SELECT code, name FROM industry_class WHERE code=? AND level='小类' LIMIT 1",
+   "kind": "branch",
+   "why": "sm 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 347,
+   "tables": [
+    "industry_class"
+   ],
+   "fn": "industry_chain",
+   "sql": "SELECT code, name FROM industry_class WHERE code=? AND level='中类' LIMIT 1",
+   "kind": "printed",
+   "why": "mid 走向 return/text (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 474,
+   "tables": [
+    "risk_category"
+   ],
+   "fn": "assess_project",
+   "sql": "SELECT industry_code, industry_name, risk_level FROM risk_category WHERE industry_code=?",
+   "kind": "printed",
+   "why": "r 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 483,
+   "tables": [
+    "risk_category"
+   ],
+   "fn": "assess_project",
+   "sql": "SELECT industry_code, industry_name, risk_level FROM risk_category WHERE industry_name LIKE ? OR industry_name LIKE ? OR industry_name LIKE ?",
+   "kind": "printed",
+   "why": "kw_rows 走向 forit (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 273,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "identify_hazards",
+   "sql": "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1",
+   "kind": "printed",
+   "why": "cat_row 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 340,
+   "tables": [
+    "industry_class"
+   ],
+   "fn": "industry_chain",
+   "sql": "SELECT code, name FROM industry_class WHERE code=? AND level='大类' LIMIT 1",
+   "kind": "printed",
+   "why": "big 走向 return/text (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 437,
+   "tables": [
+    "ppe_item"
+   ],
+   "fn": "ppe_for_hazards",
+   "sql": "SELECT item_name, std_code FROM ppe_item WHERE cat_code=? AND item_name=? LIMIT 1",
+   "kind": "printed",
+   "why": "item 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 499,
+   "tables": [
+    "risk_category"
+   ],
+   "fn": "assess_project",
+   "sql": "SELECT industry_code, industry_name, risk_level FROM risk_category WHERE industry_name LIKE '%生物质能发电%' AND risk_level='严重'",
+   "kind": "branch",
+   "why": "r2 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 441,
+   "tables": [
+    "ppe_item"
+   ],
+   "fn": "ppe_for_hazards",
+   "sql": "SELECT item_name, std_code FROM ppe_item WHERE cat_code=? LIMIT 1",
+   "kind": "printed",
+   "why": "item 走向 sink (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/protection_rule_loader.py",
+   "line": 114,
+   "tables": [
+    "protection_rule"
+   ],
+   "fn": "main",
+   "sql": "SELECT hazard_category, measure, std_code, clause FROM protection_rule LIMIT 10",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/protection_rule_loader.py",
+   "line": 75,
+   "tables": [
+    "protection_rule"
+   ],
+   "fn": "fix_checkpoints",
+   "sql": "SELECT id, measure FROM protection_rule WHERE check_point=clause AND source LIKE '系统标准库提升%'",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/risk_category_loader.py",
+   "line": 108,
+   "tables": [
+    "risk_category"
+   ],
+   "fn": "main",
+   "sql": "SELECT industry_code, industry_name, risk_level FROM risk_category WHERE industry_code=? ORDER BY industry_code LIMIT 2",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "knowledge/seed_aux_unit.py",
+   "line": 32,
+   "tables": [
+    "aux_unit_hazard"
+   ],
+   "fn": "",
+   "sql": "SELECT COUNT(*) FROM aux_unit_hazard",
+   "kind": "branch",
+   "why": "COUNT/EXISTS 聚合",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/standard_db_loader.py",
+   "line": 69,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "resolve_current",
+   "sql": "SELECT code, name, state, effdate FROM standard_db WHERE code LIKE ? OR code LIKE ? ORDER BY code DESC",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/standard_db_loader.py",
+   "line": 75,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "resolve_current",
+   "sql": "SELECT code, name, state, effdate FROM standard_db WHERE code LIKE ? ORDER BY code DESC",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "knowledge/verify_standard_db.py",
+   "line": 59,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "verify",
+   "sql": "SELECT code, name, state, effdate FROM standard_db WHERE state IN ('废止','待实施') ORDER BY state, code",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/audit_content_truth.py",
+   "line": 43,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor_name, oel_type, value, unit, source_standard FROM oel_limit WHERE factor_name=? OR factor_name LIKE ?",
+   "kind": "printed",
+   "why": "db 走向 text (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/audit_content_truth.py",
+   "line": 89,
+   "tables": [
+    "risk_category"
+   ],
+   "fn": "main",
+   "sql": "SELECT * FROM risk_category WHERE industry_code LIKE ?",
+   "kind": "printed",
+   "why": "r 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/audit_content_truth2.py",
+   "line": 88,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT oel_type, value, source_standard FROM oel_limit WHERE factor_name=? AND oel_type LIKE '%PC-TWA%'",
+   "kind": "printed",
+   "why": "db 走向 forit (进正文/装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "tools/audit_numeric_sources.py",
+   "line": 35,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "",
+   "sql": "SELECT value FROM oel_limit",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/backfill_hazard_toxicity.py",
+   "line": 92,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor_name, level, grade, source FROM hazard_toxicity WHERE source LIKE 'gbz_t_230%' ORDER BY id",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/backfill_hazard_toxicity.py",
+   "line": 56,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor_name FROM hazard_toxicity",
+   "kind": "printed",
+   "why": "have_rows 走向 text (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/backfill_hazard_toxicity.py",
+   "line": 63,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT level, grade, source FROM hazard_toxicity WHERE factor_name=?",
+   "kind": "printed",
+   "why": "r 走向 text (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/check_fixed_std_text.py",
+   "line": 51,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT code, name, state FROM standard_db",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fill_toxicity_from_ghs.py",
+   "line": 48,
+   "tables": [
+    "ghs_class"
+   ],
+   "fn": "main",
+   "sql": "SELECT name, cas, is_highly_toxic, is_carcinogen FROM ghs_class WHERE cas != ''",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fill_toxicity_from_ghs.py",
+   "line": 68,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor_name FROM oel_limit",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "tools/fill_toxicity_from_ghs.py",
+   "line": 71,
+   "tables": [
+    "health_effect"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor FROM health_effect",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fill_toxicity_from_ghs.py",
+   "line": 74,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "main",
+   "sql": "SELECT name FROM hazard_factor",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "tools/fill_toxicity_from_ghs.py",
+   "line": 77,
+   "tables": [
+    "hazchem_item"
+   ],
+   "fn": "main",
+   "sql": "SELECT name FROM hazchem_item",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fill_toxicity_from_ghs.py",
+   "line": 63,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT factor_name FROM hazard_toxicity",
+   "kind": "printed",
+   "why": "existing 走向 text (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fill_toxicity_from_ghs.py",
+   "line": 87,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "main",
+   "sql": "SELECT cas FROM oel_limit WHERE factor_name=? LIMIT 1",
+   "kind": "branch",
+   "why": "oel 只用于判断",
+   "gate_visible": true
+  },
+  {
+   "file": "tools/fill_toxicity_from_ghs.py",
+   "line": 119,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT COUNT(*) FROM hazard_toxicity",
+   "kind": "branch",
+   "why": "COUNT/EXISTS 聚合",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fix_hazard_toxicity_basis.py",
+   "line": 42,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT DISTINCT basis FROM hazard_toxicity",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fix_hazard_toxicity_basis.py",
+   "line": 30,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT COUNT(*) FROM hazard_toxicity",
+   "kind": "branch",
+   "why": "COUNT/EXISTS 聚合",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fix_hazard_toxicity_basis.py",
+   "line": 32,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT basis FROM hazard_toxicity LIMIT 1",
+   "kind": "unknown",
+   "why": "LIMIT 1 无 ORDER BY; 未定位到明确去向",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fix_official_std_codes.py",
+   "line": 84,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT code FROM standard_db WHERE state IN ('废止','已废止')",
+   "kind": "branch",
+   "why": "dead 只用于判断",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fix_standard_supersede.py",
+   "line": 65,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT id, code, name, state, replace_of FROM standard_db",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fix_std_23466.py",
+   "line": 47,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT id, code, name, state, replace_of FROM standard_db WHERE code LIKE '%23466%' OR code LIKE '%18664%'",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fix_std_23466.py",
+   "line": 92,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT id, code, name, state, replace_of FROM standard_db WHERE code LIKE '%23466%' OR code LIKE '%18664%'",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fix_std_23466.py",
+   "line": 54,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT id, code FROM standard_db WHERE REPLACE(code,' ','')=?",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/fix_std_23466.py",
+   "line": 68,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT id FROM standard_db WHERE REPLACE(code,' ','')=?",
+   "kind": "printed",
+   "why": "exists 走向 text (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/load_ghs_class.py",
+   "line": 150,
+   "tables": [
+    "ghs_class"
+   ],
+   "fn": "main",
+   "sql": "SELECT COUNT(*) FROM ghs_class",
+   "kind": "branch",
+   "why": "COUNT/EXISTS 聚合",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/load_hazard_toxicity.py",
+   "line": 131,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT level, COUNT(*) FROM hazard_toxicity GROUP BY level ORDER BY grade DESC",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/load_hazard_toxicity.py",
+   "line": 136,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT form, COUNT(*) FROM hazard_toxicity GROUP BY form ORDER BY 2 DESC",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/load_hazard_toxicity.py",
+   "line": 104,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT id, level, form FROM hazard_toxicity WHERE factor_name=?",
+   "kind": "printed",
+   "why": "row 走向 text (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/load_hazard_toxicity.py",
+   "line": 128,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "main",
+   "sql": "SELECT COUNT(*) FROM hazard_toxicity",
+   "kind": "branch",
+   "why": "COUNT/EXISTS 聚合",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/load_samr_into_db.py",
+   "line": 66,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT id,code,name,state FROM standard_db",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/migrate_gbz1_rule_ocr_fix.py",
+   "line": 106,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "fn": "scan",
+   "sql": "SELECT rule, verified FROM gbz1_rule WHERE id=?",
+   "kind": "branch",
+   "why": "row 只用于判断",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/normalize_standard_db.py",
+   "line": 52,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT id, code, name, state, replace_of FROM standard_db",
+   "kind": "printed",
+   "why": "rows 走向 forit (进正文/装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/patch_missing_current_std.py",
+   "line": 93,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT code,name,state FROM standard_db WHERE REPLACE(code,' ','') LIKE 'GBZ2.2%' ORDER BY code",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/patch_missing_current_std.py",
+   "line": 64,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT id FROM standard_db WHERE code=?",
+   "kind": "branch",
+   "why": "row 只用于判断",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/patch_missing_current_std.py",
+   "line": 80,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT id,state FROM standard_db WHERE code=?",
+   "kind": "branch",
+   "why": "r 只用于判断",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/patch_missing_current_std.py",
+   "line": 86,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "main",
+   "sql": "SELECT id,replace_of FROM standard_db WHERE code=?",
+   "kind": "branch",
+   "why": "r 只用于判断",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/probe2_h11h14.py",
+   "line": 102,
+   "tables": [
+    "illumination_std"
+   ],
+   "fn": "",
+   "sql": "SELECT * FROM illumination_std LIMIT 8",
+   "kind": "unknown",
+   "why": "无信号",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/probe2_h11h14.py",
+   "line": 91,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "",
+   "sql": "SELECT * FROM hazard_factor WHERE name LIKE ? LIMIT 4",
+   "kind": "unknown",
+   "why": "无信号",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/probe2_h11h14.py",
+   "line": 98,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "",
+   "sql": "SELECT * FROM oel_limit WHERE factor_name LIKE ? LIMIT 5",
+   "kind": "unknown",
+   "why": "无信号",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/report_bench.py",
+   "line": 173,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "check_oel_citations",
+   "sql": "SELECT DISTINCT value FROM oel_limit WHERE oel_type LIKE '%TWA%'",
+   "kind": "printed",
+   "why": "落到容器变量 rows",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/report_bench.py",
+   "line": 115,
+   "tables": [
+    "oel_limit"
+   ],
+   "fn": "check_traceability",
+   "sql": "SELECT DISTINCT factor_name FROM oel_limit WHERE factor_name IS NOT NULL",
+   "kind": "unknown",
+   "why": "无信号",
+   "gate_visible": true
+  },
+  {
+   "file": "tools/report_bench.py",
+   "line": 117,
+   "tables": [
+    "hazard_factor"
+   ],
+   "fn": "check_traceability",
+   "sql": "SELECT DISTINCT name FROM hazard_factor WHERE name IS NOT NULL",
+   "kind": "unknown",
+   "why": "无信号",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/test_std_currentize.py",
+   "line": 66,
+   "tables": [
+    "emergency_rule"
+   ],
+   "fn": "",
+   "sql": "SELECT scenario, item, require, std_code, clause FROM emergency_rule",
+   "kind": "printed",
+   "why": "落到容器变量 rows",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/test_std_currentize.py",
+   "line": 142,
+   "tables": [
+    "ppe_item"
+   ],
+   "fn": "",
+   "sql": "SELECT DISTINCT std_code FROM ppe_item WHERE std_code IS NOT NULL",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/test_std_currentize.py",
+   "line": 73,
+   "tables": [
+    "emergency_rule"
+   ],
+   "fn": "",
+   "sql": "SELECT NULL, 3.14 FROM emergency_rule",
+   "kind": "unknown",
+   "why": "无信号",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/test_std_currentize.py",
+   "line": 78,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "",
+   "sql": "SELECT code FROM standard_db WHERE state IN ('废止','已废止')",
+   "kind": "unknown",
+   "why": "无信号",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/test_std_ref_parity.py",
+   "line": 73,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "",
+   "sql": "SELECT code, state FROM standard_db",
+   "kind": "printed",
+   "why": "落到容器变量 rows",
+   "gate_visible": true
+  },
+  {
+   "file": "tools/test_std_supersede.py",
+   "line": 72,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "",
+   "sql": "SELECT code, state, replace_of FROM standard_db",
+   "kind": "printed",
+   "why": "被 for 逐行消费 (进装配层)",
+   "gate_visible": true
+  },
+  {
+   "file": "tools/test_std_supersede.py",
+   "line": 70,
+   "tables": [
+    "standard_db"
+   ],
+   "fn": "",
+   "sql": "SELECT code, state, replace_of FROM standard_db",
+   "kind": "printed",
+   "why": "落到容器变量 rows",
+   "gate_visible": true
+  },
+  {
+   "file": "tools/test_toxicity_cell.py",
+   "line": 109,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "fn": "",
+   "sql": "select factor_name, level, source from hazard_toxicity",
+   "kind": "printed",
+   "why": "落到容器变量 rows",
+   "gate_visible": false
+  },
+  {
+   "file": "tools/test_toxicity_cell.py",
+   "line": 132,
+   "tables": [
+    "ghs_class"
+   ],
+   "fn": "",
+   "sql": "select distinct name from ghs_class order by name limit 40",
+   "kind": "unknown",
+   "why": "无信号",
+   "gate_visible": false
+  }
+ ]
+}

@@ -18,7 +18,7 @@ from docx import Document  # noqa: E402
 from tools.export_e2e import build_project  # noqa: E402
 from knowledge.oel import connect  # noqa: E402
 from knowledge.project_assess import assess_project  # noqa: E402
-from web.app import _get_project_data  # noqa: E402
+from web.projects_db import get_project_data as _get_project_data  # noqa: E402
 from web.validators import validate_section  # noqa: E402
 from web.word_export import export_docx  # noqa: E402
 
