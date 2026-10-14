@@ -222,9 +222,9 @@ def coverage() -> dict:
 if __name__ == "__main__":
     import sqlite3
     import sys
-    from pathlib import Path
     sys.stdout.reconfigure(encoding="utf-8")
-    conn = sqlite3.connect(str(Path(__file__).resolve().parent.parent / "data" / "ohs.db"))
+    from knowledge.paths import DB_PATH    # 路径唯一产地, __main__ 也不例外
+    conn = sqlite3.connect(str(DB_PATH))
     clauses = [r[0] for r in conn.execute("SELECT clause FROM gbz1_rule ORDER BY clause")]
     hit = sum(1 for c in clauses if resolve(c)[0])
     print(f"模板: 精确 {len(_T)} 条 / 前缀兜底 {len(_PREFIX_FALLBACK)} 条")

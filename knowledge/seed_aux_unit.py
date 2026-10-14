@@ -1,7 +1,8 @@
 import sqlite3, sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # 建 aux_unit_hazard 表 (辅助/公辅评价单元 → 典型危害因素, GBZ/T196"辅助设施/公用工程单元" + 跨行业一致)
-DB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'ohs.db')
-conn = sqlite3.connect(DB)
+from knowledge.paths import DB_PATH        # 路径唯一产地 (S1a′): 不在这里自己拼
+conn = sqlite3.connect(str(DB_PATH))
 conn.execute("""CREATE TABLE IF NOT EXISTS aux_unit_hazard(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     unit TEXT NOT NULL,          -- 辅助单元名

@@ -4,9 +4,14 @@
 管三件事, 全部是**静态源码检查** —— 不读 data/ohs.db, 不导报告:
   A. `sqlite3.connect(` 在 web/ 与 knowledge/ 里只许出现在
      ① 工厂 (knowledge/oel.py) ② `if __name__ == "__main__":` 开发块 ③ 显式豁免
-  B. 真实路径字面量 `data/ohs.db` 只许出现在 knowledge/paths.py
+  B. 库路径字面量 (任何含 "ohs.db" 的字符串, 含 `parent/"data"/"ohs.db"` 这种拼法)
+     只许出现在 knowledge/paths.py
      (loader 文件头注释里的 "输出: data/ohs.db → 表名" 不算 —— 那是说明不是代码)
-  C. 官方表的裸 SQL 读点: 本轮先只立"规则位", 等 web/dataset.py 出现后由 S1b′/S1c 填充
+  C. 官方表标准号列的读点收口在 tools/test_std_currentize.py (W4 改造后的 AST 版)
+
+⚠ A/B 两条**必须按 AST 判**, 不能按行文本匹配: 原实现按字面 "sqlite3.connect" 找,
+   `import sqlite3 as _sq` + `_sq.connect(str(db))` 整个绕过 —— web/word_export.py:290-297
+   就是这样自己拼路径、自己开读写连接跑了 8 个月 (S1b′ 收口时才发现并补掉)。
 
 ⚠ 本文件自身的谓词也要被测 (v1 计划踩过): "是否在 __main__ 块内" 用 AST 独立实现,
    并有 T1 组用例证明它判得对 —— 按文件豁免会整批放过生产函数里的裸连
@@ -91,6 +96,46 @@ def docstring_lines(tree: ast.AST) -> set[int]:
     return lines
 
 
+def sqlite_aliases(tree: ast.AST) -> tuple[set, set]:
+    """返回 (sqlite3 模块别名集, 直连 connect 的导入名集) —— 认别名是这版的关键。"""
+    mods, direct = set(), set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            for a in n.names:
+                if a.name == "sqlite3" or a.name.startswith("sqlite3."):
+                    mods.add(a.asname or a.name.split(".")[0])
+        elif isinstance(n, ast.ImportFrom) and (n.module or "") == "sqlite3":
+            for a in n.names:
+                if a.name == "connect":
+                    direct.add(a.asname or a.name)
+    return mods, direct
+
+
+def sqlite_connect_calls(tree: ast.AST) -> list[tuple[int, int]]:
+    """所有 sqlite3 连接的调用行区间 (sqlite3.connect / _sq.connect / 直连 connect)。"""
+    mods, direct = sqlite_aliases(tree)
+    out = []
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.Call):
+            continue
+        f = n.func
+        hit = ((isinstance(f, ast.Attribute) and f.attr == "connect"
+                and isinstance(f.value, ast.Name) and f.value.id in mods)
+               or (isinstance(f, ast.Name) and f.id in direct))
+        if hit:
+            out.append((n.lineno, n.end_lineno or n.lineno))
+    return out
+
+
+def db_path_literals(tree: ast.AST) -> list[tuple[int, str]]:
+    """含 "ohs.db" 的字符串字面量 (拆段拼写的 `parent / "data" / "ohs.db"` 也算)。"""
+    out = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and "ohs.db" in n.value:
+            out.append((n.lineno, n.value))
+    return out
+
+
 def scan(base: Path = ROOT) -> tuple[list[str], list[str], list[str], int]:
     bad_conn, bad_path, stale_reg, n_files = [], [], [], 0
     live_conn_files = set()
@@ -103,19 +148,22 @@ def scan(base: Path = ROOT) -> tuple[list[str], list[str], list[str], int]:
             except (SyntaxError, UnicodeDecodeError):
                 continue
             n_files += 1
+            src = text.splitlines()
             ranges = main_block_ranges(tree)
             docs = docstring_lines(tree)
-            for i, ln in enumerate(text.splitlines(), 1):
-                if "sqlite3.connect" in ln and not in_ranges(i, ranges):
-                    if rel not in FACTORIES and rel not in WRITE_REGISTERED:
-                        bad_conn.append(f"{rel}:{i}  {ln.strip()[:70]}")
-                    else:
-                        live_conn_files.add(rel)
-                if "data/ohs.db" in ln and rel != "knowledge/paths.py" and i not in docs:
-                    stripped = ln.strip()
-                    if stripped.startswith("#") or stripped.startswith('"""'):
-                        continue
-                    bad_path.append(f"{rel}:{i}  {stripped[:70]}")
+            for lo, _hi in sqlite_connect_calls(tree):
+                if in_ranges(lo, ranges):
+                    continue
+                if rel in FACTORIES or rel in WRITE_REGISTERED:
+                    live_conn_files.add(rel)
+                    continue
+                bad_conn.append(f"{rel}:{lo}  {(src[lo - 1] if lo <= len(src) else '').strip()[:70]}")
+            if rel == "knowledge/paths.py":
+                continue
+            for lo, val in db_path_literals(tree):
+                if lo in docs:
+                    continue
+                bad_path.append(f"{rel}:{lo}  {val[:60]}")
     # 豁免会腐烂: 登记了但已经没有裸连的文件必须摘掉, 否则列表只会越来越长
     for rel in WRITE_REGISTERED:
         if rel not in live_conn_files and (base / rel).exists():
@@ -123,23 +171,33 @@ def scan(base: Path = ROOT) -> tuple[list[str], list[str], list[str], int]:
     return bad_conn, bad_path, stale_reg, n_files
 
 
-print("=== T1. 谓词本身: __main__ 块内豁免, 块外不豁免 ===")
+print("=== T1. 谓词本身: 认别名、认直连、认 __main__ 豁免 ===")
 PROBE = '''
 import sqlite3
+import sqlite3 as _sq
+from sqlite3 import connect as cc
 def production():
-    c = sqlite3.connect("data/ohs.db")     # 生产函数里的裸连 → 必须被抓
+    c = sqlite3.connect("data/ohs.db")     # 1) 常规裸连 → 必须被抓
+    d = _sq.connect("x.db")                # 2) 别名写法 (word_export 原样) → 必须被抓
+    e = cc("y.db")                         # 3) 直连导入 → 必须被抓
+    f = "ohs.db" in p.name                 # 4) 路径字面量 → 必须被抓
 if __name__ == "__main__":
-    d = sqlite3.connect("data/ohs.db")     # 开发块 → 豁免
+    g = _sq.connect("data/ohs.db")         # 5) 开发块 → 豁免
 '''
-t = ast.parse(PROBE)
-rs = main_block_ranges(t)
-lines = PROBE.splitlines()
-hit = [i for i, ln in enumerate(lines, 1) if "sqlite3.connect" in ln and not in_ranges(i, rs)]
-check("只抓到块外那一行", hit, [4])
-check("__main__ 区间被正确识别", bool(rs) and rs[0][0] == 5, True)
+tree1 = ast.parse(PROBE)
+rs = main_block_ranges(tree1)
+conns = [lo for lo, _ in sqlite_connect_calls(tree1) if not in_ranges(lo, rs)]
+check("抓到 3 处块外连接 (常规/别名/直连), __main__ 内那处不误报", conns, [6, 7, 8])
+check("__main__ 区间被正确识别", bool(rs) and rs[0][0] == 10, True)
+check("路径字面量拆着写也抓到 (且 __main__ 不豁免: 路径唯一产地不分场合)",
+      [lo for lo, _v in db_path_literals(tree1) if lo not in docstring_lines(tree1)],
+      [6, 9, 11])
 # 反例: 名字像但不是 __main__ 的 if 不该当豁免区
 t2 = ast.parse('if __name__ == "other":\n    sqlite3.connect("x")\n')
 check("非 __main__ 的 if 不构成豁免区间", main_block_ranges(t2), [])
+# 反例: 别的模块的 .connect( 不该算 (网络库同名)
+t3x = ast.parse('import socket\nsocket.connect("h")\n')
+check("非 sqlite3 的 .connect 不算裸连", sqlite_connect_calls(t3x), [])
 
 
 print("\n=== T2. 真实代码: 连接与路径已收口 ===")
@@ -208,6 +266,17 @@ with tempfile.TemporaryDirectory() as td2:
     check("注入生产函数裸连 → 守卫必须红", bool(bc1) and bc1[0].startswith("web/injected.py:3"), True)
     check("注入同时也被路径规则抓到", bool(bp1), True)
     v.unlink()
+    # 别名绕过 (原守卫的真实漏网点): import sqlite3 as _sq + 拆段拼路径
+    v2 = tmp / "web" / "aliased.py"
+    v2.write_text('import sqlite3 as _sq\nfrom pathlib import Path\n'
+                  'def f():\n    db = Path("x").resolve().parent / "data" / "ohs.db"\n'
+                  '    return _sq.connect(str(db))\n', encoding="utf-8")
+    bc3, bp3, _sr3, _ = scan(tmp)
+    check("别名写法 _sq.connect → 守卫必须红 (这行原来正躲在字面匹配外面)",
+          any(s.startswith("web/aliased.py:5") for s in bc3), True)
+    check("拆段拼的 ohs.db 路径 → 路径规则必须红",
+          any(s.startswith("web/aliased.py:4") for s in bp3), True)
+    v2.unlink()
     # 把 auth.py 的裸连全删 → 该豁免项应变"过期"并被要求摘掉 (防列表腐烂)
     a = tmp / "web" / "auth.py"
     a.write_text(a.read_text(encoding="utf-8").replace("sqlite3.connect(", "sqlite3.Nope("), encoding="utf-8")

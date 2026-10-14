@@ -18,20 +18,22 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from knowledge.dataset import Dataset  # noqa: E402  官方层读门
 from knowledge.oel import connect  # noqa: E402
 
 
 def extract_from_text(conn, text: str) -> list[str]:
     """从文本提取物质名 (OEL库词典 + 危化品目录, 精确名优先避免子串误配)"""
     # OEL 词典: 按名称长度降序, 长名优先匹配 (聚乙二醇>乙二醇)
-    oel_names = [r[0] for r in conn.execute(
+    ds = Dataset(conn)
+    oel_names = [r[0] for r in ds.rows(
         "SELECT DISTINCT factor_name FROM oel_limit ORDER BY LENGTH(factor_name) DESC")]
     found = []
     for name in oel_names:
         if name and name in text and name not in found:
             found.append(name)
     # 危险化学品名 (太长限前100, 精确名匹配)
-    hz_names = [r[0] for r in conn.execute(
+    hz_names = [r[0] for r in ds.rows(
         "SELECT DISTINCT name FROM hazchem_item ORDER BY LENGTH(name) DESC LIMIT 200")]
     for name in hz_names:
         if name and name in text and name not in found:
@@ -52,10 +54,11 @@ def extract_from_report(conn, report_json_path: str) -> tuple[list[dict], list[s
     # 每个物质查 OEL/CAS/危化品
     out = []
     for n in names:
-        oel = conn.execute("SELECT oel_type, value, unit FROM oel_limit "
-                           "WHERE factor_name=? LIMIT 3", (n,)).fetchall()
-        cas = conn.execute("SELECT cas FROM oel_limit WHERE factor_name=? "
-                           "AND cas IS NOT NULL LIMIT 1", (n,)).fetchone()
+        ds = Dataset(conn)
+        oel = ds.rows("SELECT oel_type, value, unit FROM oel_limit "
+                      "WHERE factor_name=? LIMIT 3", (n,))
+        cas = ds.one("SELECT cas FROM oel_limit WHERE factor_name=? "
+                     "AND cas IS NOT NULL LIMIT 1", (n,))
         hz = conn.execute("SELECT name, is_toxic FROM hazchem_item WHERE name=? "
                           "LIMIT 1", (n,)).fetchone()
         out.append({

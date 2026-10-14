@@ -277,80 +277,29 @@ def _unfreeze_truncated_rows(sk: dict, t: dict) -> dict:
         return sk
 
 
-def _refresh_stale_std_tables(tables: list[dict]) -> list[dict]:
-    """标准版本护栏: 表内引用**已废止**标准号 → 替换为现行版 (确定性, 不靠 LLM)
+def _refresh_stale_std_tables(tables: list[dict], conn) -> list[dict]:
+    """表内引用标准号兜底: 与读出侧共用**同一把尺子** (knowledge.dataset → standard_version)
 
     事故 (2026-10): 噪声/高温接触限值表骨架建于 GBZ 2.2—2007 时代, 标准升 2019 后
-    骨架被"骨架优先"原样输出 → 产物 21 处废止引用。骨架只在导入时重建,
-    导出纯读 → 护栏必须挂在导出侧 (本函数), 且需覆盖**表内所有格**。
+    骨架被"骨架优先"原样输出 → 产物 21 处废止引用。骨架只在导入时重建, 导出纯读 →
+    护栏必须挂在导出侧 (本函数), 且需覆盖**表内所有格**。
 
-    判据: 用 standard_db 确认该号 state=废止 才替换; 解析不到现行版则不动 (不伪造出处)。
+    2026-10-15 收口 (S1b′): 原实现是 fix_standard_refs 的第二份平行判据 —— 自带 re_ref
+    正则 (只认 GB/GBZ 两族, 少 WS 与两种连字符写法) + 只信 state=='废止' (看不见
+    replace_of 反查那条"被代替但仍标实施中"的事故判据), 还自己拼库路径、
+    `import sqlite3 as _sq` 自己开连接 (别名写法绕过 S1a′ 的裸连守卫, 该漏洞本轮一并补)。
+    收口取证: 4 项目导出实测 1,956 张表 / 271,158 个文本格, 第二份实现与单一尺子
+    **逐格同结果 (差异 0)** → 删它是纯搬家, 不是改报告口径。
     """
-    try:
-        import sqlite3 as _sq
-        import re as _re
-        from pathlib import Path as _P
-        from knowledge.standard_version import resolve_current, _base_code, _year
-        db = _P(__file__).resolve().parent.parent / "data" / "ohs.db"
-        if not db.exists():
-            return tables
-        conn = _sq.connect(str(db))
-    except Exception:
-        return tables
-
-    # 状态索引: (base, 年份) → state。
-    # ⚠ 变体容错: 'GB/T 50034-2013' 与库中 'GB 50034-2013' 归一后同为 ('GB50034', 2013),
-    #   之前用原始字符串比对 → /T 或空格差异漏配 → 废止号漏替换 (2026-10 实测)。
-    _state_idx: dict[tuple, str] = {}
-    for _c, _s in conn.execute("SELECT code, state FROM standard_db"):
-        _state_idx.setdefault((_base_code(_c), _year(_c)), _s or "")
-
-    # ⚠ 前缀分支必须用 () 包住, 否则 | 会把模式劈开只匹配到 "GB"
-    re_ref = _re.compile(r"(?:GB(?:/T|/Z)?|GBZ(?:/T)?)\s*(\d+(?:\.\d+)?)"
-                         r"\s*[—\-–−－]\s*((?:19|20)\d{2})(?![0-9A-Za-z])")
-
-    def _fix_cell(v):
-        if not isinstance(v, str) or not v:
-            return v
-
-        def _sub(m):
-            # m.group(0) 形如 "GBZ 2.2—2007"; 前缀 = 匹配段中 group(1) 之前的部分
-            prefix = m.group(0)[:m.start(1) - m.start(0)].strip()
-            full = f"{prefix}{m.group(1)}-{m.group(2)}"
-            try:
-                state = _state_idx.get((_base_code(full), int(m.group(2))), "")
-                if state not in ("废止", "已废止"):
-                    return m.group(0)
-                cur = resolve_current(conn, full)
-                if not cur or not cur.get("code") or (cur.get("state") or "") in ("废止", "已废止"):
-                    return m.group(0)      # 无现行后继 → 不动 (不伪造出处)
-                # ⚠ 2026-10 修: 不能只换年份 —— 现行版若换过前缀/编号形态
-                # (分部合并回主版: GB/T 38144.1—2019 → GB 38144—2025), 只换年份会造出
-                # **不存在的伪标准号** GB/T 38144.1—2025。改为按现行版**自身**的前缀+编号
-                # 重建, 仅保留原文的空格/破折号书写风格 (与 standard_version.fix_standard_refs 同口径)。
-                cur_code = (cur["code"] or "").strip()
-                m2 = _re.match(r"^(GBZ/T|GB/T|GBZ|GB/Z|GB)\s*(\d+(?:\.\d+)?)", cur_code)
-                if not m2:
-                    return m.group(0)
-                pfx, rest = m2.group(1), m2.group(2)
-                cur_yr = cur_code[cur_code.rfind("-") + 1:].strip()
-                if not cur_yr.isdigit() or len(cur_yr) != 4:
-                    return m.group(0)
-                spaced = bool(_re.match(r"^[A-Za-z/]+\s+\d", m.group(0)))
-                dash = "—" if "—" in m.group(0) else "-"
-                return f"{pfx} {rest}{dash}{cur_yr}" if spaced else f"{pfx}{rest}{dash}{cur_yr}"
-            except Exception:
-                return m.group(0)
-
-        return re_ref.sub(_sub, v)
-
+    from knowledge.dataset import Dataset
+    ds = Dataset(conn)
     out = []
     for t in tables:
         t2 = dict(t)
-        if t2.get("rows"):
-            t2["rows"] = [[_fix_cell(c) for c in r] for r in t2["rows"]]
+        rows = t2.get("rows")
+        if rows:
+            t2["rows"] = [[ds.fix(c)[0] if isinstance(c, str) else c for c in row] for row in rows]
         out.append(t2)
-    conn.close()
     return out
 
 
@@ -406,7 +355,7 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     # 标准版本护栏 (单一合并点): 骨架建于旧标准版时, 引用会随骨架"永生"。
     #   事故: 噪声/高温接触限值表骨架含 GBZ 2.2—2007, 标准升 2019 后产物仍 21 处废止引用。
     #   此处是骨架→产物的唯一出口, 故护栏挂这里 (与 table_skeleton 同判据: 仅当该号确已废止才刷)。
-    tables = _refresh_stale_std_tables(tables)
+    tables = _refresh_stale_std_tables(tables, conn)
     # 骨架补插: built 里已沉淀但现算缺失的表 (filler 因空数据跳过) 按原节内顺序插入 —
     # 骨架永远在, 数据待补充; 表名顺序依 wanted 名单 (导出编号顺序)
     have = {t["name"] for t in tables}

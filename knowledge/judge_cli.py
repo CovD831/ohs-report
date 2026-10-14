@@ -26,14 +26,16 @@ from knowledge.oel import connect  # noqa: E402
 
 def get_oel(conn, factor_name: str, oel_type: str | None = None) -> list[dict]:
     """查限值: factor_name + 可选 oel_type"""
+    from knowledge.dataset import Dataset       # 读门 (判定用的 source_standard 也须是现行版)
+    ds = Dataset(conn)
     if oel_type:
-        rows = conn.execute(
+        rows = ds.rows(
             "SELECT oel_type, value, unit, conditions, source_standard FROM oel_limit "
-            "WHERE factor_name=? AND oel_type=?", (factor_name, oel_type)).fetchall()
+            "WHERE factor_name=? AND oel_type=?", (factor_name, oel_type))
     else:
-        rows = conn.execute(
+        rows = ds.rows(
             "SELECT oel_type, value, unit, conditions, source_standard FROM oel_limit "
-            "WHERE factor_name=?", (factor_name,)).fetchall()
+            "WHERE factor_name=?", (factor_name,))
     return [dict(zip(("oel_type", "value", "unit", "conditions", "source"), r)) for r in rows]
 
 

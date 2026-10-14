@@ -18,8 +18,9 @@
 """
 from __future__ import annotations
 
-import re
 import json
+import re
+import sqlite3
 
 import sys
 from pathlib import Path
@@ -119,11 +120,12 @@ def _build_phys_limit_table(name: str, conn) -> dict | None:
     if not factors:
         return None
     rows = []
-    # rows_of: 限值表的"依据标准"列直接来自库里存的 source_standard,
+    # Dataset.rows: 限值表的"依据标准"列直接来自库里存的 source_standard,
     # 实测本地/生产都挂着废止版 (GBZ 2.2—2007) → 读出即纠, 不指望数据已被同步
-    from knowledge.standard_version import rows_of
+    from knowledge.dataset import Dataset
+    ds = Dataset(conn)
     for f in factors:
-        for r in rows_of(conn,
+        for r in ds.rows(
                 "SELECT factor_name, oel_type, value, unit, conditions, source_standard "
                 "FROM oel_limit WHERE factor_name=? ORDER BY oel_type", (f,)):
             nm, otype, val, unit, cond, src = (str(x or "") for x in r)
@@ -327,12 +329,12 @@ def _fill_assess_tables(out: dict, assess: dict) -> None:
 
     只填**当前为空**的表, 不覆盖已有数据 (骨架优先原则)。
     """
+    from knowledge.oel import OfficialSchemaMissing, connect_ro
     try:
-        from knowledge.oel import connect as oc
-        from web.section_filler import fill_section
-        conn = oc()
-    except Exception:
-        return
+        conn = connect_ro()           # 纯读: 不建表、不写库 (原用 oel.connect() 把 DDL 放上读路径)
+    except (OfficialSchemaMissing, OSError):
+        return                        # 库/schema 不在 → 明写降级, 不再让 except Exception 吞掉真错
+    from web.section_filler import fill_section
     for ch, names in _ASSESS_FILL_CH.items():
         try:
             tables = fill_section(conn, ch, assess)
@@ -364,15 +366,15 @@ def _fill_assess_tables(out: dict, assess: dict) -> None:
                 if _cur_std and _cur_std - _new_std:
                     # 骨架引用了现算没有的标准号 → 查库确认该号已废止才刷 (不误伤)
                     try:
-                        import sqlite3 as _sq
-                        from pathlib import Path as _P2
-                        _c2 = _sq.connect(str(_P2(__file__).resolve().parent.parent / "data" / "ohs.db"))
-                        _dead_keys = {norm_code(r[0]) for r in _c2.execute(
-                            "SELECT code FROM standard_db WHERE state IN ('废止','已废止')")}
+                        from knowledge.dataset import Dataset
+                        # raw: 判"该号是否已废止"必须拿库内**原样** code 比对;
+                        #      走纠版出口会把旧号改成新号 → 反查表自己把自己吃掉 (W3)
+                        _dead_keys = {norm_code(r[0]) for r in Dataset(conn).raw(
+                            "SELECT code FROM standard_db WHERE state IN ('废止','已废止')",
+                            reason="standard_db 自读判废止态: code 必须是库内原样写法")}
                         _dead = bool({norm_code(x) for x in (_cur_std - _new_std)} & _dead_keys)
-                        _c2.close()
-                    except Exception:
-                        _dead = False
+                    except sqlite3.Error:
+                        _dead = False       # 表缺/查询坏 → 不刷骨架 (只这一种降级)
                     if _dead:
                         out[nm] = {
                             "cols": t.get("cols") or [],
@@ -399,10 +401,7 @@ def skeleton_summary(tables: dict) -> dict:
     return {"total": len(tables), **dict(c)}
 
 
-if __name__ == "__main__":
-    import json
-    import sqlite3
-
+if __name__ == "__main__":            # json / sqlite3 已是模块级 import, 这里不再重复
     from knowledge.paths import DB_PATH
     c = sqlite3.connect(str(DB_PATH))
     c.row_factory = sqlite3.Row

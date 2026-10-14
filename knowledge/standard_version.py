@@ -96,108 +96,230 @@ def _year(code: str) -> int:
     return int(m[-1]) if m else 0
 
 
-_SUP_INDEX: dict[str, dict] = {}
+class RefFixer:
+    """standard_db 的"现行/废止"判据, 一份连接算一次 + code→现行版 记忆化。
+
+    为什么要有这个类 (2026-10-15 实测): 逐行版 `make_ref_fixer` 每调一次就重扫
+    standard_db 全表建状态图, 而一次导出要读几十上百次规则表; 每命中一处替换还要
+    再发 1 条 `SELECT state WHERE code=?` + 1 次 `resolve_current` 全表扫 ——
+    同一个标准号被反复判、反复扫。这里把状态图、代替反查表、standard_db 行集
+    与"号→现行版"的结果收进实例, 由 `currentizer(conn)` 按连接身份复用。
+
+    ⚠ 判据本身一行没改: 尺子仍是 STD_REF_PAT, 仍是 state 与 replace_of 双判据,
+      仍是"推断出的代替版必须年份更晚且自身未废止"的保守取向。
+      改动只有"算一次"替换了"每次重算"。
+    """
+
+    def __init__(self, conn: sqlite3.Connection, data_version: int):
+        self.conn = conn                    # 持强引用: 缓存活着期间 id() 不可能被复用
+        self.data_version = data_version
+        self.rows = [tuple(r) for r in conn.execute(
+            "SELECT code, name, state, replace_of FROM standard_db")]
+        self.ident = f"{id(conn)}:{data_version}:{len(self.rows)}"
+        self._state: dict[tuple, str] = {}       # (去/T 去年份的号, 年份) → state
+        self._state_exact: dict[str, str] = {}   # 库内原始 code → state (原 WHERE code=? 的等价物)
+        self._sup: dict[tuple, list] = {}        # 被代替号 → 代替它的现行版候选
+        for code, _name, state, rep in self.rows:
+            st = state or ""
+            self._state.setdefault((_base_code(code), _year(code)), st)
+            self._state_exact.setdefault(code, st)
+            if rep and str(rep).strip():
+                b, y = _base_code(rep), _year(rep)
+                if b and y:
+                    self._sup.setdefault((b, y), []).append(
+                        {"code": code, "state": st, "year": _year(code) or 0})
+        self._memo: dict[str, str | None] = {}
+
+    # ── 反查表 (V-05 与改写器共用同一份) ────────────────────────────────────
+    def supersession_index(self) -> dict:
+        """被代替关系反查表: 归一化的"被代替标准号" → 代替它的现行版信息。
+
+        单一产地: V-05 校验 与 fix_standard_refs 替换 共用此判据 (避免第三份平行实现)。
+        键用 (_base_code, _year) —— replace_of 常写成 'GBZ/T 230—2010'(带空格/全角破折号),
+        与库内 code 'GBZ230-2010' 归一后同键。
+        """
+        return {"ident": self.ident, "map": self._sup}
+
+    def is_superseded(self, ref: str) -> dict | None:
+        """该标准号是否已被代替 —— state 与 replace_of **双判据**。
+
+        事故 (2026-10-14 实测): `GBZ230-2010` 在 standard_db 里 state='实施中',
+        但 `GBZ/T230-2025` 的 replace_of 明写「代替GBZ/T 230—2010」。旧实现只信
+        state=='废止' → 引用已作废的 2010 版时 **既不替换也不报警** (两级护栏同时漏网)。
+        普查 2222 行: 5 条"被代替仍标实施中" + 29 条"被代替旧行压根不在库里"。
+
+        保守取向: 推断出的代替版必须 (a) 年份更晚 且 (b) 自身不是废止态; 否则不改判。
+        返回代替版信息 dict (可多条取最新), 未被视为废止则返回 None。
+        """
+        b, y = _base_code(ref), _year(ref)
+        if not b or not y:
+            return None
+        cands = [x for x in self._sup.get((b, y), [])
+                 if x["year"] > y and x["state"] not in ("废止", "已废止")]
+        return max(cands, key=lambda x: x["year"]) if cands else None
+
+    def resolve_current(self, ref: str) -> dict | None:
+        """无年份/任意标准号 → 库中**未废止的最新版**记录
+
+        返回 {code, name, state, part_fallback} 或 None (库中无该标准号)
+
+        分部处理 (2026-10):
+          - 引用带分部号 ('GB/T 38144.1') → 精确匹配同分部
+          - 引用无分部 ('GB 39800', 报告依据表常见总称) → 库里只有 'GB39800.1/.2/...'
+            → 取**第1部分(总则/基础分部)**, 并在 part_fallback 标注,
+            由调用方在提示块说明 "总称→第1部分" (不写 "待补充" — 库里有权威版本)。
+        """
+        base = _base_code(ref)
+        if not base:
+            return None
+        rows = self.rows
+        same = [r for r in rows if _base_code(r[0]) == base]
+        part_fallback = None
+        if not same and _part_no(base) is None:
+            # 无分部号的引用 → 同族第1部分 兜底 ('GB39800' → 'GB39800.1')
+            fam = _family(base) + ".1"
+            cand = [r for r in rows if _base_code(r[0]) == fam]
+            if cand:
+                same, part_fallback = cand, "总称→第1部分"
+        if not same:
+            return None
+        # 优先未废止的, 再按年份降序
+        alive = [r for r in same if (r[2] or "") not in ("废止", "已废止")]
+        if not alive and _part_no(base) is not None:
+            # 分部引用但同分部全部废止 → 族(无分部)兜底: 「换版时分部合并回主版」情形
+            # (GB/T 38144.1-2019 废止 → GB 38144-2025 合并版, 2026-10 取证)
+            fam = _family(base)                       # 'GB38144.1' → 'GB38144'
+            cand = [r for r in rows if _base_code(r[0]) == fam]
+            alive_cand = [r for r in cand if (r[2] or "") not in ("废止", "已废止")]
+            if alive_cand:
+                same, part_fallback = cand, "分部→合并主版"
+                alive = alive_cand
+        if not alive:
+            # 同族全部废止 → 跨族代替兜底: 沿 replace_of **反向**找现行代替者
+            # (实例: GB/T 11651-2008 被 GB 39800.1-2020 全部代替 — SAMR 详情页取证, 2026-10)
+            # ⚠ 分隔符不能含 '/': 'GB/T 11651-2008' 会被 `/` 切成 'T 11651-2008'。
+            hit = []
+            for r in rows:
+                for _tok in re.split(r"[,，;；]+", (r[3] or "")):
+                    if _tok.strip() and _base_code(_tok.strip()) == base:
+                        hit.append(r)
+                        break
+            alive_hit = [r for r in hit if (r[2] or "") not in ("废止", "已废止")]
+            if alive_hit:
+                same, part_fallback = hit, "被代替→现行版"
+                alive = alive_hit
+        pool = sorted(alive or same, key=lambda r: _year(r[0]), reverse=True)
+        c, n, s = pool[0][0], pool[0][1], pool[0][2]
+        return {"code": c, "name": n, "state": s, "deprecated_only": not alive,
+                "part_fallback": part_fallback}
+
+    # ── 号 → 现行版: 判定 (可记忆化) 与 书写形态 (每次匹配各自算) ───────────
+    def replacement(self, full: str, year: int) -> str | None:
+        """归一化标准号 → 应改成的现行版 code; None = 原样不动。按号记忆化。"""
+        if full in self._memo:
+            return self._memo[full]
+        out = None
+        try:
+            state = self._state.get((_base_code(full), year), "")
+            if not state:
+                # 按全号(base+年份键)匹配不到时再按库内原始写法查一次 (旧行为)
+                state = self._state_exact.get(full, "") or ""
+            sup = None if state in ("废止", "已废止") else self.is_superseded(full)
+            if state in ("废止", "已废止") or sup:
+                cur = self.resolve_current(full)
+                if cur and cur.get("code") \
+                        and (cur.get("state") or "") not in ("废止", "已废止") \
+                        and _year(cur["code"]) > year:
+                    out = cur["code"]
+        except Exception:
+            out = None
+        self._memo[full] = out
+        return out
+
+    @staticmethod
+    def _rewrite(matched: str, new_code: str) -> str | None:
+        """现行版 code → 沿用原文书写风格的写法; 认不出前缀形态则 None (不动)"""
+        # 前缀与编号取**现行版自身**(不能用 _base_code, 它抹掉了 /T 标记)
+        m2 = re.match(r"^(GBZ/T|GB/T|GBZ|GB/Z|GB)\s*(\d+(?:\.\d+)?)", new_code)
+        if not m2:
+            return None
+        pfx, rest = m2.group(1), m2.group(2)
+        yr_new = new_code[new_code.rfind("-") + 1:]
+        spaced = bool(re.match(r"^[A-Za-z/]+\s+\d", matched))
+        dash = "—" if "—" in matched else "-"
+        return f"{pfx} {rest}{dash}{yr_new}" if spaced else f"{pfx}{rest}{dash}{yr_new}"
+
+    def fix(self, text: str) -> tuple[str, list[str]]:
+        if not text:
+            return text, []
+        # 快路径: STD_REF_PAT 必须含 4 位年份才可能命中 → 先排掉"苯/噪声/PC-TWA"这类单元格,
+        # 读门逐格过判据时不必对每个字符串都跑一遍 sub (语义等价, 见 §7 单测)
+        if not _RE_YEAR.search(text):
+            return text, []
+        changes: list[str] = []
+
+        def _sub(m):
+            new_code = self.replacement(ref_code(m), int(m.group(4)))
+            if not new_code:
+                return m.group(0)
+            new_full = self._rewrite(m.group(0), new_code)
+            if not new_full:
+                return m.group(0)
+            changes.append(f"{m.group(0)} → {new_full}")
+            return new_full
+
+        return STD_REF_PAT.sub(_sub, text), changes
+
+    def cell(self, v):
+        """单元格/字段值 → 纠版后的值 (非字符串原样: 数字、None 不参与)"""
+        return self.fix(v)[0] if isinstance(v, str) else v
+
+
+_FIXER: RefFixer | None = None
+
+
+def currentizer(conn: sqlite3.Connection) -> RefFixer:
+    """按连接身份取判据实例 —— 门只该在这里建缓存, 站点不各自建。
+
+    失效口径 (两条同时用, 单缺一条就会拿陈旧判据印废止号):
+      - `conn is`: 换连接/换库文件即重建; 缓存持强引用, id() 不会被复用后撞键。
+      - `PRAGMA data_version`: 抓**行数不变的原地 UPDATE**
+        (tools/fix_official_std_codes.py --apply、待办 #17 那种"只改 state 列"正是这种,
+         旧口径 `COUNT(standard_db)` 对它完全失明; 2026-10-15 实测他连接写 2→3→4)。
+    同连接自己写入不反映在 data_version 上 —— 本门按只读连接用 (knowledge.oel.connect_ro),
+    永远不会自写; 写侧工具改完 standard_db 请调 `invalidate_caches()`。
+    """
+    global _FIXER
+    dv = conn.execute("PRAGMA data_version").fetchone()[0]
+    f = _FIXER
+    if f is None or f.conn is not conn or f.data_version != dv:
+        f = _FIXER = RefFixer(conn, dv)
+    return f
+
+
+def invalidate_caches() -> None:
+    """写侧改完 standard_db 后调用: 判据与 memo 立即作废 (下一次读重建)。"""
+    global _FIXER
+    _FIXER = None
 
 
 def supersession_index(conn: sqlite3.Connection) -> dict:
-    """被代替关系反查表: 归一化的"被代替标准号" → 代替它的现行版信息。
-
-    单一产地: V-05 校验 与 fix_standard_refs 替换 共用此判据 (避免第三份平行实现)。
-    键用 (_base_code, _year) —— replace_of 常写成 'GBZ/T 230—2010'(带空格/全角破折号),
-    与库内 code 'GBZ230-2010' 归一后同键。
-    """
-    ident = str(id(conn)) + ":" + str(conn.execute(
-        "select count(*) from standard_db").fetchone()[0])
-    if _SUP_INDEX.get("ident") == ident:
-        return _SUP_INDEX
-    idx: dict = {"ident": ident, "map": {}}
-    for code, state, rep in conn.execute(
-            "SELECT code, state, replace_of FROM standard_db WHERE replace_of IS NOT NULL "
-            "AND trim(replace_of) != ''"):
-        b, y = _base_code(rep), _year(rep)
-        if not b or not y:
-            continue
-        idx["map"].setdefault((b, y), []).append(
-            {"code": code, "state": state or "", "year": _year(code) or 0})
-    _SUP_INDEX.clear()
-    _SUP_INDEX.update(idx)
-    return idx
+    """兼容出口: 判据住在 RefFixer (单一产地), 这里只按连接取。"""
+    return currentizer(conn).supersession_index()
 
 
 def is_superseded(conn: sqlite3.Connection, ref_code: str) -> dict | None:
-    """该标准号是否已被代替 —— state 与 replace_of **双判据**。
-
-    事故 (2026-10-14 实测): `GBZ230-2010` 在 standard_db 里 state='实施中',
-    但 `GBZ/T230-2025` 的 replace_of 明写「代替GBZ/T 230—2010」。旧实现只信
-    state=='废止' → 引用已作废的 2010 版时 **既不替换也不报警** (两级护栏同时漏网)。
-    普查 2222 行: 5 条"被代替仍标实施中" + 29 条"被代替旧行压根不在库里"。
-
-    保守取向: 推断出的代替版必须 (a) 年份更晚 且 (b) 自身不是废止态; 否则不改判。
-    返回代替版信息 dict (可多条取最新), 未被视为废止则返回 None。
-    """
-    b, y = _base_code(ref_code), _year(ref_code)
-    if not b or not y:
-        return None
-    cands = [x for x in supersession_index(conn)["map"].get((b, y), [])
-             if x["year"] > y and x["state"] not in ("废止", "已废止")]
-    return max(cands, key=lambda x: x["year"]) if cands else None
+    """该标准号是否已被代替 —— 判据见 RefFixer.is_superseded (双判据, 单一产地)。"""
+    return currentizer(conn).is_superseded(ref_code)
 
 
 def resolve_current(conn: sqlite3.Connection, ref_code: str) -> dict | None:
-    """无年份/任意标准号 → 库中**未废止的最新版**记录
+    """任意标准号 → 库中未废止的最新版 —— 判据见 RefFixer.resolve_current。
 
-    返回 {code, name, state, part_fallback} 或 None (库中无该标准号)
-
-    分部处理 (2026-10):
-      - 引用带分部号 ('GB/T 38144.1') → 精确匹配同分部
-      - 引用无分部 ('GB 39800', 报告依据表常见总称) → 库里只有 'GB39800.1/.2/...'
-        → 取**第1部分(总则/基础分部)**, 并在 part_fallback 标注,
-        由调用方在提示块说明 "总称→第1部分" (不写 "待补充" — 库里有权威版本)。
+    算法原文 (分部精确 → 总称取第1部分 → 分部全废合并回主版 → 沿 replace_of 反查
+    跨族代替) 一行未改, 只是行集来自按连接缓存的 standard_db 快照而非每次全表扫。
     """
-    base = _base_code(ref_code)
-    if not base:
-        return None
-    rows = conn.execute("SELECT code, name, state, replace_of FROM standard_db").fetchall()
-    same = [r for r in rows if _base_code(r[0]) == base]
-    part_fallback = None
-    if not same and _part_no(base) is None:
-        # 无分部号的引用 → 同族第1部分 兜底 ('GB39800' → 'GB39800.1')
-        fam = _family(base) + ".1"
-        cand = [r for r in rows if _base_code(r[0]) == fam]
-        if cand:
-            same, part_fallback = cand, "总称→第1部分"
-    if not same:
-        return None
-    # 优先未废止的, 再按年份降序
-    alive = [r for r in same if (r[2] or "") not in ("废止", "已废止")]
-    if not alive and _part_no(base) is not None:
-        # 分部引用但同分部全部废止 → 族(无分部)兜底: 「换版时分部合并回主版」情形
-        # (GB/T 38144.1-2019 废止 → GB 38144-2025 合并版, 2026-10 取证)
-        fam = _family(base)                       # 'GB38144.1' → 'GB38144'
-        cand = [r for r in rows if _base_code(r[0]) == fam]
-        alive_cand = [r for r in cand if (r[2] or "") not in ("废止", "已废止")]
-        if alive_cand:
-            same, part_fallback = cand, "分部→合并主版"
-            alive = alive_cand
-    if not alive:
-        # 同族全部废止 → 跨族代替兜底: 沿 replace_of **反向**找现行代替者
-        # (实例: GB/T 11651-2008 被 GB 39800.1-2020 全部代替 — SAMR 详情页取证, 2026-10)
-        # ⚠ 分隔符不能含 '/': 'GB/T 11651-2008' 会被 `/` 切成 'T 11651-2008'。
-        hit = []
-        for r in rows:
-            for _tok in re.split(r"[,，;；]+", (r[3] or "")):
-                if _tok.strip() and _base_code(_tok.strip()) == base:
-                    hit.append(r)
-                    break
-        alive_hit = [r for r in hit if (r[2] or "") not in ("废止", "已废止")]
-        if alive_hit:
-            same, part_fallback = hit, "被代替→现行版"
-            alive = alive_hit
-    pool = alive or same
-    pool.sort(key=lambda r: _year(r[0]), reverse=True)
-    c, n, s = pool[0][0], pool[0][1], pool[0][2]
-    return {"code": c, "name": n, "state": s, "deprecated_only": not alive,
-            "part_fallback": part_fallback}
+    return currentizer(conn).resolve_current(ref_code)
 
 
 def resolve_all_refs(conn: sqlite3.Connection) -> list[dict]:
@@ -226,64 +348,12 @@ def resolve_all_refs(conn: sqlite3.Connection) -> list[dict]:
 
 
 def make_ref_fixer(conn: sqlite3.Connection):
-    """返回 fix(text) → (text', changes) 的闭包; standard_db 状态表只建一次
+    """兼容出口: 返回 fix(text) → (text', changes) 的闭包。
 
-    为什么要闭包 (2026-10-15): 生成端要**逐格**过兜底 (一张检查表几十上百格),
-    每格重建 2222 行状态表就是 O(格数×库)。判据仍然只有 STD_REF_PAT + 这一份 _sub,
-    不另开第二套 —— 换写法可以, 换尺子不行。
+    2026-10-15 起状态表不再"每次调用都重建": 判据住在 RefFixer, 由 currentizer(conn)
+    按连接身份复用 (含 code→现行版 的 memo)。逐格场景优先用 knowledge.dataset.Dataset。
     """
-    st_map: dict[tuple, str] = {}
-    # ⚠ 2026-10 修: 旧查询对 'GB 30077-2013' 这类带空格的库记录永远匹配不上 → 废止版漏替换。
-    # 再修: 用 _base_code(去 /T、去年份) + 年份做键 —— 'GB/T 50034-2013' 与库中
-    # 'GB 50034-2013' 归一后同为 ('GB50034', 2013), 消除 /T 与空格变体差异。
-    for _c, _s in conn.execute("SELECT code, state FROM standard_db"):
-        st_map.setdefault((_base_code(_c), _year(_c)), _s or "")
-
-    def _make_sub(changes: list[str]):
-        def _sub(m):
-            yr = m.group(4)
-            full = ref_code(m)
-            try:
-                state = st_map.get((_base_code(full), int(yr)), "")
-                # 按全号匹配不到时再按原样查一次
-                if not state:
-                    row = conn.execute("SELECT state FROM standard_db WHERE code=?", (full,)).fetchone()
-                    state = (row[0] if row else None) or ""
-                # state 漏标时按 replace_of 反查补判 (见 is_superseded 的事故说明)
-                sup = None if state in ("废止", "已废止") else is_superseded(conn, full)
-                if state not in ("废止", "已废止") and not sup:
-                    return m.group(0)
-                cur = resolve_current(conn, full)
-                if not cur or not cur.get("code"):
-                    return m.group(0)
-                if (cur.get("state") or "") in ("废止", "已废止"):
-                    return m.group(0)          # 解析到的仍是废止版 → 不动
-                new_code = cur["code"]
-                if _year(new_code) <= int(yr):
-                    return m.group(0)          # 没更新 → 不动
-                # 保留原文书写风格: 若有"前缀 编号"的空格则保留, 破折号形态保留
-                spaced = bool(re.match(r"^[A-Za-z/]+\s+\d", m.group(0)))
-                dash = "—" if "—" in m.group(0) else "-"
-                # 前缀与编号取**现行版自身**(不能用 _base_code, 它抹掉了 /T 标记)
-                m2 = re.match(r"^(GBZ/T|GB/T|GBZ|GB/Z|GB)\s*(\d+(?:\.\d+)?)", new_code)
-                if not m2:
-                    return m.group(0)
-                pfx, rest = m2.group(1), m2.group(2)
-                yr_new = new_code[new_code.rfind("-") + 1:]
-                new_full = f"{pfx} {rest}{dash}{yr_new}" if spaced else f"{pfx}{rest}{dash}{yr_new}"
-                changes.append(f"{m.group(0)} → {new_full}")
-                return new_full
-            except Exception:
-                return m.group(0)
-        return _sub
-
-    def fix(text: str) -> tuple[str, list[str]]:
-        if not text:
-            return text, []
-        changes: list[str] = []
-        return STD_REF_PAT.sub(_make_sub(changes), text), changes
-
-    return fix
+    return currentizer(conn).fix
 
 
 def rows_of(conn: sqlite3.Connection, sql: str, args=()) -> list[list]:
@@ -293,12 +363,12 @@ def rows_of(conn: sqlite3.Connection, sql: str, args=()) -> list[list]:
     存的"依据标准号"实测就有废止版 (本地与生产都挂着 GBZ 2.2—2007 / GB/T 18664—2002),
     而部署刻意排除 data/ → 不能假设两份库都被同步过。废止号不得进报告:
     在**唯一读出点**纠版, 比在十几处拼接点各补一遍可靠 (漏一处就漏印)。
+
+    新代码用 knowledge.dataset.Dataset.rows() —— 同一份判据、同一个出口,
+    但它还多表态一件事: 这条路到底走不走纠版 (raw() 是不走的那条, 必须写理由)。
     """
-    fix = make_ref_fixer(conn)
-    rows = []
-    for r in conn.execute(sql, args).fetchall():
-        rows.append([fix(v)[0] if isinstance(v, str) else v for v in r])
-    return rows
+    f = currentizer(conn)
+    return [[f.cell(v) for v in r] for r in conn.execute(sql, args).fetchall()]
 
 
 def fix_standard_refs(text: str, conn: sqlite3.Connection | None = None) -> tuple[str, list[str]]:
@@ -325,18 +395,17 @@ def fix_standard_refs(text: str, conn: sqlite3.Connection | None = None) -> tupl
             return text, []               # 库/schema 不在 → 明确这一种降级, 其余异常照常外抛
         except OSError as e:              # 文件权限等设备级问题: 也不该伪装成"没有引用要改"
             raise RuntimeError(f"标准号纠版无法打开库: {e}") from e
-    # 判定与替换逻辑全部在 make_ref_fixer (单一产地); 逐格场景请直接用它避免重复建表
+    # 判定与替换逻辑全部在 RefFixer (单一产地); 逐格场景请直接取 currentizer(conn)
     try:
-        return make_ref_fixer(conn)(text)
+        return currentizer(conn).fix(text)
     finally:
         if own:
             conn.close()
 
 
 if __name__ == "__main__":
-    from pathlib import Path
-    db = Path(__file__).resolve().parent.parent / "data" / "ohs.db"
-    conn = sqlite3.connect(str(db))
+    from knowledge.paths import DB_PATH        # 路径唯一产地, 不在这里自己拼
+    conn = sqlite3.connect(str(DB_PATH))
     refs = resolve_all_refs(conn)
     ok = sum(1 for r in refs if r["current_code"] and not r["note"])
     print(f"standard_ref {len(refs)} 项, 已解析出现行版 {ok} 项\n")

@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8")
 
+import knowledge.standard_version
 from knowledge.standard_version import make_ref_fixer, norm_code  # noqa: E402
 
 # (表, 存标准号的列, 主键列) — 只列"会印进报告的依据列"
@@ -166,6 +167,8 @@ def main() -> int:
     for t, pk, rid, col, _old, new in writable:
         cur.execute(f"UPDATE {t} SET {col}=? WHERE {pk}=?", (new, rid))
     conn.commit()
+    knowledge.standard_version.invalidate_caches()    # V3: 同一连接写完不自见, 判据缓存必须显式作废
+
     # 复扫只针对 A 组范围: C 组(内容复核) 与 B 组(数值行) 是**刻意保留**的,
     # 把它们算进"残留"会把正确的拒绝报成失败 (首跑实测就是 7 处误报)
     left = 0

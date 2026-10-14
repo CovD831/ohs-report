@@ -112,6 +112,18 @@ def merge_process_materials(conn, hazards: dict, process_text: str) -> dict:
     return hazards
 
 
+def _ds_rows(conn, sql: str, args=()) -> list[tuple]:
+    """官方层读门 shortcut: Dataset.rows (读出即过标准号兜底, 见 knowledge/dataset.py)"""
+    from knowledge.dataset import Dataset
+    return Dataset(conn).rows(sql, args)
+
+
+def _ds_one(conn, sql: str, args=()) -> tuple | None:
+    """官方层读门 shortcut: Dataset.one"""
+    from knowledge.dataset import Dataset
+    return Dataset(conn).one(sql, args)
+
+
 def _auto_factor(conn, w: str) -> str:
     """物料名→危害因素: 通用管线, 直接查 oel_limit/hazard_factor (精确/包含), fallback material_dictionary别名.
 
@@ -127,16 +139,18 @@ def _auto_factor(conn, w: str) -> str:
     w = str(w).strip().replace(" ", "")
     if not w:
         return ""
+    from knowledge.dataset import Dataset       # 读门: 官方层取数唯一出口
+    ds = Dataset(conn)
     # 1. oel_limit 精确
-    r = conn.execute("SELECT factor_name FROM oel_limit WHERE factor_name=? LIMIT 1", (w,)).fetchone()
+    r = ds.one("SELECT factor_name FROM oel_limit WHERE factor_name=? LIMIT 1", (w,))
     if r:
         return r[0]
     # 2. oel_limit 包含 (物料名是因子子串)
-    r = conn.execute("SELECT factor_name FROM oel_limit WHERE factor_name LIKE ? LIMIT 1", ("%" + w + "%",)).fetchone()
+    r = ds.one("SELECT factor_name FROM oel_limit WHERE factor_name LIKE ? LIMIT 1", ("%" + w + "%",))
     if r:
         return r[0]
     # 3. hazard_factor 精确
-    r = conn.execute("SELECT name FROM hazard_factor WHERE name=? LIMIT 1", (w,)).fetchone()
+    r = ds.one("SELECT name FROM hazard_factor WHERE name=? LIMIT 1", (w,))
     if r:
         return r[0]
     # 4. material_dictionary 别名
@@ -263,16 +277,14 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
         bio = conn.execute(
             "SELECT COUNT(*) FROM bio_limit WHERE factor_name=?", (f,)).fetchone()[0]
         # --- 分类标签 ---
-        cat_row = conn.execute(
-            "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1", (f,)).fetchone()
+        cat_row = _ds_one(conn, "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1", (f,))
         if not cat_row:
             alias = conn.execute(
                 "SELECT catalog_name FROM hazard_factor_alias WHERE oel_name=? "
                 "AND match_type IN ('exact','core_eq') LIMIT 1", (f,)).fetchone()
             if alias:
-                cat_row = conn.execute(
-                    "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1",
-                    (alias[0],)).fetchone()
+                cat_row = _ds_one(conn, "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1",
+                                  (alias[0],))
         # --- 危化品 CAS ---
         cas = conn.execute(
             "SELECT cas FROM oel_limit WHERE factor_name=? AND cas IS NOT NULL LIMIT 1",
@@ -291,9 +303,9 @@ def identify_hazards(conn, equipment: list[str], processes: list[dict] | None = 
             "WHERE factor LIKE ? AND check_type='在岗期间' LIMIT 1", (f"%{f}%",)).fetchone()
         # --- 职业病 (occupational_disease: 危害名称→疾病, 用包含匹配) ---
         diseases = []
-        for r in conn.execute(
-                "SELECT category, name FROM occupational_disease WHERE name LIKE ? OR name LIKE ? LIMIT 3",
-                (f"%{f}%", f"%{f.split('及其')[0]}%")):
+        for r in _ds_rows(conn,
+                          "SELECT category, name FROM occupational_disease WHERE name LIKE ? OR name LIKE ? LIMIT 3",
+                          (f"%{f}%", f"%{f.split('及其')[0]}%")):
             diseases.append(r[0])
         out.append({
             "factor": f,
@@ -434,13 +446,13 @@ def ppe_for_hazards(conn, hazards: list[dict]) -> list[dict]:
         seen = set()
         for k in keys:
             for code, iname in rules.get(k, ()):
-                item = conn.execute(
+                item = _ds_one(conn,
                     "SELECT item_name, std_code FROM ppe_item "
-                    "WHERE cat_code=? AND item_name=? LIMIT 1", (code, iname)).fetchone()
+                    "WHERE cat_code=? AND item_name=? LIMIT 1", (code, iname))
                 if not item:
-                    item = conn.execute(
+                    item = _ds_one(conn,
                         "SELECT item_name, std_code FROM ppe_item "
-                        "WHERE cat_code=? LIMIT 1", (code,)).fetchone()
+                        "WHERE cat_code=? LIMIT 1", (code,))
                 if item and item[0] not in seen:
                     seen.add(item[0])
                     items.append({"class": code, "item": item[0], "std": item[1]})

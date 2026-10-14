@@ -4,7 +4,12 @@
 每个报告章节只取它需要的数据子集 → 各章"讲该章的事", 互不重复, 数据全量不截断。
 """
 from __future__ import annotations
+
+import sqlite3
 from typing import Any
+
+from knowledge.oel import OfficialSchemaMissing, connect_ro         # 读路径一律只读 (S1a′)
+from knowledge.standard_version import resolve_all_refs             # 判据住在数据层 (S1b′)
 
 
 def _is_physical(name: str) -> bool:
@@ -175,6 +180,31 @@ def _fmt_list(items: list) -> str:
     return "；".join(parts) if parts else "（暂无数据）"
 
 
+def _management_rule_rows(kws, include_confined_space: bool = False) -> list[tuple]:
+    """management_rule 相关条款 —— 读门 Dataset.rows 唯一出口 (读出即纠版)。
+
+    降级只允许发生在"库/schema 不在": 原实现在同一个 try 里 import + 建连接 + 取数,
+    ImportError/SQL 写错也被吞成"没有条款" → 报告少印整段标准依据而全程不报警
+    (与 report_bench 那三条静默失效同一病灶)。
+    """
+    from knowledge.dataset import Dataset
+    kws = list(kws)
+    sql = ("SELECT require, std_code, clause FROM management_rule WHERE "
+           + ("category='受限空间' OR " if include_confined_space else "")
+           + " OR ".join(["require LIKE ?"] * len(kws)))
+    args = tuple(f"%{k}%" for k in kws)
+    try:
+        conn = connect_ro()
+    except (OfficialSchemaMissing, OSError):
+        return []
+    try:
+        return Dataset(conn).rows(sql, args)
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+
 def _standard_benchmark() -> str:
     """标准版本基准块 — 喂给 LLM 的**唯一**标准号来源 (通用, 不写死)
 
@@ -186,18 +216,13 @@ def _standard_benchmark() -> str:
     LLM 照抄即可, 不必(也不得)自己回忆年份。库中查不到现行版的如实标"待核实"。
     """
     try:
-        from .standard_version import resolve_all_refs
-        import sqlite3
-        from pathlib import Path
-        db = Path(__file__).resolve().parent.parent / "data" / "ohs.db"
-        if not db.exists():
-            return ""
-        from knowledge.oel import connect_ro
-        conn = connect_ro()   # 只读 (S1a′)
+        conn = connect_ro()
+    except (OfficialSchemaMissing, OSError):
+        return ""               # 库/schema 不在 → 这块基准就是没有, 明写降级 (不伪装成"解析为空")
+    try:
         refs = resolve_all_refs(conn)
+    finally:
         conn.close()
-    except Exception:
-        return ""
     if not refs:
         return ""
     lines = ["【标准版本基准】(引用标准必须用以下完整号, 逐字符照抄, 不得自补年份/改前缀)"]
@@ -365,20 +390,10 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
             # (修复: 10.6信息块只给项目management文本, 无GB 30871条款 → LLM自写18-22%氧含量)
             mg = str(project.get("management") or "")
             if assess is not None:
-                try:
-                    from .projects_db import _conn as _mconn
-                    from .standard_version import rows_of as _rows_of
-                    _mc = _mconn()
-                    # 匹配 category=受限空间/特殊作业 或 require 含 盲板/置换/氧含量/通风
-                    kws = ("受限空间", "特殊作业", "有限空间", "密闭空间", "盲板", "氧含量", "置换", "上锁")
-                    rows = _rows_of(_mc,
-                        f"SELECT require, std_code, clause FROM management_rule WHERE " +
-                        " OR ".join(["require LIKE ?"] * len(kws)), tuple(f"%{k}%" for k in kws))
-                    _mc.close()
-                    for r, std, clause in rows:
-                        mg += f"\n- [{std} {clause}] {r}" if std else f"\n- {r}"
-                except Exception:
-                    pass
+                # 匹配 category=受限空间/特殊作业 或 require 含 盲板/置换/氧含量/通风
+                kws = ("受限空间", "特殊作业", "有限空间", "密闭空间", "盲板", "氧含量", "置换", "上锁")
+                for r, std, clause in _management_rule_rows(kws):
+                    mg += f"\n- [{std} {clause}] {r}" if std else f"\n- {r}"
             return mg or "职业卫生管理制度待补充(需企业提供)"
         if field == "region_facts":
             # 区域基础事实 (3.2 选址): 按地区名读 region_facts.json, 只投喂有值的条目
@@ -615,17 +630,8 @@ def _std_clauses(sec: str) -> str:
     kws = _MUST_COVER_CLAUSES.get(sec)
     if not kws:
         return ""
-    try:
-        from .projects_db import _conn as _mc
-        from .standard_version import rows_of
-        conn = _mc()
-        # category='受限空间' 直接命中全文化条款(8.4.7清点/8.4.9储罐等行为细则不含关键词)
-        rows = rows_of(conn,
-            "SELECT require, std_code, clause FROM management_rule WHERE category='受限空间' OR " +
-            " OR ".join(["require LIKE ?"] * len(kws)), tuple(f"%{k}%" for k in kws))
-        conn.close()
-    except Exception:
-        return ""
+    # category='受限空间' 直接命中全文化条款(8.4.7清点/8.4.9储罐等行为细则不含关键词)
+    rows = _management_rule_rows(kws, include_confined_space=True)
 
     import re as _re
 

@@ -334,10 +334,16 @@ def _physical_det_table(conn, dets: list) -> dict | None:
             "merge_rect": merge, "rows": rows, "prov": prov}
 
 
-def _rows_of(conn, sql, args=()):
-    """官方数据层读行 → 标准号兜底在 knowledge.standard_version.rows_of 单点完成"""
-    from knowledge.standard_version import rows_of
-    return rows_of(conn, sql, args)
+def _ds(conn):
+    """官方数据层读门 (knowledge.dataset.Dataset)。
+
+    `.rows()` = 取数即过标准号兜底 (废止号不得上纸); 判据与 code→现行版 memo 住在
+    knowledge.standard_version.currentizer, 按"连接对象 + PRAGMA data_version"复用,
+    所以实例可以就近构造, 不必自己管生命周期。
+    裸 `conn.execute()` 读规则表标准号列会被 tools/test_std_currentize.py C 段拦下。
+    """
+    from knowledge.dataset import Dataset
+    return Dataset(conn)
 
 
 def _ppe_matrix_table() -> dict | None:
@@ -404,8 +410,8 @@ def _same_substance(a: str, b: str) -> bool:
 def _cas_from_oel(conn, fac: str) -> str | None:
     """CAS 只取 oel_limit (GBZ 2.1—2019 权威登记), 不手填; 多异构体取首个并保留全串。"""
     try:
-        r = conn.execute("SELECT cas FROM oel_limit WHERE factor_name=? AND cas IS NOT NULL "
-                         "AND trim(cas) != '' LIMIT 1", (fac,)).fetchone()
+        r = _ds(conn).one("SELECT cas FROM oel_limit WHERE factor_name=? AND cas IS NOT NULL "
+                          "AND trim(cas) != '' LIMIT 1", (fac,))
         return r[0].strip() if r and r[0] else None
     except sqlite3.OperationalError:
         return None
@@ -463,7 +469,7 @@ def lookup_toxicity(conn, fac: str) -> str:
             "SELECT level, source FROM hazard_toxicity WHERE factor_name=?", (fac,)
         ).fetchone()
         if r is None:
-            for name, aliases, level, source in conn.execute(
+            for name, aliases, level, source in _ds(conn).rows(
                 "SELECT factor_name, aliases, level, source FROM hazard_toxicity"
             ):
                 if _same_substance(name, fac):
@@ -502,7 +508,7 @@ def form_of(conn, fac: str) -> str:
         return "—"
     # 1) 权威表
     try:
-        for name, aliases, form in conn.execute(
+        for name, aliases, form in _ds(conn).rows(
             "SELECT factor_name, aliases, form FROM hazard_toxicity WHERE form IS NOT NULL"
         ):
             if name == fac:
@@ -540,7 +546,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
     """按报告章节 (新11章) 生成表格"""
     if sec == "1":
         # 总论: 评价依据表 (标准库)
-        refs = _rows_of(conn, "SELECT code, name FROM standard_ref ORDER BY id")
+        refs = _ds(conn).rows("SELECT code, name FROM standard_ref ORDER BY id")
         rows = []
         for i, (code, name) in enumerate(refs, 1):
             rows.append([i, code, name, "见标准库"])
@@ -856,7 +862,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         for theme, tname in [("选址", "选址检查表"), ("总体布局", "总体布局检查表"),
                              ("建筑卫生学", "建筑卫生学检查表"), ("辅助用室", "辅助用室检查表")]:
             g_rows = []
-            for r in _rows_of(conn, "SELECT clause, rule, report_section FROM gbz1_rule WHERE theme LIKE ?", (theme + "%",)):
+            for r in _ds(conn).rows("SELECT clause, rule, report_section FROM gbz1_rule WHERE theme LIKE ?", (theme + "%",)):
                 _res, _vd = _cr(str(r[0]).strip())
                 g_rows.append([r[0], r[1], _res or "待补充", _vd or "待评价"])
             if not g_rows:
@@ -890,7 +896,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                        "rows": aux_rows})
         # 噪声分级表 (噪声暴露等级)
         nz_rows = []
-        for r in _rows_of(conn, "SELECT value, note FROM oel_limit WHERE factor_name LIKE '%噪声%' LIMIT 3"):
+        for r in _ds(conn).rows("SELECT value, note FROM oel_limit WHERE factor_name LIKE '%噪声%' LIMIT 3"):
             nz_rows.append(r)
         if nz_rows:
             tables.append({"name": "噪声分级表", "cols": ["噪声限值", "说明"], "rows": nz_rows})
@@ -899,14 +905,14 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         from knowledge.check_result_templates import resolve as _cr
         g_rows = []
         for th in ("防尘防毒", "防噪声振动"):
-            for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme=?", (th,)):
+            for r in _ds(conn).rows("SELECT clause, rule FROM gbz1_rule WHERE theme=?", (th,)):
                 _res, _vd = _cr(str(r[0]).strip())
                 g_rows.append([r[1], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
         if g_rows:
             tables.append({"name": "工艺检查表", "cols": ["卫生要求", "检查依据", "检查结果", "评价"], "rows": g_rows})
         b_rows = []
         for th in ("总体布局", "建筑卫生学"):
-            for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme=?", (th,)):
+            for r in _ds(conn).rows("SELECT clause, rule FROM gbz1_rule WHERE theme=?", (th,)):
                 _res, _vd = _cr(str(r[0]).strip())
                 b_rows.append([r[1], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
         if b_rows:
@@ -979,7 +985,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             _pt_ = _physical_det_table(conn, dets) if dets else None
             if _pt_:
                 tables.append(_pt_)
-        surv = _rows_of(conn, "SELECT factor, check_type, cycle FROM surveillance_rule")
+        surv = _ds(conn).rows("SELECT factor, check_type, cycle FROM surveillance_rule")
         if surv:
             tables.append({"name": "职业健康监护表", "cols": ["序号", "危害因素", "检查类别", "周期"],
                            "rows": [[i, r[0], r[1], r[2] or "—"] for i, r in enumerate(surv, 1)]})
@@ -1195,7 +1201,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             _ri = len(lim_rows)                       # 该因素在表中的行号
             # ⚠ 连同 source_standard 一起取出: 逐格记录该限值来自标准库哪一条,
             #   使"每个限值可点开看 GBZ 2.1—2019 某某 PC-TWA=N" (审计可逐行溯源)
-            recs = _rows_of(conn,
+            recs = _ds(conn).rows(
                 "SELECT oel_type, value, source_standard FROM oel_limit "
                 "WHERE factor_name LIKE ?", (fac + "%",))
             oels, srcs = {}, {}
@@ -1365,13 +1371,13 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             # ⚠ 单一产地: 结果/评价走 check_result_templates.resolve() (原硬编码 "待确认")
             from knowledge.check_result_templates import resolve as _cr0
             g_rows = []
-            for r in _rows_of(conn, "SELECT clause, rule FROM gbz1_rule WHERE theme LIKE ?", (theme + "%",)):
+            for r in _ds(conn).rows("SELECT clause, rule FROM gbz1_rule WHERE theme LIKE ?", (theme + "%",)):
                 _res, _vd = _cr0(str(r[0]).strip())
                 g_rows.append([r[1], f"GBZ 1—2010 {r[0]}", _res or "待补充", _vd or "待评价"])
             if g_rows:
                 tables.append({"name": tname, "cols": ["卫生要求", "检查依据", "检查结果", "评价"],
                                "rows": g_rows})
-        rows = _rows_of(conn, "SELECT hazard_category, check_point, std_code, clause FROM protection_rule")
+        rows = _ds(conn).rows("SELECT hazard_category, check_point, std_code, clause FROM protection_rule")
         # 原报告表6.2-1: 4列 (卫生要求/检查依据/检查结果/评价) — 用户 2026-10 拍板保留 4 列
         # ⚠ 单一产地: 结果/评价走 check_result_templates.resolve() (原为第四份硬编码)
         from knowledge.check_result_templates import resolve_protection as _crp
@@ -1394,7 +1400,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         # 应急救援: 应急救援检查表 + 应急物资清单 (表56 类别|名称|数量|放置点位)
         pd_ = assess.get("_project_data", {})
         tables = []
-        rows = _rows_of(conn, "SELECT scenario, require, std_code, clause FROM emergency_rule")
+        rows = _ds(conn).rows("SELECT scenario, require, std_code, clause FROM emergency_rule")
         if rows:
             # 原报告表7.2-1: 4列 (卫生要求/检查依据/检查结果/评价) — 用户 2026-10 拍板保留 4 列
             # ⚠ 单一产地: 应急救援句式走 check_result_templates.resolve_emergency()
@@ -1469,7 +1475,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         # 职业卫生管理: 管理制度检查表 + 职业健康监护表
         # 检索优化: 管理制度按"通用必列 + 项目相关"过滤, 不整表倾倒(条款库扩大后防表格爆表)
         tables = []
-        rows = _rows_of(conn, "SELECT category, require, std_code, clause FROM management_rule")
+        rows = _ds(conn).rows("SELECT category, require, std_code, clause FROM management_rule")
         # 受限空间等特殊作业条款仅当项目工艺涉及时才进检查表 (通用判定: 危害grid/工艺文本含关键词)
         _pd9 = assess.get("_project_data") or {}
         _proc = str(_pd9.get("process_text") or "") + " ".join(
@@ -1483,7 +1489,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             m9.append([i, f"{r[0]}：{r[1]}", f"{r[2]} {r[3]}", "企业已建立相应管理制度", "合格"])
         tables.append({"name": "管理制度检查表", "cols": ["序号", "检查项目", "检查依据", "检查结果", "结论"],
                        "rows": m9})
-        surv = _rows_of(conn, "SELECT factor, check_type, cycle FROM surveillance_rule")
+        surv = _ds(conn).rows("SELECT factor, check_type, cycle FROM surveillance_rule")
         if surv:
             tables.append({"name": "职业健康监护表", "cols": ["序号", "危害因素", "检查类别", "周期"],
                            "rows": [[i, r[0], r[1], r[2] or "—"] for i, r in enumerate(surv, 1)]})

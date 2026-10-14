@@ -32,6 +32,8 @@
 """
 from __future__ import annotations
 
+from knowledge.dataset import Dataset     # 官方层读门: 读出即过标准号兜底
+
 # ─── 表1 分项指标权重 (GBZ/T 230—2025 表1, 逐项与标准原文核对) ───
 WEIGHTS = {
     "acute_inhalation": 5,   # 急性吸入 (气体/蒸气/粉尘烟雾)
@@ -219,26 +221,24 @@ def score_accumulation(name: str) -> tuple[int | None, str]:
 
 def _find_ghs(conn, name: str, cas: str | None) -> dict | None:
     """ghs_class 精确匹配: CAS 优先 (skill 教训: 禁止无约束子串)"""
+    ds = Dataset(conn)
     try:
         if cas:
-            r = conn.execute("SELECT name, alias, cas, hazard_raw, is_highly_toxic, "
-                             "is_carcinogen FROM ghs_class WHERE cas=? LIMIT 1",
-                             (cas,)).fetchone()
+            r = ds.one("SELECT name, alias, cas, hazard_raw, is_highly_toxic, "
+                       "is_carcinogen FROM ghs_class WHERE cas=? LIMIT 1", (cas,))
             if r:
                 return {"name": r[0], "alias": r[1], "cas": r[2], "hazard_raw": r[3],
                         "is_highly_toxic": r[4], "is_carcinogen": r[5], "match": "CAS精确"}
         # 名称等值 (禁止子串)
         for cand in [name] + [a.strip() for a in (name or "").split("/") if a.strip()]:
-            r = conn.execute("SELECT name, alias, cas, hazard_raw, is_highly_toxic, "
-                             "is_carcinogen FROM ghs_class WHERE name=? LIMIT 1",
-                             (cand,)).fetchone()
+            r = ds.one("SELECT name, alias, cas, hazard_raw, is_highly_toxic, "
+                       "is_carcinogen FROM ghs_class WHERE name=? LIMIT 1", (cand,))
             if r:
                 return {"name": r[0], "alias": r[1], "cas": r[2], "hazard_raw": r[3],
                         "is_highly_toxic": r[4], "is_carcinogen": r[5], "match": "名称精确"}
         # 常见别名 (括号内容, 如「苯乙烯[稳定的]」)
-        r = conn.execute("SELECT name, alias, cas, hazard_raw, is_highly_toxic, "
-                         "is_carcinogen FROM ghs_class WHERE name LIKE ? LIMIT 1",
-                         (name + "[%]",)).fetchone()
+        r = ds.one("SELECT name, alias, cas, hazard_raw, is_highly_toxic, "
+                   "is_carcinogen FROM ghs_class WHERE name LIKE ? LIMIT 1", (name + "[%]",))
         if r:
             return {"name": r[0], "alias": r[1], "cas": r[2], "hazard_raw": r[3],
                     "is_highly_toxic": r[4], "is_carcinogen": r[5], "match": "名称+方括号"}

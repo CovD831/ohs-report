@@ -308,6 +308,8 @@ def main() -> int:
 
     if apply:
         conn.commit()
+        import knowledge.standard_version as _sv
+        _sv.invalidate_caches()   # V3: 同连接写完不自见, 判据缓存必须显式作废
     conn.close()
 
     rep.append(f"\nTOTAL: 文本替换命中 {total_txt} 处; 标准号修复 {total_tbl} 处; sweep {total_sweep} 处; MISS {misses} 处")

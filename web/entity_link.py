@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+from knowledge.dataset import Dataset     # 官方层读门: 读出即过标准号兜底
+
 
 def cas_key(cas) -> str:
     """标准化CAS号 (去括号/横线/空格, 统一大写)"""
@@ -37,30 +39,32 @@ def link_oel(conn, name: str) -> list:
     """危害因素 → oel_limit 限值 (优先CAS, 次名字归一化)"""
     if is_physical(name):
         return []  # 物理因素不走化学接触限值链(噪声用噪声卫生限值, 高温用WBGT)
+    ds = Dataset(conn)
     # 找 hazard_factor 拿 cas
-    row = conn.execute("SELECT cas FROM hazard_factor WHERE name=? OR name LIKE ?",
-                       (name, name + "%")).fetchone()
+    row = ds.one("SELECT cas FROM hazard_factor WHERE name=? OR name LIKE ?",
+                 (name, name + "%"))
     cas = cas_key(row[0] if row else "")
     rows = []
     if cas:
-        rows = conn.execute("SELECT oel_type, value, unit FROM oel_limit WHERE cas=?", (cas,)).fetchall()
+        rows = ds.rows("SELECT oel_type, value, unit FROM oel_limit WHERE cas=?", (cas,))
     if not rows:
         n = name_norm(name)
-        rows = conn.execute("SELECT oel_type, value, unit FROM oel_limit WHERE factor_name LIKE ?",
-                            (n + "%",)).fetchall()
+        rows = ds.rows("SELECT oel_type, value, unit FROM oel_limit WHERE factor_name LIKE ?",
+                       (n + "%",))
     return [{"type": r[0], "value": r[1], "unit": r[2]} for r in rows[:4]]
 
 
 def link_health_effect(conn, name: str) -> list:
     """危害因素 → 健康影响 (先CAS后名字)"""
-    row = conn.execute("SELECT cas FROM hazard_factor WHERE name=?", (name,)).fetchone()
+    ds = Dataset(conn)
+    row = ds.one("SELECT cas FROM hazard_factor WHERE name=?", (name,))
     cas = cas_key(row[0] if row else "")
     if cas:
-        rows = conn.execute("SELECT effect, route FROM health_effect WHERE cas=?", (cas,)).fetchall()
+        rows = ds.rows("SELECT effect, route FROM health_effect WHERE cas=?", (cas,))
     else:
         n = name_norm(name)
-        rows = conn.execute("SELECT effect, route FROM health_effect WHERE factor LIKE ?",
-                            (n + "%",)).fetchall()
+        rows = ds.rows("SELECT effect, route FROM health_effect WHERE factor LIKE ?",
+                       (n + "%",))
     return [{"effect": r[0], "route": r[1]} for r in rows[:3]]
 
 
@@ -75,7 +79,7 @@ def link_disease(conn, name: str, category_label: str = "") -> list:
         return []
     # 化学链: 用名字关键词匹配职业性化学中毒 (按疾病名包含因素关键词)
     n = name_norm(name) or name
-    ds = conn.execute("SELECT name FROM occupational_disease WHERE category LIKE '%化学中毒%'").fetchall()
+    ds = Dataset(conn).rows("SELECT name FROM occupational_disease WHERE category LIKE '%化学中毒%'")
     # 匹配: 病名含因素, 但单字物质(苯/氨)需病名以它开头(氨中毒)或独立成词(避免'氨'误配'苯的氨基')
     hit = []
     for d in ds:

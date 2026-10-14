@@ -47,6 +47,9 @@ BASE_DIRS = ("web", "knowledge", "tools")
 # 表名正则**必须含数字**: 曾用 [a-z_]+ 把 gbz1_rule 截成 gbz, 得出"门看不见 gbz1_rule"的假结论
 TBL_RE = re.compile(r"FROM\s+([a-z_][a-z_0-9]*)", re.I)
 EXEC_FNS = {"execute", "executescript", "rows_of", "_rows_of", "table", "one", "rows", "scalar"}
+# ⚠ 准入判据不能只看被调名 (S1b′ 实测): 站点迁到 Dataset.rows()/one() 与 _ds_rows/_ds_one
+#   这类本地 shortcut 之后, 按名字白名单收会把**还在读的读点看成消失** —— 196→189 的差额里
+#   有 6 处就是这么来的。名字只当提示, 真正的判据是"调用实参里有没有一条静态 SELECT"。
 
 # —— 消费者类型的判据词 (启发式, 判不准一律 unknown, 不许硬猜成 printed) ——
 COUNT_RE = re.compile(r"\bSELECT\s+COUNT\(|\bEXISTS\s*\(", re.I)
@@ -272,7 +275,7 @@ def static_sites(tables: set[str]) -> list[dict]:
             fmap, pmap = _enclosing_func(tree), _parent_map(tree)
             cctx, ftab = _func_ctx(tree), _func_table(tree)
             for node in ast.walk(tree):
-                if not isinstance(node, ast.Call) or _fn_name(node) not in EXEC_FNS:
+                if not isinstance(node, ast.Call):
                     continue
                 sql = ""
                 for a in node.args:
@@ -516,6 +519,62 @@ def probe_columns() -> dict:
     return out
 
 
+_SEL_RE = re.compile(r"SELECT\s+(.*?)\s+FROM", re.I | re.S)
+
+
+def _select_cols(sql: str) -> list[str]:
+    """SELECT 与 FROM 之间的列名 (去 DISTINCT/表前缀; 函数表达式取原词)"""
+    m = _SEL_RE.search(sql)
+    if not m:
+        return []
+    out = []
+    for c in m.group(1).split(","):
+        c = re.sub(r"^(DISTINCT\s+|\*\s*)", "", c.strip(), flags=re.I)
+        c = c.split(".")[-1].strip('"').strip()
+        if c and c != "*":
+            out.append(c)
+    return out
+
+
+def migration_list() -> dict:
+    """S1b′ 迁移白名单: printed × 门可见, 再按**列级**牙齿分档。
+
+    为什么必须再分列级: 表级"门可见"会骗人 —— 列级探针实测 `oel_limit.source_standard`
+    (正是这道门要改写的列) 打标记后 4 项目指纹一字不动。column_visible=False 的站点
+    不能用 "--check 零差异" 当保护证据, 只能由 tools/test_door_currentize_unit.py 那种
+    合成库单测负责。
+    """
+    cov = json.loads(OUT.read_text(encoding="utf-8"))
+    colpath = ROOT / "tools" / "golden" / "gate_columns.json"
+    cols = json.loads(colpath.read_text(encoding="utf-8")) if colpath.exists() else {}
+    sites = []
+    for s in cov["sites"]:
+        if s["kind"] != "printed" or not s.get("gate_visible"):
+            continue
+        read = _select_cols(s["sql_full"])
+        hit, miss = [], []
+        for tb in s["tables"]:
+            for c in read:
+                info = cols.get(tb, {}).get(c)
+                if info is None:
+                    continue
+                (hit if info["teeth"] else miss).append(f"{tb}.{c}")
+        sites.append({"file": s["file"], "line": s["line"], "tables": s["tables"],
+                      "read_cols": read, "column_visible": bool(hit),
+                      "visible_cols": sorted(set(hit)), "blind_cols": sorted(set(miss)),
+                      "note": ("读到的上纸列: " + ",".join(x.split(".")[1] for x in sorted(set(hit)))
+                               if hit else
+                               "所读列全不上纸: " + ",".join(x.split(".")[1] for x in sorted(set(miss)))
+                               or "列不在列级探针表内"),
+                      "sql": s["sql_full"]})
+    return {"summary": {"total": len(sites),
+                        "column_visible": sum(1 for x in sites if x["column_visible"]),
+                        "needs_unit_test": sum(1 for x in sites if not x["column_visible"]),
+                        "note": "column_visible=True 才能用 export_fingerprint --check 交账; "
+                                "False 的站点由 tools/test_door_currentize_unit.py 负责"},
+            "sites": sorted(sites, key=lambda x: (x["file"], x["line"]))}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     g = ap.add_mutually_exclusive_group(required=True)
@@ -525,8 +584,22 @@ def main() -> int:
     g.add_argument("--probe", action="store_true", help="表级牙齿实测 (副本库, 不写真库)")
     g.add_argument("--probe-columns", action="store_true",
                    help="列级牙齿图: 对表级已见的表逐列探 (~21 分钟, 只写 /tmp 副本)")
+    g.add_argument("--migration-list", action="store_true",
+                   help="按当前代码重算迁移白名单 (printed×可见×列级牙齿), 需先有 gate_coverage.json")
     args = ap.parse_args()
     tables = official_tables()
+
+    if getattr(args, "migration_list"):
+        if not OUT.exists():
+            print(f"先跑 --write/--offline 生成 {OUT.name}")
+            return 1
+        ml = migration_list()
+        path = ROOT / "tools" / "golden" / "gate_migration_list.json"
+        path.write_text(json.dumps(ml, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"迁移白名单: {ml['summary']['total']} 处 = "
+              f"{ml['summary']['column_visible']} 处可用 --check 交账 + "
+              f"{ml['summary']['needs_unit_test']} 处必须合成库单测 → {path.name}")
+        return 0
 
     if getattr(args, "probe_columns"):
         res = probe_columns()
