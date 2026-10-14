@@ -117,18 +117,22 @@ def agg_staffing(v: Any) -> str:
     rows = [x for x in items if isinstance(x, dict)]
     if not rows:
         return f"共{len(items)}个岗位"
-    total = sum(_n(x.get("count")) for x in rows)
-    # 部门分布
+    # 定员口径唯一产地 (web/derived_fields.staffing_totals):
+    #   材料自带「合计」行 → 以其为准; 旧实现 sum 全部行 → 149+144=293 双计错值进 prompt
+    from .derived_fields import is_summary_row, staffing_totals
+    total, _detail = staffing_totals(rows)
+    detail_rows = [x for x in rows if not is_summary_row(x)]
+    # 部门分布 (汇总行不参与, 否则「合计149人」会被当成一个部门排进 top5)
     depts: dict[str, int] = {}
-    for x in rows:
+    for x in detail_rows:
         d = str(x.get("dept") or "").strip()
         if d:
             depts[d] = depts.get(d, 0) + _n(x.get("count"))
-    parts = [f"共设{len(rows)}个岗位, 定员{total}人"]
+    parts = [f"共设{len(detail_rows)}个岗位, 定员{total or 0}人"]
     if depts:
         top = sorted(depts.items(), key=lambda kv: -kv[1])[:5]
         parts.append("主要部门: " + "、".join(f"{d}{c}人" for d, c in top))
-    parts.append(f"（明细{len(rows)}行见班制定员表）")
+    parts.append(f"（明细{len(detail_rows)}行见班制定员表）")
     return "；".join(parts)
 
 

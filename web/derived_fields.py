@@ -106,6 +106,44 @@ def _from_text(project: dict) -> tuple[str, str, str]:
     return wd, hps, ah
 
 
+SUMMARY_ROW_KEYS = ("合计", "总计", "小计")
+
+
+def is_summary_row(row) -> bool:
+    """定员表里的汇总行 (「合计/总计/小计」) —— 判据唯一产地, 各聚合器勿各写一份。"""
+    if not isinstance(row, dict):
+        return False
+    return any(k in str(row.get("post") or "") + str(row.get("dept") or "")
+               for k in SUMMARY_ROW_KEYS)
+
+
+def staffing_totals(staffing: list) -> tuple[int | None, int]:
+    """全厂总定员的**唯一口径**: 返回 (权威总定员, 明细行求和)。
+
+    材料自带「合计/总计/小计」行时以其为总定员, 否则取明细行求和 ——
+    与 web/section_filler 班制定员表「材料有合计则不追加代码合计」同源。
+    ⚠ 各聚合器不得自行 sum 全部行: 那样会把「合计」行与明细行二次相加
+      (长兴项目 149+144=293, 正文/表格口径分裂, 2026-10 实测 7 处错值即由此而来)。
+    多个汇总行取最大值 (= 全厂合计)。
+    """
+    total_rows: list[int] = []
+    detail_sum = 0
+    for x in staffing:
+        if not isinstance(x, dict):
+            continue
+        m = re.search(r"\d[\d,，.]*", str(x.get("count") or ""))
+        if not m:
+            continue
+        n = int(re.sub(r"[^\d]", "", m.group(0)) or 0)
+        if is_summary_row(x):
+            total_rows.append(n)
+        else:
+            detail_sum += n
+    if total_rows:
+        return max(total_rows), detail_sum
+    return (detail_sum or None), detail_sum
+
+
 def extract_work_system(project: dict) -> str:
     """工作制度: 聚合成年人话 (对标真实报告 "定员10人, 年工作日300天, 单班制")
 
@@ -113,14 +151,8 @@ def extract_work_system(project: dict) -> str:
     """
     parts: list[str] = []
 
-    # 定员
-    staffs = project.get("staffing") or []
-    total = 0
-    for x in staffs:
-        if isinstance(x, dict):
-            m = re.search(r"\d+", str(x.get("count") or ""))
-            if m:
-                total += int(m.group(0))
+    # 定员 (口径统一: 见 staffing_totals, 不得把「合计」行与明细行二次相加)
+    total, _detail = staffing_totals(project.get("staffing") or [])
     if total:
         parts.append(f"劳动定员{total}人")
 
