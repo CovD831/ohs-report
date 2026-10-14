@@ -74,12 +74,12 @@ curl -s -o /dev/null -w '公网: %{http_code}\n' https://paiyipai.xyz/login
 # ⚠ 关键: 校验"新代码真的进容器了" (防"部署成功但代码是旧的"静默假成功)
 # 比对本地与容器内关键文件的 md5
 # ⚠⚠ 教训 (2026-10): 清单必须覆盖**本轮改过的文件** —— 只列固定几个文件,
-#   改了别的文件就校验不到 = 等于没验。本轮改动: 全量帽清除
-#   (section_filler/report_parser/structure_data/table_builder/hazard_grid/
-#    report_struct/unit_gen/validators) + word_export 护栏场景3。
+#   改了别的文件就校验不到 = 等于没验。本轮改动: optfix
+#   (section_filler 气象表旁路 / structure_data region_facts 段落侧接线 /
+#    knowledge.ppe_vertical 发放周期惯例 + 新增 web/thi_rating.py)。
 echo "=== 6. 源码一致性校验 (本地 vs 容器) ==="
 _mismatch=0
-for _f in web/app.py knowledge/project_assess.py knowledge/gbz1_loader.py web/table_skeleton.py web/section_filler.py web/section_style_spec.json web/word_export.py web/llm_draft.py web/standard_version.py web/orig_table_map.py web/report_parser.py web/structure_data.py web/table_builder.py web/hazard_grid.py web/report_struct.py web/unit_gen.py web/validators.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py tools/compare_real_report.py; do
+for _f in web/app.py knowledge/project_assess.py knowledge/gbz1_loader.py knowledge/ppe_vertical.py web/table_skeleton.py web/section_filler.py web/section_style_spec.json web/word_export.py web/llm_draft.py web/standard_version.py web/orig_table_map.py web/report_parser.py web/structure_data.py web/table_builder.py web/hazard_grid.py web/report_struct.py web/unit_gen.py web/thi_rating.py web/validators.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py tools/compare_real_report.py; do
   _l=$(md5 -q "$_f" 2>/dev/null || md5sum "$_f" | cut -d' ' -f1)
   _r=$(ssh $SRV "docker exec ohs-report md5sum /app/$_f 2>/dev/null | cut -d' ' -f1")
   if [ "$_l" = "$_r" ]; then

@@ -47,6 +47,11 @@ PROJECT_INFO_SCHEMA.setdefault("attachment_list", ("报告附件清单", "list")
 PROJECT_INFO_SCHEMA.setdefault("management", ("职业卫生管理制度", "str"))
 # 职业卫生专项经费 (9.2 专项投资: 与项目总投资严格区分)
 PROJECT_INFO_SCHEMA.setdefault("ohy_investment", ("职业卫生专项经费(万元)", "str"))
+# 区域基础事实 (3.2 选址分析: 地震设防烈度/地质分层/水文/气温极值/风速风向)
+# 来源: data/region_facts.json (tools/extract_region_facts.py 从可研/地勘提取, 带页码溯源)
+# 2026-10-14 接线原因: 该数据早已入库且 built_tables 气象表已用它, 但 3.2 段落侧从未投喂
+#   → LLM 无据可依写「地震动峰值加速度资料未提供, 待补充」= 假缺口
+PROJECT_INFO_SCHEMA.setdefault("region_facts", ("所在地自然条件基础数据(材料提取, 带页码)", "list"))
 
 # ============ 各章节取哪些数据字段 (适配 11 章平铺, 映射到 report_struct 的 key) ============
 # 章级 → 字段; 二级小节 → (章字段 + 该小节侧重的字段)
@@ -103,7 +108,7 @@ SUB_EMPHASIS: dict[str, list[str]] = {
     # 3 工程分析
     "3.1": ["name", "industry", "nature", "investment", "capacity", "area", "location",
             "equipment", "staffing", "buildings", "public_works"],
-    "3.2": ["location", "area"],
+    "3.2": ["location", "area", "region_facts"],
     "3.3": ["equipment", "buildings", "area"],
     "3.4": ["materials", "products"],
     "3.5": ["process_text", "equipment", "products"],
@@ -373,6 +378,36 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
                 except Exception:
                     pass
             return mg or "职业卫生管理制度待补充(需企业提供)"
+        if field == "region_facts":
+            # 区域基础事实 (3.2 选址): 按地区名读 region_facts.json, 只投喂有值的条目
+            # 地区名: profile.region → location/company 规则抽取 (与 table_builder 同源)
+            out = []
+            region = ""
+            prof = project.get("profile") or {}
+            region = str(prof.get("region") or "").strip()
+            if not region:
+                try:
+                    from web.table_builder import extract_region
+                    region = extract_region(str(project.get("location") or ""),
+                                            str(project.get("company") or ""))
+                except Exception:
+                    region = ""
+            if region:
+                try:
+                    import json as _json
+                    from pathlib import Path as _P
+                    _fp = _P(__file__).resolve().parent.parent / "data" / "region_facts.json"
+                    _d = _json.loads(_fp.read_text(encoding="utf-8"))
+                    _f = _d.get(region) if isinstance(_d, dict) else None
+                    if isinstance(_f, dict):
+                        for _k, _v in _f.items():
+                            if isinstance(_v, dict) and _v.get("value"):
+                                out.append({"项目": _k, "数据": str(_v["value"]),
+                                            "来源": f'{_v.get("file", "项目材料")}'
+                                                    + (f' p{_v["page"]}' if _v.get("page") else "")})
+                except Exception:
+                    pass
+            return out or [{"说明": "所在地自然条件基础数据待补充(需可研/地勘报告)"}]
         return project.get(field, [] if field in ("equipment", "materials", "staffing", "ppe") else "")
 
     lines = []
