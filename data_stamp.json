@@ -1,7 +1,7 @@
 {
- "generated_at": "2026-10-14T23:38:51",
+ "generated_at": "2026-10-15T00:13:16",
  "db": "/Users/abaaba/Projects/ohs-report/data/ohs.db",
- "overall": "5d2438d698d8",
+ "overall": "e56a69867358",
  "excluded": [
   "audit_log",
   "equipment_material",
@@ -14,133 +14,133 @@
  "tables": {
   "aux_unit_hazard": {
    "rows": 11,
-   "cols": "id|unit|keywords|factors|source|verified",
-   "sha1": "8660055145be"
+   "cols": "unit|keywords|factors|source|verified",
+   "sha1": "4804b21a8942"
   },
   "bio_limit": {
    "rows": 33,
-   "cols": "id|factor_name|english_name|indicator|indicator_en|limit_value|sample_time|source_standard|verified",
-   "sha1": "0ebcdbad108d"
+   "cols": "factor_name|english_name|indicator|indicator_en|limit_value|sample_time|source_standard|verified",
+   "sha1": "8087305953d4"
   },
   "emergency_rule": {
    "rows": 28,
-   "cols": "id|scenario|item|require|std_code|clause|source|verified",
-   "sha1": "d77fac1e35ad"
+   "cols": "scenario|item|require|std_code|clause|source|verified",
+   "sha1": "06ba1d7b48b6"
   },
   "exposure_level": {
    "rows": 5,
-   "cols": "id|level_code|range_desc|description|control_note|source_standard|verified",
-   "sha1": "e1fb0d1460c3"
+   "cols": "level_code|range_desc|description|control_note|source_standard|verified",
+   "sha1": "54fab422ff3f"
   },
   "gbz1_rule": {
    "rows": 76,
-   "cols": "id|clause|theme|rule|report_section|source|verified",
-   "sha1": "14a614051074"
+   "cols": "clause|theme|rule|report_section|source|verified",
+   "sha1": "03865413bef4"
   },
   "ghs_class": {
    "rows": 2832,
-   "cols": "id|seq|name|alias|english|cas|hazard_raw|remark|is_highly_toxic|is_carcinogen|source|verified",
-   "sha1": "03274f448cca"
+   "cols": "seq|name|alias|english|cas|hazard_raw|remark|is_highly_toxic|is_carcinogen|source|verified",
+   "sha1": "8fc568637446"
   },
   "hazard_factor": {
    "rows": 459,
-   "cols": "id|category|seq|name|cas|note|source|verified",
-   "sha1": "7cbdb4b48e1e"
+   "cols": "category|seq|name|cas|note|source|verified",
+   "sha1": "cab587aae14c"
   },
   "hazard_factor_alias": {
    "rows": 257,
-   "cols": "id|oel_name|catalog_name|match_type|source|verified",
-   "sha1": "da37d6ab24bc"
+   "cols": "oel_name|catalog_name|match_type|source|verified",
+   "sha1": "06b0b0c8434c"
   },
   "hazard_toxicity": {
    "rows": 104,
-   "cols": "id|factor_name|aliases|form|level|grade|basis|source|verified",
-   "sha1": "7a4ec3aa1365"
+   "cols": "factor_name|aliases|form|level|grade|basis|source|verified",
+   "sha1": "54eb47244c4c"
   },
   "hazchem_item": {
    "rows": 2828,
-   "cols": "id|seq|name|alias|cas|note|is_toxic|source|verified",
-   "sha1": "1ec2eaec12f5"
+   "cols": "seq|name|alias|cas|note|is_toxic|source|verified",
+   "sha1": "8c35d582904a"
   },
   "health_effect": {
    "rows": 357,
-   "cols": "id|factor|english|cas|effect|route|note|source|verified",
-   "sha1": "ffe51bba21cb"
+   "cols": "factor|english|cas|effect|route|note|source|verified",
+   "sha1": "8381e9e1a1b2"
   },
   "illumination_std": {
    "rows": 101,
-   "cols": "id|room|place|plane|lx|ugr|uo|ra|note|source|verified",
-   "sha1": "9cf6351600cb"
+   "cols": "room|place|plane|lx|ugr|uo|ra|note|source|verified",
+   "sha1": "c623220d30e0"
   },
   "industry_class": {
    "rows": 2800,
-   "cols": "id|level|code|name|note|source|verified",
-   "sha1": "62aa3ed0d6f8"
+   "cols": "level|code|name|note|source|verified",
+   "sha1": "c450ffd43bb9"
   },
   "management_rule": {
    "rows": 46,
-   "cols": "id|category|require|std_code|clause|source|verified",
-   "sha1": "4b9a37717a6c"
+   "cols": "category|require|std_code|clause|source|verified",
+   "sha1": "665ef1e7db13"
   },
   "material_dictionary": {
    "rows": 55,
-   "cols": "id|material|oel_factor|cas|fuzzy|source|verified",
-   "sha1": "5ee25843c920"
+   "cols": "material|oel_factor|cas|fuzzy|source|verified",
+   "sha1": "33deee4320e5"
   },
   "method_catalog": {
    "rows": 105,
-   "cols": "id|standard_code|part_num|factor|title_raw|file_name|source|verified",
-   "sha1": "d404df2b3207"
+   "cols": "standard_code|part_num|factor|title_raw|file_name|source|verified",
+   "sha1": "373d8c9918f1"
   },
   "occupational_disease": {
    "rows": 135,
-   "cols": "id|category|sub|name|note|source|verified",
-   "sha1": "133816fe021f"
+   "cols": "category|sub|name|note|source|verified",
+   "sha1": "02dd3daf6d23"
   },
   "oel_limit": {
    "rows": 638,
-   "cols": "id|factor_name|factor_type|cas|english_name|oel_type|value|unit|conditions|note|source_standard|verified",
-   "sha1": "cc4a22b544fd"
+   "cols": "factor_name|factor_type|cas|english_name|oel_type|value|unit|conditions|note|source_standard|verified",
+   "sha1": "56d042a39c34"
   },
   "ppe_item": {
    "rows": 35,
-   "cols": "id|category|cat_code|item_name|item_code|std_code|description|scenario|source|verified",
-   "sha1": "0c9ae87c2254"
+   "cols": "category|cat_code|item_name|item_code|std_code|description|scenario|source|verified",
+   "sha1": "7ad685c278b0"
   },
   "ppe_work_matrix": {
    "rows": 81,
-   "cols": "id|work_type|item|mark|source",
-   "sha1": "690b030b6e8e"
+   "cols": "work_type|item|mark|source",
+   "sha1": "f78df7d0b7da"
   },
   "protection_rule": {
    "rows": 26,
-   "cols": "id|hazard_category|measure|std_code|clause|check_point|source|verified",
-   "sha1": "7b0a8dba4f4f"
+   "cols": "hazard_category|measure|std_code|clause|check_point|source|verified",
+   "sha1": "0ab1f596a3f2"
   },
   "risk_category": {
    "rows": 290,
-   "cols": "id|industry_code|industry_name|risk_level|source|verified",
-   "sha1": "f9d38831b0c4"
+   "cols": "industry_code|industry_name|risk_level|source|verified",
+   "sha1": "bfcf9605bc1e"
   },
   "standard_db": {
    "rows": 2222,
-   "cols": "id|code|name|state|pubdate|effdate|replace_of|url|source|verified",
-   "sha1": "d94f47da5ed9"
+   "cols": "code|name|state|pubdate|effdate|replace_of|url|source|verified",
+   "sha1": "c0178b3cfe63"
   },
   "standard_ref": {
    "rows": 27,
-   "cols": "id|code|name|clause|purpose|source",
-   "sha1": "73e8c639cd62"
+   "cols": "code|name|clause|purpose|source",
+   "sha1": "f287c0617b80"
   },
   "surveillance_rule": {
    "rows": 173,
-   "cols": "id|factor|section|check_type|target_disease|cycle|must_items|source|verified",
-   "sha1": "4f68f83cd955"
+   "cols": "factor|section|check_type|target_disease|cycle|must_items|source|verified",
+   "sha1": "0fae9376568d"
   },
   "work_unit_rule": {
    "rows": 12,
-   "cols": "id|unit|process|post|enclosed|material|source_note|factors|source|verified",
-   "sha1": "7a343e5bdf6b"
+   "cols": "unit|process|post|enclosed|material|source_note|factors|source|verified",
+   "sha1": "8cf9ac50d6da"
   }
  }
 }

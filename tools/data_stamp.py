@@ -40,13 +40,22 @@ def official_tables(conn: sqlite3.Connection) -> list[str]:
 
 
 def table_digest(conn: sqlite3.Connection, t: str) -> dict:
+    """表内容指纹: 行数 + 列签名 + 内容摘要
+
+    ⚠ 必须**与插入顺序无关** (2026-10-15 实测): 生产与本地同一张表内容一致,
+      但某次重灌让自增 id 全部错位 (gbz1_rule 76 行逐行 rowid 都比不出相同) →
+      按 rowid 序哈希会报"内容不同", 版本戳就变成天天狼来了。
+      做法: 丢掉代理键 id, 对每行取摘要后再按摘要排序哈希。
+    """
     cols = [r[1] for r in conn.execute(f"PRAGMA table_info({t})")]
-    h = hashlib.sha1((",".join(cols)).encode())
-    n = 0
-    for row in conn.execute(f"SELECT * FROM {t} ORDER BY rowid"):
-        n += 1
-        h.update(repr(row).encode())
-    return {"rows": n, "cols": "|".join(cols), "sha1": h.hexdigest()[:12]}
+    keep = [i for i, name in enumerate(cols) if name != "id"]
+    kept_cols = [cols[i] for i in keep]
+    row_hashes = []
+    for row in conn.execute(f"SELECT {','.join(cols)} FROM {t}"):
+        payload = repr(tuple(row[i] for i in keep))
+        row_hashes.append(hashlib.sha1(payload.encode()).hexdigest())
+    body = hashlib.sha1((",".join(sorted(row_hashes))).encode()).hexdigest()[:12]
+    return {"rows": len(row_hashes), "cols": "|".join(kept_cols), "sha1": body}
 
 
 def current_stamp(db_path: Path = DB) -> dict:
