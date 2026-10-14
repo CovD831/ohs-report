@@ -68,6 +68,53 @@ def _year(code: str) -> int:
     return int(m[-1]) if m else 0
 
 
+_SUP_INDEX: dict[str, dict] = {}
+
+
+def supersession_index(conn: sqlite3.Connection) -> dict:
+    """被代替关系反查表: 归一化的"被代替标准号" → 代替它的现行版信息。
+
+    单一产地: V-05 校验 与 fix_standard_refs 替换 共用此判据 (避免第三份平行实现)。
+    键用 (_base_code, _year) —— replace_of 常写成 'GBZ/T 230—2010'(带空格/全角破折号),
+    与库内 code 'GBZ230-2010' 归一后同键。
+    """
+    ident = str(id(conn)) + ":" + str(conn.execute(
+        "select count(*) from standard_db").fetchone()[0])
+    if _SUP_INDEX.get("ident") == ident:
+        return _SUP_INDEX
+    idx: dict = {"ident": ident, "map": {}}
+    for code, state, rep in conn.execute(
+            "SELECT code, state, replace_of FROM standard_db WHERE replace_of IS NOT NULL "
+            "AND trim(replace_of) != ''"):
+        b, y = _base_code(rep), _year(rep)
+        if not b or not y:
+            continue
+        idx["map"].setdefault((b, y), []).append(
+            {"code": code, "state": state or "", "year": _year(code) or 0})
+    _SUP_INDEX.clear()
+    _SUP_INDEX.update(idx)
+    return idx
+
+
+def is_superseded(conn: sqlite3.Connection, ref_code: str) -> dict | None:
+    """该标准号是否已被代替 —— state 与 replace_of **双判据**。
+
+    事故 (2026-10-14 实测): `GBZ230-2010` 在 standard_db 里 state='实施中',
+    但 `GBZ/T230-2025` 的 replace_of 明写「代替GBZ/T 230—2010」。旧实现只信
+    state=='废止' → 引用已作废的 2010 版时 **既不替换也不报警** (两级护栏同时漏网)。
+    普查 2222 行: 5 条"被代替仍标实施中" + 29 条"被代替旧行压根不在库里"。
+
+    保守取向: 推断出的代替版必须 (a) 年份更晚 且 (b) 自身不是废止态; 否则不改判。
+    返回代替版信息 dict (可多条取最新), 未被视为废止则返回 None。
+    """
+    b, y = _base_code(ref_code), _year(ref_code)
+    if not b or not y:
+        return None
+    cands = [x for x in supersession_index(conn)["map"].get((b, y), [])
+             if x["year"] > y and x["state"] not in ("废止", "已废止")]
+    return max(cands, key=lambda x: x["year"]) if cands else None
+
+
 def resolve_current(conn: sqlite3.Connection, ref_code: str) -> dict | None:
     """无年份/任意标准号 → 库中**未废止的最新版**记录
 
@@ -199,7 +246,9 @@ def fix_standard_refs(text: str, conn: sqlite3.Connection | None = None) -> tupl
             if not state:
                 row = conn.execute("SELECT state FROM standard_db WHERE code=?", (full,)).fetchone()
                 state = (row[0] if row else None) or ""
-            if state not in ("废止", "已废止"):
+            # state 漏标时按 replace_of 反查补判 (见 is_superseded 的事故说明)
+            sup = None if state in ("废止", "已废止") else is_superseded(conn, full)
+            if state not in ("废止", "已废止") and not sup:
                 return m.group(0)
             cur = resolve_current(conn, full)
             if not cur or not cur.get("code"):

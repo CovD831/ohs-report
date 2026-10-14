@@ -323,16 +323,25 @@ def _check_standards(text: str) -> list[dict]:
                            "note": note, "suggest": sug})
             continue
         code, name, state = hit
-        if (state or "") == "废止":
+        # 双判据: state 标了废止, 或 库里有"代替本号"的更晚现行版 (state 漏标时兜底)
+        from web.standard_version import is_superseded, resolve_current
+        _sup = None if (state or "") == "废止" else is_superseded(conn, code)
+        if (state or "") == "废止" or _sup:
             cur = ""
             try:
-                from web.standard_version import resolve_current
                 _c = resolve_current(conn, code)
                 if _c and (_c.get("state") or "") not in ("废止", "已废止"):
                     cur = _c.get("code") or ""
             except Exception:
                 pass
             _note = f"引用了**已废止**标准[{code}] {name[:30]} —— 须改引现行版本"
+            if not cur and _sup:
+                cur = _sup["code"]
+            if _sup:
+                # 判据来源必须写明: 本行 state 未标废止, 是靠 replace_of 反查认定的
+                # (评审复核时若只看到"已废止"却发现库里标着实施中, 会以为我们误报)
+                _note += (f" (standard_db 本行 state={state!r} 漏标, "
+                          f"按 {_sup['code']} 的 replace_of 反查判定)")
             if cur:
                 _note += f"[{cur}]"
             issues.append({"rule_id": "V-05", "level": "error", "standard": code,
