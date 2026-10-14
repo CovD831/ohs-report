@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from web.standard_version import _base_code, norm_code, resolve_current  # noqa: E402
+from knowledge.standard_version import _base_code, norm_code, resolve_current  # noqa: E402
 
 JSON_P = ROOT / "web" / "fixed_texts_data.json"
 DB_P = ROOT / "data" / "ohs.db"

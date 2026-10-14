@@ -12,7 +12,7 @@ REMOTE_DIR='~/ohs-report'
 #   改了别的文件就校验不到 = 等于没验。
 MD5_FILES=(web/app.py knowledge/project_assess.py knowledge/gbz1_loader.py knowledge/ppe_vertical.py
            web/table_skeleton.py web/section_filler.py web/section_style_spec.json web/word_export.py
-           web/llm_draft.py web/standard_version.py web/orig_table_map.py web/report_parser.py
+           web/llm_draft.py knowledge/standard_version.py web/orig_table_map.py web/report_parser.py
            web/structure_data.py web/table_builder.py web/hazard_grid.py web/report_struct.py
            web/unit_gen.py web/thi_rating.py web/validators.py web/derived_fields.py
            web/field_projection.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py

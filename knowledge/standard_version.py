@@ -13,7 +13,7 @@
     作为"标准版本基准"喂进 prompt; LLM 照抄而非自补。
 
 用法:
-    from web.standard_version import resolve_all_refs
+    from knowledge.standard_version import resolve_all_refs
     refs = resolve_all_refs(conn)   # [{ref_code, name, current_code, state}, ...]
 """
 from __future__ import annotations

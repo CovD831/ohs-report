@@ -335,8 +335,8 @@ def _physical_det_table(conn, dets: list) -> dict | None:
 
 
 def _rows_of(conn, sql, args=()):
-    """官方数据层读行 → 标准号兜底在 web.standard_version.rows_of 单点完成"""
-    from web.standard_version import rows_of
+    """官方数据层读行 → 标准号兜底在 knowledge.standard_version.rows_of 单点完成"""
+    from knowledge.standard_version import rows_of
     return rows_of(conn, sql, args)
 
 

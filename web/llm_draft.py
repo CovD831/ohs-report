@@ -287,7 +287,7 @@ def _design_base() -> str:
     走 rows_of: 规则库里若存着废止标准号, 不能把它喂进 prompt —— 那等于让 LLM
     照抄一个我们自己在 V-05 里判为硬伤的写法 (兜底替换是在生成之后, 源头就该干净)。
     """
-    from web.standard_version import rows_of
+    from knowledge.standard_version import rows_of
     conn = connect()
     lines = []
     for r in rows_of(conn, "SELECT check_point, std_code, clause FROM protection_rule"):

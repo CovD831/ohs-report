@@ -16,7 +16,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 DB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "ohs.db")
 conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
 
-from web.standard_version import (fix_standard_refs, is_superseded,  # noqa: E402
+from knowledge.standard_version import (fix_standard_refs, is_superseded,  # noqa: E402
                                   supersession_index)
 from web.validators import _check_standards  # noqa: E402
 

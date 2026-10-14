@@ -1682,11 +1682,11 @@ if _lifecycle["dropped_rows"] or _lifecycle["dropped_dirs"]:
 def _fix_standard_refs(text: str) -> tuple[str, list[str]]:
     """废止/无效标准号 → 现行版 (确定性兜底)。
 
-    函数体已迁至 **web/standard_version.fix_standard_refs** (单一产地, 2026-10):
+    函数体已迁至 **knowledge/standard_version.fix_standard_refs** (单一产地, 2026-10):
     原实现留在 web/app.py 时, tools/ 侧脚本 import 会连带触发 app 的副作用
     (_cleanup_expired / init_tasks)。此处保留同名薄包装, 调用点不变。
     """
-    from web.standard_version import fix_standard_refs
+    from knowledge.standard_version import fix_standard_refs
     return fix_standard_refs(text)
 
 

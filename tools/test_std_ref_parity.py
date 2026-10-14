@@ -1,4 +1,4 @@
-"""守卫: 标准号的"引用形态尺子"只能有一把 (web.standard_version.STD_REF_PAT)
+"""守卫: 标准号的"引用形态尺子"只能有一把 (knowledge.standard_version.STD_REF_PAT)
 
 背景 (2026-10-14 实测): 仓库里曾有 6 份各写一遍的标准号归一化/匹配正则
   (standard_version 改写器 / validators V-05 / std_guard / table_skeleton / 两个入库脚本)。
@@ -23,10 +23,10 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 from knowledge.oel import connect                                       # noqa: E402
 import web.std_guard                                                    # noqa: E402
-import web.standard_version as sv                                       # noqa: E402
+import knowledge.standard_version as sv                                 # noqa: E402
 import web.table_skeleton                                               # noqa: E402
 import web.validators                                                   # noqa: E402
-from web.standard_version import fix_standard_refs, is_superseded       # noqa: E402
+from knowledge.standard_version import fix_standard_refs, is_superseded       # noqa: E402
 from web.validators import _check_standards                             # noqa: E402
 
 n_pass = n_fail = 0
@@ -50,7 +50,7 @@ check("std_guard._norm 就是 norm_code", web.std_guard._norm is sv.norm_code, T
 # 源码里不得再出现"GB...数字...连接号...年份"形态的自建正则 (允许引用 STD_REF_PAT)
 _SELF_RE = re.compile(r"re\.compile\([^)]*GB|re\.findall\([^)]*GB|_\w+\s*=\s*lambda[^=]*连接号")
 for mod, fn in ((web.validators, web.validators._check_standards),
-                (web.standard_version, web.standard_version.fix_standard_refs),
+                (sv, sv.fix_standard_refs),
                 (web.table_skeleton, None)):
     src = inspect.getsource(fn) if fn else inspect.getsource(mod)
     hits = [ln.strip()[:60] for ln in src.splitlines() if _SELF_RE.search(ln)]

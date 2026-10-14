@@ -203,7 +203,7 @@ def _walk_built_tables(bt, fix):
 
 def main() -> int:
     apply = "--apply" in sys.argv
-    from web.standard_version import fix_standard_refs
+    from knowledge.standard_version import fix_standard_refs
 
     conn = sqlite3.connect(DB)
     conn.row_factory = sqlite3.Row

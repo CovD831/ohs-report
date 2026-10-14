@@ -121,7 +121,7 @@ def _build_phys_limit_table(name: str, conn) -> dict | None:
     rows = []
     # rows_of: 限值表的"依据标准"列直接来自库里存的 source_standard,
     # 实测本地/生产都挂着废止版 (GBZ 2.2—2007) → 读出即纠, 不指望数据已被同步
-    from web.standard_version import rows_of
+    from knowledge.standard_version import rows_of
     for f in factors:
         for r in rows_of(conn,
                 "SELECT factor_name, oel_type, value, unit, conditions, source_standard "
@@ -349,10 +349,10 @@ def _fill_assess_tables(out: dict, assess: dict) -> None:
                 #   事故 (2026-10): 噪声/高温接触限值表骨架建于 GBZ 2.2—2007 时代,
                 #   标准升 2019 后骨架"永生" → 导出物里 21 处废止引用。
                 #   判据: 骨架内容含**已废止标准号**而现算版本不含 → 用现算覆盖 (标准版本护栏)。
-                # 引用形态与归一化走单一产地 (web.standard_version); 原此处自写正则+lambda,
+                # 引用形态与归一化走单一产地 (knowledge.standard_version); 原此处自写正则+lambda,
                 # 且 SQL 侧只去了空格没归一连接号 → 库里 'GBZ 230—2010' 这种 em dash 写法
                 # 永远查不中, 废止骨架刷不动 (静默)。
-                from web.standard_version import STD_REF_PAT, norm_code, ref_code
+                from knowledge.standard_version import STD_REF_PAT, norm_code, ref_code
 
                 def _refs(s):
                     return {ref_code(m) for m in STD_REF_PAT.finditer(s)}

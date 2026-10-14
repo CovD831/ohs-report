@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8")
 
-from web.standard_version import make_ref_fixer, norm_code  # noqa: E402
+from knowledge.standard_version import make_ref_fixer, norm_code  # noqa: E402
 
 # (表, 存标准号的列, 主键列) — 只列"会印进报告的依据列"
 TARGETS = [

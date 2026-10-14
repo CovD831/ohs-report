@@ -291,10 +291,10 @@ def _check_standards(text: str) -> list[dict]:
       - 有 replace_of 且被替代者已废止 → 提示应引新版
     """
     issues: list[dict] = []
-    # 标准号形态 = 单一产地 web.standard_version.STD_REF_PAT (与改写器同一把尺子)。
+    # 标准号形态 = 单一产地 knowledge.standard_version.STD_REF_PAT (与改写器同一把尺子)。
     # ⚠ 此处曾自写一份正则且**不含全角"－"**: 正文写 'GBZ 230－2010' 会被改写器悄悄改掉,
     #   却不产生 V-05 报警 —— 两条护栏对同一件事一个看得见一个看不见。
-    from web.standard_version import STD_REF_PAT, norm_code, ref_code
+    from knowledge.standard_version import STD_REF_PAT, norm_code, ref_code
     refs = list(STD_REF_PAT.finditer(text or ""))
     if not refs:
         return issues
@@ -325,7 +325,7 @@ def _check_standards(text: str) -> list[dict]:
             continue
         code, name, state = hit
         # 双判据: state 标了废止, 或 库里有"代替本号"的更晚现行版 (state 漏标时兜底)
-        from web.standard_version import is_superseded, resolve_current
+        from knowledge.standard_version import is_superseded, resolve_current
         _sup = None if (state or "") == "废止" else is_superseded(conn, code)
         if (state or "") == "废止" or _sup:
             cur = ""

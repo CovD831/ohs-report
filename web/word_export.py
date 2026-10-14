@@ -290,7 +290,7 @@ def _refresh_stale_std_tables(tables: list[dict]) -> list[dict]:
         import sqlite3 as _sq
         import re as _re
         from pathlib import Path as _P
-        from web.standard_version import resolve_current, _base_code, _year
+        from knowledge.standard_version import resolve_current, _base_code, _year
         db = _P(__file__).resolve().parent.parent / "data" / "ohs.db"
         if not db.exists():
             return tables

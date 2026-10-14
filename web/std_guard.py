@@ -20,10 +20,10 @@ import sqlite3
 import sys
 from pathlib import Path
 
-# 标准号形态与归一化 = 单一产地 web.standard_version (2026-10-14 收口)
+# 标准号形态与归一化 = 单一产地 knowledge.standard_version (2026-10-14 收口)
 #   此处原有一份自己的 _ART/_norm: 分隔符集少一个 U+2212、前缀写成 '/?\s*T?'
 #   (会把 'GB T 123' 这类非法写法也吞进来), 与改写器/V-05 三把尺子不一致。
-from web.standard_version import STD_REF_PAT as _ART, norm_code as _norm, ref_code  # noqa: E402
+from knowledge.standard_version import STD_REF_PAT as _ART, norm_code as _norm, ref_code  # noqa: E402
 
 
 def superseded_map(conn: sqlite3.Connection) -> dict[str, str]:

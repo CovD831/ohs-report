@@ -40,7 +40,7 @@ from docx.oxml.ns import qn  # noqa: E402
 from docx.table import Table  # noqa: E402
 from docx.text.paragraph import Paragraph  # noqa: E402
 
-from web.standard_version import STD_REF_PAT, ref_code  # noqa: E402
+from knowledge.standard_version import STD_REF_PAT, ref_code  # noqa: E402
 # ⚠ 导出相关的重依赖 (web.app / knowledge.project_assess / tools.export_e2e / web.word_export)
 #   **故意放在 export() 内部 import**: test_gate_sensitivity 只用本模块的纯函数
 #   (texts_from_docx / digest / diff), 不该为了做门禁把 web.app 的导入副作用

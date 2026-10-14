@@ -22,7 +22,7 @@ def query_measures(conn, issue_type: str) -> list[dict]:
     读规则库一律走 rows_of: 库里存着废止标准号 (实测 GB/T 18664—2002 这类) 时,
     依据列不得原样进报告 —— 兜底在唯一的读出点做, 不在这里逐条拼。
     """
-    from web.standard_version import rows_of
+    from knowledge.standard_version import rows_of
     m = []
     if issue_type in ("超标", "化学"):
         for r in rows_of(conn, "SELECT check_point, std_code, clause FROM protection_rule "

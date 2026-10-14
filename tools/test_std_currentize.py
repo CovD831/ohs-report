@@ -3,7 +3,7 @@
 背景 (2026-10-15): 版本戳首跑抓到生产 emergency_rule/protection_rule 仍挂废止标准号
   (GBZ 2.2—2007 / GB/T 38144.1—2019), 本地 oel_limit.source_standard 也存着 GBZ 2.2—2007。
   部署刻意排除 data/ → 不能假设两份库都被清洗过, 所以兜底放在**读出点**:
-  web.standard_version.rows_of 是唯一入口, 表格里印的依据标准号先过一遍现行版替换。
+  knowledge.standard_version.rows_of 是唯一入口, 表格里印的依据标准号先过一遍现行版替换。
 
 本文件钉三层:
   A. 合成库判定表: 规则行存废止号 → 读出来必须换成现行版 (不依赖任何本地/生产数据)
@@ -27,11 +27,11 @@ import knowledge.project_assess                                    # noqa: E402
 import web.advice_gen                                              # noqa: E402
 import web.llm_draft                                               # noqa: E402
 import web.section_filler                                          # noqa: E402
-import web.standard_version                                        # noqa: E402
+import knowledge.standard_version                                        # noqa: E402
 import web.structure_data                                          # noqa: E402
 import web.table_skeleton                                          # noqa: E402
 from knowledge.oel import connect                                  # noqa: E402
-from web.standard_version import rows_of                           # noqa: E402
+from knowledge.standard_version import rows_of                           # noqa: E402
 
 RULE_TABLES = ("emergency_rule", "protection_rule", "management_rule",
                "surveillance_rule", "standard_ref", "oel_limit")
@@ -76,7 +76,7 @@ c.close()
 print("\n### B. 真库不变式: 受管表读出后不含废止号")
 conn = connect()
 dead = {(r[0] or "") for r in conn.execute("SELECT code FROM standard_db WHERE state IN ('废止','已废止')")}
-norm_dead = {re.sub(r"[\s　]", "", web.standard_version.norm_code(x)) for x in dead}
+norm_dead = {re.sub(r"[\s　]", "", knowledge.standard_version.norm_code(x)) for x in dead}
 bad = []
 cells = 0
 for t in RULE_TABLES:
@@ -91,7 +91,7 @@ for t in RULE_TABLES:
             cells += 1
             # 逐个标准号片段判: 库里判为废止的, 不得从 rows_of 里活着出来
             for piece in re.split(r"[,;；，、]", v):
-                p = re.sub(r"[\s　]", "", web.standard_version.norm_code(piece))
+                p = re.sub(r"[\s　]", "", knowledge.standard_version.norm_code(piece))
                 if p and p in norm_dead:
                     bad.append((t, piece))
 check(f"{cells} 个标准号单元格无废止残留", not bad, bad[:5])
@@ -102,7 +102,7 @@ for t in RULE_TABLES:
     cols = [r[1] for r in conn.execute(f"PRAGMA table_info({t})")]
     for cn in [x for x in cols if x in STD_COLS]:
         for (v,) in conn.execute(f"SELECT DISTINCT {cn} FROM {t} WHERE {cn} IS NOT NULL"):
-            p = re.sub(r"[\s　]", "", web.standard_version.norm_code(v or ""))
+            p = re.sub(r"[\s　]", "", knowledge.standard_version.norm_code(v or ""))
             if p in norm_dead:
                 raw_dead.append((t, cn, v))
 check("真库里确有废止号残留 (B 段不是空转)", len(raw_dead) >= 1, raw_dead[:3])
@@ -140,7 +140,7 @@ for mod in (web.section_filler, web.advice_gen, web.llm_draft,
 conn2 = connect()
 ppe_dead = []
 for (v,) in conn2.execute("SELECT DISTINCT std_code FROM ppe_item WHERE std_code IS NOT NULL"):
-    p = re.sub(r"[\s　]", "", web.standard_version.norm_code(v or ""))
+    p = re.sub(r"[\s　]", "", knowledge.standard_version.norm_code(v or ""))
     if p in norm_dead:
         ppe_dead.append(v)
 src_pa = inspect.getsource(knowledge.project_assess)
