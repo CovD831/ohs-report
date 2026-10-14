@@ -294,7 +294,9 @@ def static_sites(tables: set[str]) -> list[dict]:
                 assigned_to = find_assigned_to(node, pmap)
                 kind, why = classify(sql, fn, node, pmap, assigned_to, bis, fis, ftab.get(fn))
                 out.append({"file": str(f.relative_to(ROOT)), "line": node.lineno,
-                            "tables": hit, "fn": fn, "sql": re.sub(r"\s+", " ", sql).strip()[:180],
+                            "tables": hit, "fn": fn,
+                            "sql_full": re.sub(r"\s+", " ", sql).strip(),
+                            "sql": re.sub(r"\s+", " ", sql).strip()[:180],
                             "kind": kind, "why": why})
     return out
 
@@ -309,8 +311,10 @@ def run_trace() -> list[str]:
         c.set_trace_callback(lambda s: seen.append(s))
         return c
     sqlite3.connect = traced
+    Path("/tmp/gate_cov_docx").mkdir(parents=True, exist_ok=True)
     try:
         from tools.export_fingerprint import PIDS, export
+        Path("/tmp/gate_cov_docx").mkdir(exist_ok=True)
         for pid in PIDS:
             export(pid, Path("/tmp/gate_cov_docx"))
     finally:
@@ -318,18 +322,32 @@ def run_trace() -> list[str]:
     return [re.sub(r"\s+", " ", s).strip() for s in seen]
 
 
-def norm_prefix(sql: str) -> str:
+def sig_pattern(sql: str) -> re.Pattern:
+    """整句匹配, 不是前缀包含 —— 前缀匹配会把 hazard_factor_alias.py:47 的
+    `SELECT DISTINCT factor_name FROM oel_limit ...` 误判成"门执行到过",
+    其实那两句来自 process_material_extractor。宁可漏判成不可见 (保守), 不可误判成受保护。"""
     s = re.sub(r"\s+", " ", sql).strip().upper()
-    s = re.sub(r"\{[A-Z_A-Z0-9]+\}", "", s)          # f-string 插值位
-    s = re.sub(r"\?", "", s)
-    return s.split("WHERE")[0].strip()[:70]
+    s = re.escape(s)
+    s = s.replace("\\?", ".+?")                                   # 绑定参数 → 实际字面量
+    s = re.sub(r"\\\{[A-Z_a-z0-9]+\\\}", ".{0,60}? ", s)          # f-string 插值位
+    return re.compile("^" + s + ";?$")
 
 
 def grade(sites: list[dict], trace: list[str]) -> list[dict]:
-    ex = [norm_prefix(t) for t in trace]
-    for s in sites:
-        p = norm_prefix(s["sql"])
-        s["gate_visible"] = bool(p) and any(p.rstrip() in e for e in ex if p.rstrip())
+    up = [t.upper() for t in trace]
+    by_table: dict[str, list[str]] = {}
+    for s in up:
+        # 键必须小写: 这里索引的是大写后的语句, 而 site["tables"] 来自小写源码 ——
+        # 两边不同案会导致 cands 恒空, 表现为"门可见 = 0"的假结论 (2026-10-15 踩过)
+        for t in {x.lower() for x in TBL_RE.findall(s)}:
+            by_table.setdefault(t, []).append(s)
+    for site in sites:
+        cands = None
+        for t in site["tables"]:
+            lst = by_table.get(t, [])
+            cands = lst if cands is None else [s for s in lst if s in cands]
+        pat = sig_pattern(site.get("sql_full") or site["sql"])
+        site["gate_visible"] = any(pat.fullmatch(c) for c in (cands or []))
     return sites
 
 
@@ -367,6 +385,7 @@ def probe_tables() -> dict:
     shutil.copyfile(real, copy)
     _s3.connect = redirect
     sqlite3.connect = redirect
+    Path("/tmp/gate_probe_docx").mkdir(parents=True, exist_ok=True)
     out: dict[str, dict] = {}
     try:
         base = {pid: run_digest(pid) for pid in PIDS}
@@ -418,6 +437,85 @@ def apply_overrides(sites: list[dict]) -> list[dict]:
     return sites
 
 
+def probe_columns() -> dict:
+    """列级牙齿图: 表级探针会说谎 (2026-10-15 实测) —— oel_limit 整体有牙齿,
+    但 `cas` / `source_standard` 两列打标记后 4 项目指纹纹丝不动; 而 `source_standard`
+    正是这道门要改写的列。所以"这张表有牙齿"绝不能当成"这个站点被护住"。
+
+    只对表级已见 (seen) 的 11 张表逐列探 (70 列 × 4 导出 ≈ 21 分钟)。
+    标记会让数值列解析失败 —— 那证明"这列被消费但不以文字上纸", 单独记 used_unprintable。
+    """
+    import hashlib
+    import shutil
+    from tools.export_fingerprint import PIDS, digest, export
+
+    real = ROOT / "data" / "ohs.db"
+    copy = Path("/tmp/gate_cols_ohs.db")
+    orig = sqlite3.connect
+    saved = dict(sqlite3_connect=sqlite3.connect)
+
+    def redirect(*a, **k):
+        args = list(a)
+        if args and isinstance(args[0], (str, Path)) and "ohs.db" in str(args[0]):
+            args[0] = str(copy) if "mode=" not in str(args[0]) else f"file:{copy}?mode=ro"
+        return orig(*args, **k)
+
+    sqlite3.connect = redirect
+
+    def run_digest(pid: str) -> str:
+        g = digest(export(pid, Path("/tmp/gate_cols_docx")))
+        return hashlib.sha1(json.dumps({"p": g["para_hashes"], "c": g["cell_hashes"],
+                                        "s": g["std_codes"]}, sort_keys=True).encode()).hexdigest()
+
+    probe = json.loads((ROOT / "tools" / "golden" / "gate_probe.json").read_text(encoding="utf-8"))
+    targets = sorted(t for t, v in probe.items() if v.get("seen"))
+    shutil.copyfile(real, copy)
+    Path("/tmp/gate_probe_docx").mkdir(parents=True, exist_ok=True)
+    Path("/tmp/gate_cols_docx").mkdir(parents=True, exist_ok=True)
+    out: dict[str, dict] = {}
+    try:
+        base = {pid: run_digest(pid) for pid in PIDS}
+        for t in targets:
+            c = orig(str(copy))
+            cols = [r[1] for r in c.execute("PRAGMA table_info(%s)" % t) if r[2] == "TEXT"]
+            c.close()
+            out[t] = {}
+            for col in cols:
+                c = orig(str(copy))
+                try:
+                    n = c.execute(f"UPDATE {t} SET {col}=COALESCE({col},'')||'|QZ'").rowcount
+                    c.commit()
+                finally:
+                    c.close()
+                rec = {"rows_marked": n}
+                try:
+                    rec["changed_in"] = [pid for pid in PIDS if run_digest(pid) != base[pid]]
+                    rec["teeth"] = bool(rec["changed_in"])
+                except Exception as e:                      # 标记破坏解析 = 被消费但不以文字上纸
+                    rec["teeth"] = False
+                    rec["used_unprintable"] = f"{type(e).__name__}: {str(e)[:60]}"
+                    rec["changed_in"] = []
+                finally:
+                    c = orig(str(copy))
+                    c.execute(f"UPDATE {t} SET {col}=REPLACE({col},'|QZ','')")
+                    c.commit()
+                    c.close()
+                out[t][col] = rec
+                print(f"  {t}.{col:18s} {'✓' if rec['teeth'] else '·'}"
+                      f"{'  ' + rec.get('used_unprintable', '') if rec.get('used_unprintable') else ''}",
+                      flush=True)
+    finally:
+        sqlite3.connect = saved["sqlite3_connect"]
+        c = orig(str(copy))
+        residue = sum(
+            c.execute(f"SELECT COUNT(*) FROM {t} WHERE {col} LIKE '%|QZ%'").fetchone()[0]
+            for t in targets
+            for col in [r[1] for r in c.execute("PRAGMA table_info(%s)" % t) if r[2] == "TEXT"])
+        c.close()
+        print(f"  副本残留标记: {residue} (必须 0)")
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     g = ap.add_mutually_exclusive_group(required=True)
@@ -425,8 +523,23 @@ def main() -> int:
     g.add_argument("--offline", action="store_true", help=f"复用 {TRACE.name} 里的缓存 trace")
     g.add_argument("--audit", action="store_true", help="打印 unknown / 未处置的 branch,prompt")
     g.add_argument("--probe", action="store_true", help="表级牙齿实测 (副本库, 不写真库)")
+    g.add_argument("--probe-columns", action="store_true",
+                   help="列级牙齿图: 对表级已见的表逐列探 (~21 分钟, 只写 /tmp 副本)")
     args = ap.parse_args()
     tables = official_tables()
+
+    if getattr(args, "probe_columns"):
+        res = probe_columns()
+        path = ROOT / "tools" / "golden" / "gate_columns.json"
+        path.write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+        ncol = sum(len(v) for v in res.values())
+        teeth = sum(1 for v in res.values() for x in v.values() if x["teeth"])
+        print(f"\n列级牙齿: {teeth}/{ncol} 列在 4 项目导出上真的上纸 → {path.relative_to(ROOT)}")
+        for t, v in res.items():
+            zero = [c for c, x in v.items() if not x["teeth"]]
+            if zero:
+                print(f"  {t}: 零牙齿列 {zero}")
+        return 0
 
     if args.probe:
         print("=== 表级实测: 打标记后指纹会不会变 ===")

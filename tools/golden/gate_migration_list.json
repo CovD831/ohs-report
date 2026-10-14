@@ -1,0 +1,379 @@
+{
+ "summary": {
+  "total": 37,
+  "column_visible": 29,
+  "needs_unit_test": 8
+ },
+ "sites": [
+  {
+   "file": "web/advice_gen.py",
+   "line": 71,
+   "tables": [
+    "management_rule"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: category",
+   "sql": "SELECT category FROM management_rule LIMIT 3"
+  },
+  {
+   "file": "web/advice_gen.py",
+   "line": 76,
+   "tables": [
+    "protection_rule"
+   ],
+   "column_visible": false,
+   "note": "所读列全不上纸: hazard_category",
+   "sql": "SELECT hazard_category FROM protection_rule LIMIT 3"
+  },
+  {
+   "file": "web/advice_gen.py",
+   "line": 36,
+   "tables": [
+    "management_rule"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: clause,require,std_code",
+   "sql": "SELECT require, std_code, clause FROM management_rule"
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 78,
+   "tables": [
+    "occupational_disease"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: name",
+   "sql": "SELECT name FROM occupational_disease WHERE category LIKE '%化学中毒%'"
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 49,
+   "tables": [
+    "oel_limit"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: oel_type,unit",
+   "sql": "SELECT oel_type, value, unit FROM oel_limit WHERE factor_name LIKE ?"
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 59,
+   "tables": [
+    "health_effect"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: effect,route",
+   "sql": "SELECT effect, route FROM health_effect WHERE cas=?"
+  },
+  {
+   "file": "web/entity_link.py",
+   "line": 62,
+   "tables": [
+    "health_effect"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: effect,route",
+   "sql": "SELECT effect, route FROM health_effect WHERE factor LIKE ?"
+  },
+  {
+   "file": "web/llm_draft.py",
+   "line": 295,
+   "tables": [
+    "management_rule"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: clause,require,std_code",
+   "sql": "SELECT require, std_code, clause FROM management_rule"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 505,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: factor_name,form",
+   "sql": "SELECT factor_name, aliases, form FROM hazard_toxicity WHERE form IS NOT NULL"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 893,
+   "tables": [
+    "oel_limit"
+   ],
+   "column_visible": false,
+   "note": "所读列全不上纸: note,value",
+   "sql": "SELECT value, note FROM oel_limit WHERE factor_name LIKE '%噪声%' LIMIT 3"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1374,
+   "tables": [
+    "protection_rule"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: check_point,clause,std_code",
+   "sql": "SELECT hazard_category, check_point, std_code, clause FROM protection_rule"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1397,
+   "tables": [
+    "emergency_rule"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: clause,require,std_code",
+   "sql": "SELECT scenario, require, std_code, clause FROM emergency_rule"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1472,
+   "tables": [
+    "management_rule"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: category,clause,require,std_code",
+   "sql": "SELECT category, require, std_code, clause FROM management_rule"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 466,
+   "tables": [
+    "hazard_toxicity"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: factor_name,level",
+   "sql": "SELECT factor_name, aliases, level, source FROM hazard_toxicity"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 859,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: clause,rule",
+   "sql": "SELECT clause, rule, report_section FROM gbz1_rule WHERE theme LIKE ?"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 902,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: clause,rule",
+   "sql": "SELECT clause, rule FROM gbz1_rule WHERE theme=?"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 909,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: clause,rule",
+   "sql": "SELECT clause, rule FROM gbz1_rule WHERE theme=?"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1198,
+   "tables": [
+    "oel_limit"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: oel_type",
+   "sql": "SELECT oel_type, value, source_standard FROM oel_limit WHERE factor_name LIKE ?"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 1368,
+   "tables": [
+    "gbz1_rule"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: clause,rule",
+   "sql": "SELECT clause, rule FROM gbz1_rule WHERE theme LIKE ?"
+  },
+  {
+   "file": "web/section_filler.py",
+   "line": 407,
+   "tables": [
+    "oel_limit"
+   ],
+   "column_visible": false,
+   "note": "所读列全不上纸: cas",
+   "sql": "SELECT cas FROM oel_limit WHERE factor_name=? AND cas IS NOT NULL AND trim(cas) != '' LIMI"
+  },
+  {
+   "file": "web/standard_version.py",
+   "line": 114,
+   "tables": [
+    "standard_db"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: code,state",
+   "sql": "SELECT code, state, replace_of FROM standard_db WHERE replace_of IS NOT NULL AND trim(repl"
+  },
+  {
+   "file": "web/standard_version.py",
+   "line": 239,
+   "tables": [
+    "standard_db"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: code,state",
+   "sql": "SELECT code, state FROM standard_db"
+  },
+  {
+   "file": "web/standard_version.py",
+   "line": 160,
+   "tables": [
+    "standard_db"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: code,state",
+   "sql": "SELECT code, name, state, replace_of FROM standard_db"
+  },
+  {
+   "file": "web/thi_rating.py",
+   "line": 239,
+   "tables": [
+    "ghs_class"
+   ],
+   "column_visible": false,
+   "note": "所读列全不上纸: alias,cas,hazard_raw,is_carcinogen,is_highly_toxic,name",
+   "sql": "SELECT name, alias, cas, hazard_raw, is_highly_toxic, is_carcinogen FROM ghs_class WHERE n"
+  },
+  {
+   "file": "web/thi_rating.py",
+   "line": 224,
+   "tables": [
+    "ghs_class"
+   ],
+   "column_visible": false,
+   "note": "所读列全不上纸: alias,cas,hazard_raw,is_carcinogen,is_highly_toxic,name",
+   "sql": "SELECT name, alias, cas, hazard_raw, is_highly_toxic, is_carcinogen FROM ghs_class WHERE c"
+  },
+  {
+   "file": "web/thi_rating.py",
+   "line": 232,
+   "tables": [
+    "ghs_class"
+   ],
+   "column_visible": false,
+   "note": "所读列全不上纸: alias,cas,hazard_raw,is_carcinogen,is_highly_toxic,name",
+   "sql": "SELECT name, alias, cas, hazard_raw, is_highly_toxic, is_carcinogen FROM ghs_class WHERE n"
+  },
+  {
+   "file": "web/word_export.py",
+   "line": 305,
+   "tables": [
+    "standard_db"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: code,state",
+   "sql": "SELECT code, state FROM standard_db"
+  },
+  {
+   "file": "knowledge/judge_cli.py",
+   "line": 34,
+   "tables": [
+    "oel_limit"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: oel_type,unit",
+   "sql": "SELECT oel_type, value, unit, conditions, source_standard FROM oel_limit WHERE factor_name"
+  },
+  {
+   "file": "knowledge/process_material_extractor.py",
+   "line": 27,
+   "tables": [
+    "oel_limit"
+   ],
+   "column_visible": false,
+   "note": "所读列全不上纸: distinct factor_name",
+   "sql": "SELECT DISTINCT factor_name FROM oel_limit ORDER BY LENGTH(factor_name) DESC"
+  },
+  {
+   "file": "knowledge/process_material_extractor.py",
+   "line": 57,
+   "tables": [
+    "oel_limit"
+   ],
+   "column_visible": false,
+   "note": "所读列全不上纸: cas",
+   "sql": "SELECT cas FROM oel_limit WHERE factor_name=? AND cas IS NOT NULL LIMIT 1"
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 294,
+   "tables": [
+    "occupational_disease"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: name",
+   "sql": "SELECT category, name FROM occupational_disease WHERE name LIKE ? OR name LIKE ? LIMIT 3"
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 131,
+   "tables": [
+    "oel_limit"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: factor_name",
+   "sql": "SELECT factor_name FROM oel_limit WHERE factor_name=? LIMIT 1"
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 135,
+   "tables": [
+    "oel_limit"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: factor_name",
+   "sql": "SELECT factor_name FROM oel_limit WHERE factor_name LIKE ? LIMIT 1"
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 139,
+   "tables": [
+    "hazard_factor"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: name",
+   "sql": "SELECT name FROM hazard_factor WHERE name=? LIMIT 1"
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 266,
+   "tables": [
+    "hazard_factor"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: category,name",
+   "sql": "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1"
+  },
+  {
+   "file": "knowledge/project_assess.py",
+   "line": 273,
+   "tables": [
+    "hazard_factor"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: category,name",
+   "sql": "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1"
+  },
+  {
+   "file": "tools/test_std_ref_parity.py",
+   "line": 73,
+   "tables": [
+    "standard_db"
+   ],
+   "column_visible": true,
+   "note": "读到的上纸列: code,state",
+   "sql": "SELECT code, state FROM standard_db"
+  }
+ ]
+}

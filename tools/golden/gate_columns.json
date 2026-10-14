@@ -1,0 +1,499 @@
+{
+ "emergency_rule": {
+  "scenario": {
+   "rows_marked": 28,
+   "changed_in": [],
+   "teeth": false
+  },
+  "item": {
+   "rows_marked": 28,
+   "changed_in": [],
+   "teeth": false
+  },
+  "require": {
+   "rows_marked": 28,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "std_code": {
+   "rows_marked": 28,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "clause": {
+   "rows_marked": 28,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "source": {
+   "rows_marked": 28,
+   "changed_in": [],
+   "teeth": false
+  }
+ },
+ "gbz1_rule": {
+  "clause": {
+   "rows_marked": 76,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "theme": {
+   "rows_marked": 76,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "rule": {
+   "rows_marked": 76,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "report_section": {
+   "rows_marked": 76,
+   "changed_in": [],
+   "teeth": false
+  },
+  "source": {
+   "rows_marked": 76,
+   "changed_in": [],
+   "teeth": false
+  }
+ },
+ "ghs_class": {
+  "name": {
+   "rows_marked": 2832,
+   "changed_in": [],
+   "teeth": false
+  },
+  "alias": {
+   "rows_marked": 2832,
+   "changed_in": [],
+   "teeth": false
+  },
+  "english": {
+   "rows_marked": 2832,
+   "changed_in": [],
+   "teeth": false
+  },
+  "cas": {
+   "rows_marked": 2832,
+   "changed_in": [],
+   "teeth": false
+  },
+  "hazard_raw": {
+   "rows_marked": 2832,
+   "changed_in": [],
+   "teeth": false
+  },
+  "remark": {
+   "rows_marked": 2832,
+   "changed_in": [],
+   "teeth": false
+  },
+  "source": {
+   "rows_marked": 2832,
+   "changed_in": [],
+   "teeth": false
+  }
+ },
+ "hazard_factor": {
+  "category": {
+   "rows_marked": 459,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "name": {
+   "rows_marked": 459,
+   "changed_in": [
+    "ada54603a9",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "cas": {
+   "rows_marked": 459,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "note": {
+   "rows_marked": 459,
+   "changed_in": [],
+   "teeth": false
+  },
+  "source": {
+   "rows_marked": 459,
+   "changed_in": [],
+   "teeth": false
+  }
+ },
+ "hazard_toxicity": {
+  "factor_name": {
+   "rows_marked": 104,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "aliases": {
+   "rows_marked": 104,
+   "changed_in": [],
+   "teeth": false
+  },
+  "form": {
+   "rows_marked": 104,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "level": {
+   "rows_marked": 104,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "basis": {
+   "rows_marked": 104,
+   "changed_in": [],
+   "teeth": false
+  },
+  "source": {
+   "rows_marked": 104,
+   "changed_in": [],
+   "teeth": false
+  }
+ },
+ "health_effect": {
+  "factor": {
+   "rows_marked": 357,
+   "changed_in": [],
+   "teeth": false
+  },
+  "english": {
+   "rows_marked": 357,
+   "changed_in": [],
+   "teeth": false
+  },
+  "cas": {
+   "rows_marked": 357,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "effect": {
+   "rows_marked": 357,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "route": {
+   "rows_marked": 357,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "note": {
+   "rows_marked": 357,
+   "changed_in": [],
+   "teeth": false
+  },
+  "source": {
+   "rows_marked": 357,
+   "changed_in": [],
+   "teeth": false
+  }
+ },
+ "management_rule": {
+  "category": {
+   "rows_marked": 46,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "require": {
+   "rows_marked": 46,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "std_code": {
+   "rows_marked": 46,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "clause": {
+   "rows_marked": 46,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "source": {
+   "rows_marked": 46,
+   "changed_in": [],
+   "teeth": false
+  }
+ },
+ "occupational_disease": {
+  "category": {
+   "rows_marked": 135,
+   "changed_in": [],
+   "teeth": false
+  },
+  "sub": {
+   "rows_marked": 135,
+   "changed_in": [],
+   "teeth": false
+  },
+  "name": {
+   "rows_marked": 135,
+   "changed_in": [
+    "ada54603a9",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "note": {
+   "rows_marked": 135,
+   "changed_in": [],
+   "teeth": false
+  },
+  "source": {
+   "rows_marked": 135,
+   "changed_in": [],
+   "teeth": false
+  }
+ },
+ "oel_limit": {
+  "factor_name": {
+   "rows_marked": 638,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "factor_type": {
+   "rows_marked": 638,
+   "changed_in": [],
+   "teeth": false
+  },
+  "cas": {
+   "rows_marked": 638,
+   "changed_in": [],
+   "teeth": false
+  },
+  "english_name": {
+   "rows_marked": 638,
+   "changed_in": [],
+   "teeth": false
+  },
+  "oel_type": {
+   "rows_marked": 638,
+   "changed_in": [
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "value": {
+   "rows_marked": 638,
+   "teeth": false,
+   "used_unprintable": "TypeError: '<=' not supported between instances of 'float' and 'NoneTyp",
+   "changed_in": []
+  },
+  "unit": {
+   "rows_marked": 638,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "conditions": {
+   "rows_marked": 638,
+   "changed_in": [],
+   "teeth": false
+  },
+  "note": {
+   "rows_marked": 638,
+   "changed_in": [],
+   "teeth": false
+  },
+  "source_standard": {
+   "rows_marked": 638,
+   "changed_in": [],
+   "teeth": false
+  }
+ },
+ "protection_rule": {
+  "hazard_category": {
+   "rows_marked": 26,
+   "changed_in": [],
+   "teeth": false
+  },
+  "measure": {
+   "rows_marked": 26,
+   "changed_in": [],
+   "teeth": false
+  },
+  "std_code": {
+   "rows_marked": 26,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "clause": {
+   "rows_marked": 26,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "check_point": {
+   "rows_marked": 26,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "source": {
+   "rows_marked": 26,
+   "changed_in": [],
+   "teeth": false
+  }
+ },
+ "standard_db": {
+  "code": {
+   "rows_marked": 2222,
+   "changed_in": [
+    "ada54603a9",
+    "c8c7ff0a4d",
+    "2863a36451",
+    "57ffa2b3b0"
+   ],
+   "teeth": true
+  },
+  "name": {
+   "rows_marked": 2222,
+   "changed_in": [],
+   "teeth": false
+  },
+  "state": {
+   "rows_marked": 2222,
+   "changed_in": [
+    "c8c7ff0a4d"
+   ],
+   "teeth": true
+  },
+  "pubdate": {
+   "rows_marked": 2222,
+   "changed_in": [],
+   "teeth": false
+  },
+  "effdate": {
+   "rows_marked": 2222,
+   "changed_in": [],
+   "teeth": false
+  },
+  "replace_of": {
+   "rows_marked": 2222,
+   "changed_in": [],
+   "teeth": false
+  },
+  "url": {
+   "rows_marked": 2222,
+   "changed_in": [],
+   "teeth": false
+  },
+  "source": {
+   "rows_marked": 2222,
+   "changed_in": [],
+   "teeth": false
+  }
+ }
+}
