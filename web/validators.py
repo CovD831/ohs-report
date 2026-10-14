@@ -136,10 +136,22 @@ def _load_factor_vocab():
     if _VOCAB_CACHE["pat"] is not None:
         return _VOCAB_CACHE["terms"], _VOCAB_CACHE["pat"]
     terms: set[str] = set()
+    non_material: set[str] = set()
     try:
         from knowledge.oel import connect
         conn = connect()
         try:
+            # 数据驱动的"非物料类"排除: hazard_factor 里 物理因素/放射性因素 是作业类别
+            # 而非投料物质 (噪声/高温/低温/工频电磁场/紫外线/微波…), 它们天然不进物料
+            # 清单, 按"物料回溯"判幻觉必然误报。生产实测: d4c2b5450c 的 5.2.2 写
+            # 「噪声、高温、低温、工频电磁场及紫外线」被误判 1 处 → 故按库内 category
+            # 排除, 而不是靠维护同义词表 (词表只兜库里没有的异写, 见 _PHYS_CATEGORY_WORDS)。
+            for (nm,) in conn.execute(
+                    "select distinct name from hazard_factor "
+                    "where category in ('物理因素','放射性因素')"):
+                s = str(nm or "").strip().lower()
+                if s:
+                    non_material.add(s)
             for table, col in _VOCAB_SOURCES:
                 for (raw,) in conn.execute(f"select distinct {col} from {table}"):
                     v = str(raw or "")
@@ -148,7 +160,8 @@ def _load_factor_vocab():
                     # "1,1-二甲基肼）" 这种带尾巴的脏词元, 正文永远匹配不上
                     for t in re.split(r"[、；;/（(）)]", v):
                         t = t.strip(" 　,，.")
-                        if len(t) >= 3 and t not in _PHYS_CATEGORY_WORDS \
+                        if len(t) >= 3 and t.lower() not in non_material \
+                                and t not in _PHYS_CATEGORY_WORDS \
                                 and not re.fullmatch(r"[A-Za-z0-9.%\-\s]+", t):
                             terms.add(t.lower())
         finally:

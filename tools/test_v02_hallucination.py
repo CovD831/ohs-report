@@ -34,6 +34,12 @@ print("### 词表")
 check("词表可加载且规模 >=500", len(terms) >= 500, True)
 check("含 砷及其化合物 (GBZ 2.1 常见剧毒, 本项目无源)", "砷及其化合物" in terms, True)
 check("类别词「振动」不入词表", "振动" in terms, False)
+# 生产实测暴露的一类误报 (d4c2b5450c 的 5.2.2): 物理/放射性因素是**作业类别**不是投料
+# 物质, 天然不进物料清单 → 按 hazard_factor.category 数据驱动排除
+check("物理因素类别词按库内 category 排除 (工频电磁场)", "工频电磁场" in terms, False)
+check("同上 (紫外线/低温/微波)",
+      [w for w in ("紫外线", "低温", "微波") if w in terms], [])
+check("化学因素仍保留在词表 (苯乙烯类)", any("苯乙烯" in t for t in terms), True)
 check("ASCII 逗号物质名保持完整", "n,n-二甲基苯胺" in terms or "n，n-二甲基苯胺" in terms, True)
 check("词表无带右括号尾巴的脏词元", [t for t in terms if "）" in t or ")" in t], [])
 
@@ -65,6 +71,9 @@ check("法规条文引用豁免 (石棉粉尘)",
        if x["found"] == "石棉粉尘"], [])
 check("类别词不误报 (防噪声振动)",
       _check_factors("拟采取防尘、防毒、防噪声振动及防高温设施。", P, None), [])
+check("物理因素类别列举不误报 (生产 d4c2b5450c/5.2.2 原句)",
+      _check_factors("本项目物理因素主要来源于生产设备运行及公用工程配套，涉及噪声、高温、"
+                     "低温、工频电磁场及紫外线等类别；依据GBZ 2.2—2007 判定。", P, None), [])
 
 print("\n### 防自证洗白: 只出现在正文/骨架里的词不得算有源")
 p2 = dict(P)
