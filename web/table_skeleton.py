@@ -346,29 +346,27 @@ def _fill_assess_tables(out: dict, assess: dict) -> None:
                 #   事故 (2026-10): 噪声/高温接触限值表骨架建于 GBZ 2.2—2007 时代,
                 #   标准升 2019 后骨架"永生" → 导出物里 21 处废止引用。
                 #   判据: 骨架内容含**已废止标准号**而现算版本不含 → 用现算覆盖 (标准版本护栏)。
+                # 引用形态与归一化走单一产地 (web.standard_version); 原此处自写正则+lambda,
+                # 且 SQL 侧只去了空格没归一连接号 → 库里 'GBZ 230—2010' 这种 em dash 写法
+                # 永远查不中, 废止骨架刷不动 (静默)。
+                from web.standard_version import STD_REF_PAT, norm_code, ref_code
+
+                def _refs(s):
+                    return {ref_code(m) for m in STD_REF_PAT.finditer(s)}
+
                 _cs = json.dumps(cur, ensure_ascii=False)
                 _ns = json.dumps(t, ensure_ascii=False)
-                # ⚠ 前缀分支必须用 () 包住 —— 写成 "GB(?:/T|/Z)?|GBZ(?:/T)?\s*\d+..."
-                #   会被 | 劈成两个完整模式, 左支无后续约束 → 只匹配到 "GB" (实测)。
-                _RE_STD = (r"(?:GB(?:/T|/Z)?|GBZ(?:/T)?)\s*"
-                           r"\d+(?:\.\d+)?\s*[—\-–−－]\s*\d{4}")
-                _norm = lambda s: re.sub(r"[—\-–−－]", "-", s).replace(" ", "")
-                _cur_std = {_norm(x) for x in re.findall(_RE_STD, _cs)}
-                _new_std = {_norm(x) for x in re.findall(_RE_STD, _ns)}
+                _cur_std = _refs(_cs)
+                _new_std = _refs(_ns)
                 if _cur_std and _cur_std - _new_std:
                     # 骨架引用了现算没有的标准号 → 查库确认该号已废止才刷 (不误伤)
                     try:
                         import sqlite3 as _sq
                         from pathlib import Path as _P2
                         _c2 = _sq.connect(str(_P2(__file__).resolve().parent.parent / "data" / "ohs.db"))
-                        _dead = False
-                        for _c in _cur_std - _new_std:
-                            _r = _c2.execute(
-                                "SELECT state FROM standard_db WHERE REPLACE(REPLACE(code,' ',''),char(12288),'')=?",
-                                (_c,)).fetchone()
-                            if _r and (_r[0] or "") in ("废止", "已废止"):
-                                _dead = True
-                                break
+                        _dead_keys = {norm_code(r[0]) for r in _c2.execute(
+                            "SELECT code FROM standard_db WHERE state IN ('废止','已废止')")}
+                        _dead = bool({norm_code(x) for x in (_cur_std - _new_std)} & _dead_keys)
                         _c2.close()
                     except Exception:
                         _dead = False

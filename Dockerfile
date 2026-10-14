@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple --tim
 COPY knowledge/ knowledge/
 COPY web/ web/
 COPY tools/ tools/
+# 官方数据层版本戳 manifest: 容器里用它比对**挂载进来的生产库** (tools/data_stamp.py --check)
+COPY data_stamp.json .
 # acquire 仅需 base (数据采集模块, 部署机不采集也保留结构)
 COPY acquire/ acquire/
 

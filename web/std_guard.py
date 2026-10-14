@@ -20,17 +20,10 @@ import sqlite3
 import sys
 from pathlib import Path
 
-# 标准号形态: GB/T 23466-2009 / GB 23466—2025 / GBZ/T300.100—2018
-# 归一化时去掉 空格/横线变体, 便于与 standard_db 的 code 比对
-_ART = re.compile(
-    r"((?:GBZ?|GB|WS|HG|AQ|JB|DB)\s*/?\s*T?\s*[\d.]+(?:\.\d+)?)\s*[-—–－]\s*(\d{4})"
-)
-
-
-def _norm(code: str) -> str:
-    """标准号归一: 去空白, 统一横线, 大写"""
-    s = re.sub(r"\s+", "", code or "").upper()
-    return re.sub(r"[-—–－]", "-", s)
+# 标准号形态与归一化 = 单一产地 web.standard_version (2026-10-14 收口)
+#   此处原有一份自己的 _ART/_norm: 分隔符集少一个 U+2212、前缀写成 '/?\s*T?'
+#   (会把 'GB T 123' 这类非法写法也吞进来), 与改写器/V-05 三把尺子不一致。
+from web.standard_version import STD_REF_PAT as _ART, norm_code as _norm, ref_code  # noqa: E402
 
 
 def superseded_map(conn: sqlite3.Connection) -> dict[str, str]:
@@ -63,7 +56,7 @@ def scan_superseded(text: str, conn: sqlite3.Connection) -> list[dict]:
 
     found: dict[str, dict] = {}
     for m in _ART.finditer(text or ""):
-        full = _norm(f"{m.group(1)}-{m.group(2)}")
+        full = ref_code(m)
         if full in bad:
             if full not in found:
                 s = max(0, m.start() - 40)

@@ -291,29 +291,30 @@ def _check_standards(text: str) -> list[dict]:
       - 有 replace_of 且被替代者已废止 → 提示应引新版
     """
     issues: list[dict] = []
-    # 标准号形态: GB 30871—2022 / GBZ/T 196-2025 / WS/T 757—2016 / GBZ2.1—2019
-    pat = re.compile(r"(GBZ?|WS|GB)\s*(/T|/Z)?\s*(\d+(?:\.\d+)?)\s*[—\-–−]\s*(\d{4})", re.I)
-    found = pat.findall(text)
-    if not found:
+    # 标准号形态 = 单一产地 web.standard_version.STD_REF_PAT (与改写器同一把尺子)。
+    # ⚠ 此处曾自写一份正则且**不含全角"－"**: 正文写 'GBZ 230－2010' 会被改写器悄悄改掉,
+    #   却不产生 V-05 报警 —— 两条护栏对同一件事一个看得见一个看不见。
+    from web.standard_version import STD_REF_PAT, norm_code, ref_code
+    refs = list(STD_REF_PAT.finditer(text or ""))
+    if not refs:
         return issues
     try:
         from knowledge.oel import connect
         conn = connect()
     except Exception:
         return issues
+    # 库索引一次建好: 旧写法是"每条引用全表扫一遍 standard_db" (O(引用数×2222))
+    db_idx = {norm_code(r[0]): r for r in
+              conn.execute("SELECT code, name, state FROM standard_db")}
     seen: set[str] = set()
-    for prefix, suffix, num, year in found:
-        full = f"{prefix.upper()}{(suffix or '').upper()}{num}-{year}"
-        norm = re.sub(r"\s", "", full).upper()
+    for m in refs:
+        full = ref_code(m)
+        norm = norm_code(full)
         if norm in seen:
             continue
         seen.add(norm)
         # 精确查 (归一化后比对, 兼容库里 'GBZ/T196-2025' 与正文 'GBZ/T 196—2025')
-        hit = None
-        for r in conn.execute("SELECT code, name, state FROM standard_db"):
-            if re.sub(r"[\s—–−]", "", (r[0] or "")).replace("－", "-").upper() == norm:
-                hit = r
-                break
+        hit = db_idx.get(norm)
         if hit is None:
             sug = _suggest_standard(full)
             note = f"引用的标准[{full}]未在标准库中查到, 请核实编号/年份是否真实存在"

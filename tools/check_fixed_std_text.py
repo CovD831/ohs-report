@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from web.standard_version import _base_code, _norm, resolve_current  # noqa: E402
+from web.standard_version import _base_code, norm_code, resolve_current  # noqa: E402
 
 JSON_P = ROOT / "web" / "fixed_texts_data.json"
 DB_P = ROOT / "data" / "ohs.db"
@@ -46,7 +46,7 @@ def main() -> int:
     new_text = text
     for m in _RE_CODE.finditer(text):
         raw = m.group(1).strip()
-        norm = _norm(raw)
+        norm = norm_code(raw)
         hit = None
         for r in conn.execute("SELECT code, name, state FROM standard_db"):
             if re.sub(r"[\s—–−]", "", (r[0] or "")).replace("－", "-").upper() == norm:

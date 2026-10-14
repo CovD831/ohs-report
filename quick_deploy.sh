@@ -16,7 +16,14 @@ MD5_FILES=(web/app.py knowledge/project_assess.py knowledge/gbz1_loader.py knowl
            web/structure_data.py web/table_builder.py web/hazard_grid.py web/report_struct.py
            web/unit_gen.py web/thi_rating.py web/validators.py web/derived_fields.py
            web/field_projection.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py
-           tools/compare_real_report.py)
+           tools/compare_real_report.py tools/data_stamp.py data_stamp.json)
+
+# 容器内守卫套 (第 4 步, 切流量之前跑): 必须选**与项目业务数据无关**的测试,
+# 否则生产库一有差异就误判成"部署坏了"。选取口径见 tools/data_stamp.py 同款注释。
+GUARD_TESTS=(test_std_ref_parity test_std_supersede test_std_guard test_toxicity_cell
+             test_toxicity_match test_unfreeze_cells test_v01_staffing test_ppe_vertical
+             test_must_cover_parity test_export_payload_parity test_number_provenance
+             test_health_table_header test_front_matter)
 
 # ⚠⚠ 教训 (2026-10-14): 部署中途 scp 连续 "Connection closed", 排查确认是**本机源 IP
 #   被服务器 fail2ban 全 TCP 封禁** (ICMP 仍通, 换 IP 立刻可连)。根因不是网络抖动,
@@ -65,7 +72,7 @@ _KN_EXCL=(--exclude 'knowledge/*.json' --exclude 'knowledge/*.csv' --exclude 'kn
           --exclude 'knowledge/*.xlsx'
           --exclude 'knowledge/*.png' --exclude 'knowledge/*.jpg' --exclude 'knowledge/*.pdf'
           --exclude '*/gbz22_pages' --exclude '*/gb39800_pages' --exclude '*/__pycache__')
-_SRC=(web tools acquire knowledge requirements.txt Dockerfile)
+_SRC=(web tools acquire knowledge requirements.txt Dockerfile data_stamp.json)
 tar czf /tmp/ohs_src.tgz "${_EXCL[@]}" "${_KN_EXCL[@]}" "${_SRC[@]}"
 
 _sz=$(du -m /tmp/ohs_src.tgz | cut -f1)
@@ -99,11 +106,31 @@ echo "=== 3. 远端构建 (服务器2核, 约5-8分钟) ==="
 # 构建期间连接空闲 ~8 分钟: 靠 ServerAliveInterval=15 保活 (v2 无保活, 长构建常被断)
 ssh_run "cd $REMOTE_DIR && docker build --network host -t ohs-report:latest . 2>&1 | tail -4"
 
-echo "=== 4. 重启应用容器 (配置/卷不动) ==="
+echo "=== 4. 新镜像守卫套 (切流量之前, 一次性容器) ==="
+# 为什么放在重启之前: md5 一致只证明"代码送进去了", 不证明"在新镜像的运行期环境里跑得动"
+#   (依赖缺失/数据文件缺失/Python 版本差异都只有容器内才暴露;
+#    2026-10 的 region_facts.json 事故就是本地全绿、生产静默空转)。
+# 用 --rm 一次性容器 + 挂生产数据卷: 现网容器不动, 守卫红了就中止, 不留半部署。
+_g_fail=0
+_gl=$(mktemp)
+for _t in "${GUARD_TESTS[@]}"; do
+  # 退出码必须由 ssh 本身给出: 远端接 `| tail` 会让管道返回 tail 的码 = 假绿
+  if ssh_run "cd $REMOTE_DIR && docker run --rm -v \$HOME/ohs-report/data:/app/data ohs-report:latest python tools/$_t.py" > "$_gl" 2>&1; then
+    echo "  ✓ $_t"
+  else
+    echo "  ✗ $_t 容器内失败, 末 8 行:"
+    tail -8 "$_gl"
+    _g_fail=1
+  fi
+done
+rm -f "$_gl"
+[ "$_g_fail" = 1 ] && { echo "❌ 守卫套在容器内未通过 — 现网容器保持旧版, 未切换"; exit 1; }
+
+echo "=== 5. 重启应用容器 (配置/卷不动) ==="
 ssh_run "cd $REMOTE_DIR && docker compose up -d --no-deps --force-recreate ohs-report 2>&1 | tail -1"
 
 sleep 3
-echo "=== 5. 健康检查 + 部署内容校验 ==="
+echo "=== 6. 健康检查 + 部署内容校验 ==="
 ssh_run "curl -s -o /dev/null -w 'app: %{http_code}\n' http://127.0.0.1:18000/login"
 curl -s -o /dev/null -w '公网: %{http_code}\n' https://paiyipai.xyz/login
 
@@ -111,7 +138,7 @@ curl -s -o /dev/null -w '公网: %{http_code}\n' https://paiyipai.xyz/login
 # 比对本地与容器内关键文件的 md5 (清单 = 顶部 MD5_FILES)
 # ⚠⚠ 教训 (2026-10): 清单必须覆盖**本轮改过的文件** —— 只列固定几个文件,
 #   改了别的文件就校验不到 = 等于没验。每轮改动后把新文件并进 MD5_FILES。
-echo "=== 6. 源码一致性校验 (本地 vs 容器, 单条命令) ==="
+echo "=== 7. 源码一致性校验 (本地 vs 容器, 单条命令) ==="
 # v2 这里是"每个文件一次 ssh" → 24 次握手, 就是 fail2ban 的根因。
 # 改成: 远端一条 md5sum 吃全部文件, 结果落本地临时文件后再逐个比。
 _paths=$(for _f in "${MD5_FILES[@]}"; do printf '/app/%s ' "$_f"; done)
@@ -132,4 +159,12 @@ for _f in "${MD5_FILES[@]}"; do
 done
 rm -f "$_rmd5"
 [ "$_mismatch" = 1 ] && { echo "❌ 有源码未同步到容器 — 检查打包/构建"; exit 1; }
+
+echo "=== 8. 官方数据层版本戳 (生产库 vs 本地 manifest, 只报不拦) ==="
+# 为什么需要: 部署刻意排除 data/, md5 只管代码 → 官方数据层(限值/名录/标准库)漂移无凭据。
+#   2026-10-14 实测: 本地 hazard_toxicity 104 行 / 生产 103 行, 本地绿的守卫在生产崩。
+# 只报不拦: 生产数据本就允许与本地不同 (补录默认只写本地), 但必须**知道**差在哪。
+ssh_run "cd $REMOTE_DIR && docker exec ohs-report python tools/data_stamp.py --check /app/data_stamp.json" \
+  || echo "  ⚠ 上面是官方数据层与本地 manifest 的差异 — 若本轮改动依赖这些数据, 结论不能直接套到生产"
+
 echo "✅ 完成"

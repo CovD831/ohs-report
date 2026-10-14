@@ -23,11 +23,40 @@ import sqlite3
 
 _RE_YEAR = re.compile(r"(?:19|20)\d{2}")
 
+# ── 标准号"连接号"与引用形态: 单一产地 (2026-10-14) ────────────────────────────
+# 为什么收在这里: 仓库里曾各写 **6 份** 标准号归一化/匹配正则
+#   (standard_version / validators V-05 / std_guard / table_skeleton / 两个入库脚本),
+#   实测已经裂开: 全角"－"改写器认得 → 正文被静默改掉, 但 V-05 不认 → 该报警的不报;
+#   库里存的 code 本身就有 'GBZ/T181－2006' 这种全角写法。
+#   判据只能有一把尺子, 所以字符集与前缀族都从这里出。
+STD_SEPS = "-–—−－‐‑‒―"                       # 半角- / en / em / minus / 全角 / 各种连字符
+_SEP_CLS = f"[{STD_SEPS}]"
+_WS_RE = re.compile(r"[\s\u3000]+")
+_SEP_RE = re.compile(_SEP_CLS)
 
-def _norm(s: str) -> str:
-    """归一化: 去空白 + 全角连字符转半角 + 大写"""
-    s = re.sub(r"[\s\u3000]", "", s or "").upper()
-    return re.sub(r"[—–−－]", "-", s)
+# 引用形态: GB 30871—2022 / GBZ/T 196-2025 / WS/T 757—2016 / GBZ2.1－2019 / GBZ/T300.100-2018
+# ⚠ 不能用 \b 收尾: 中文字符在 \w 内, '2002第' 之间无 \b → 紧跟中文的标准号会漏匹配。
+#   改用 (?![0-9A-Za-z]) 只排除字母数字 (中文/标点可跟随)。
+# ⚠ 前缀分支必须整体括住, 否则被 | 劈成两段 → 左支无约束只匹配到 "GB" (实测踩过)。
+# ⚠ 前缀族**只收 standard_db 能判定的家族** (实测分布: GB/GBZ/WS 及其 /T /Z)。
+#   曾扩到 HG/AQ/JB/DB: 库里根本没有这些行业的行 → 每条化工行业标准引用都只能落进
+#   "查不到"分支 = 凭空造出 4 条假告警 (实测 ada/c8c7 的 1.3.2 编制依据节)。
+#   std_guard 的黑名单同样来自 standard_db, 收窄不损失它的判定能力。
+STD_REF_PAT = re.compile(
+    r"(?<![0-9A-Za-z])(GBZ?|WS)(?:\s*/\s*(T|Z))?\s*"
+    r"(\d+(?:\.\d+)?)"
+    r"\s*" + _SEP_CLS + r"\s*((?:19|20)\d{2})(?![0-9A-Za-z])")
+
+
+def norm_code(code: str) -> str:
+    """任意书写形态 → 库内比对口径: 去空白(含全角空格) + 连接号统一 '-' + 大写"""
+    return _SEP_RE.sub("-", _WS_RE.sub("", code or "")).upper()
+
+
+def ref_code(match: re.Match) -> str:
+    """STD_REF_PAT 的一次命中 → 比对口径标准号 ('GBZ/T196-2025')"""
+    prefix, suffix, num, year = match.group(1), match.group(2), match.group(3), match.group(4)
+    return norm_code(f"{prefix}{('/' + suffix) if suffix else ''}{num}-{year}")
 
 
 def _base_code(code: str) -> str:
@@ -43,8 +72,7 @@ def _base_code(code: str) -> str:
     不得剥除 — 否则 'GB 39800' (总称) 会错配到 'GB39800.10' (机械分部) 或
     永远匹配不上任何分部 (2026-10 事故: 12 处 '现行版本待补充' 即此因)。
     """
-    s = re.sub(r"[\s\u3000]", "", code or "").upper()
-    s = re.sub(r"[—–−－]", "-", s)
+    s = norm_code(code)
     s = re.sub(r"-(?:19|20)\d{2}$", "", s)      # 去年份
     s = s.replace("GBZ/T", "GBZ").replace("GB/T", "GB")
     return s
@@ -223,11 +251,8 @@ def fix_standard_refs(text: str, conn: sqlite3.Connection | None = None) -> tupl
         except Exception:
             return text, []
 
-    # 文档中出现形态: GBZ 2.2—2007 / GBZ2.2-2007 / GB/T 18664-2002 / GB/T18664—2002第4.2条 ...
-    # ⚠ 不能用 \b 收尾: 中文字符在 \w 内, '2002第' 之间无 \b → 紧跟中文的标准号会漏匹配。
-    #   改用 (?![0-9A-Za-z]) 排除字母数字 (中文/标点可跟随)。
-    re_ref = re.compile(r"(?<![0-9A-Za-z])(GB(?:/T|/Z)?|GBZ(?:/T)?)\s*(\d+(?:\.\d+)?)"
-                        r"\s*[—\-–−－]\s*((?:19|20)\d{2})(?![0-9A-Za-z])")
+    # 引用形态一律走模块级 STD_REF_PAT (与 V-05/std_guard 同一把尺子, 见其定义处注释)
+    re_ref = STD_REF_PAT
     changes: list[str] = []
     # 状态表 (基准): (base, 年份) → state。
     # ⚠ 2026-10 修: 旧查询对 'GB 30077-2013' 这类带空格的库记录永远匹配不上 → 废止版漏替换。
@@ -238,8 +263,8 @@ def fix_standard_refs(text: str, conn: sqlite3.Connection | None = None) -> tupl
         st_map.setdefault((_base_code(_c), _year(_c)), _s or "")
 
     def _sub(m):
-        prefix, num, yr = m.group(1), m.group(2), m.group(3)
-        full = f"{prefix}{num}-{yr}"
+        yr = m.group(4)
+        full = ref_code(m)
         try:
             state = st_map.get((_base_code(full), int(yr)), "")
             # 按全号匹配不到时再按原样查一次
