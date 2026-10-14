@@ -106,14 +106,96 @@ def _match_wanted(wanted: list, name: str):
     return None
 
 
+# 骨架里代表"这一格还没有数据"的标记 (与全库「待补充」诚实标注口径一致)
+_GAP_MARKS = ("待补充", "待完善", "需企业提供", "资料未提供", "待核定", "待材料")
+
+
+def _cell_is_gap(v) -> bool:
+    s = str(v if v is not None else "").strip()
+    return not s or any(m in s for m in _GAP_MARKS)
+
+
+def _merge_pending_cells(sk: dict, t: dict) -> dict | None:
+    """场景4 (2026-10-14): 单元格级**单向**升级 —— 骨架「待补充」而现算有真值 → 采纳现算。
+
+    成因 (苯醌实锤): 骨架一旦写入就只在导入时重建, 而官方数据层 (hazard_toxicity)
+    是**事后**才补录的 —— 现算已能给出「轻度危害」(GBZ/T 230 THI), 骨架仍写「待补充」。
+    场景1/2/3 都要求差异格是"前缀关系", 待补充→轻度危害 不是前缀 → 错值被永久冻死。
+
+    保守性 (骨架优先原则不破):
+      - 仅在 行数/列数一致 且 每行标识列(第0列)全等 时按位对齐;
+      - 只允许 缺→有 这一个方向; 反向 (现算反而空了) 保留骨架值;
+      - 两格都有值且不同 = 数据确实不同源 → **整表放弃升级** (返回 None);
+      - 升级格写进格级 prov ("<行>_<列>"), 表级 prov 降为 _default, 保证溯源不说假话。
+    返回 None 表示不适用或出现冲突, 由调用方保留骨架。
+    """
+    try:
+        srows = sk.get("rows") or []
+        nrows = t.get("rows") or []
+        if not srows or len(srows) != len(nrows):
+            return None
+        scols = sk.get("cols") or []
+        if (t.get("cols") or []) != scols:
+            return None
+        merged_rows = [list(r) for r in srows]
+        upgraded: dict[str, dict] = {}
+        for i, (sr, nr) in enumerate(zip(srows, nrows)):
+            sr, nr = list(sr), list(nr)
+            if len(sr) != len(nr) or str(sr[0] if sr else "") != str(nr[0] if nr else ""):
+                return None          # 行不同位 → 整表不碰
+            for j in range(len(sr)):
+                a, b = sr[j], nr[j]
+                if str(a if a is not None else "") == str(b if b is not None else ""):
+                    continue
+                if _cell_is_gap(a) and not _cell_is_gap(b):
+                    merged_rows[i][j] = b
+                    col_name = scols[j] if j < len(scols) else str(j)
+                    upgraded[f"{i}_{j}"] = {
+                        "source": "rule",
+                        "evidence": {
+                            "file": "现算回填(骨架解冻 场景4)",
+                            "page": None,
+                            "text": f"{col_name}={str(b).strip()} ← 导入时骨架建得更早, "
+                                    f"官方数据层事后补录; 原骨架值「{str(a).strip() or '空'}」"
+                                    f"已在导出合并点被现算取代",
+                        },
+                    }
+                elif _cell_is_gap(b) and not _cell_is_gap(a):
+                    continue         # 反向不倒退: 保留骨架值
+                else:
+                    return None      # 两个都有值且不同 → 不同源, 保留骨架
+        if not upgraded:
+            return None
+        out = dict(sk)
+        out["rows"] = merged_rows
+        # prov 只允许两种形态 (见 number_provenance 文件头): 表级 {source,evidence}
+        # 或格级 {"<行>_<列>":{...}, "_default":{...}} —— 升级后转格级, 表级降为 _default,
+        # 不得把两种形态平铺混在一个 dict 里 (溯源面板会读错)。
+        base = sk.get("prov")
+        prov: dict = {}
+        if isinstance(base, dict) and ("source" in base or "evidence" in base):
+            prov["_default"] = base
+        elif isinstance(base, dict):
+            prov.update(base)
+            prov.setdefault("_default", {"source": "rule"})
+        else:
+            prov["_default"] = {"source": "rule"}
+        prov.update(upgraded)
+        out["prov"] = prov
+        out["_pending_upgraded_cells"] = len(upgraded)
+        return out
+    except Exception:
+        return None
+
+
 def _unfreeze_truncated_rows(sk: dict, t: dict) -> dict:
     """截断解冻护栏: 骨架行是现算行的**严格前缀** → 骨架来自旧截断代码, 让位现算。
 
     事故 (2026-10): 「管理制度检查表」骨架建于 section_filler [:50] 截断时代,
     "骨架优先"让旧截断值永生 (导出物 10 处被切, 修复文本永不可见)。
     判据保守: 行数/列数一致, 且**所有**差异单元格都是「骨架值 ⊂ 现算值为其严格
-    前缀」且至少一处 → 整表用现算; 只要有一处差异非前缀关系 (数据确实不同源,
-    例如导入时沉淀的独立数据) 就保留骨架 (骨架优先原则不破)。
+    前缀」且至少一处 → 整表用现算; 有一处差异非前缀关系 → 先试场景4 单元格级
+    单向升级, 升级不适用 (反向/冲突/行不同位) 才保留骨架 (骨架优先原则不破)。
 
     追加场景 (2026-10, 班制定员表): 骨架含**多余尾部合计行** (旧双计 bug 产物,
     293 = 明细和 144 + 材料合计条目 149), 现算已修正为单合计行。判据同样保守:
@@ -158,8 +240,13 @@ def _unfreeze_truncated_rows(sk: dict, t: dict) -> dict:
                         ok = False
                         break
                 if not ok:
-                    return sk
-            return t if has_prefix else sk
+                    # 场景4 (2026-10-14): 非前缀差异不再直接冻死 —— 试单元格级单向升级
+                    #   (骨架「待补充」→ 现算真值; 反向与冲突仍保留骨架)
+                    return _merge_pending_cells(sk, t) or sk
+            if has_prefix:
+                return t
+            # 逐格全等以外的最后出路: 只有"缺→有"差异时升级
+            return _merge_pending_cells(sk, t) or sk
 
         if len(srows) > len(nrows):
             # 场景2: 骨架多尾部行 — 多出行须全为「合计」行, 共同部分可前缀
