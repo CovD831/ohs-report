@@ -225,6 +225,82 @@ def resolve_all_refs(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
+def make_ref_fixer(conn: sqlite3.Connection):
+    """返回 fix(text) → (text', changes) 的闭包; standard_db 状态表只建一次
+
+    为什么要闭包 (2026-10-15): 生成端要**逐格**过兜底 (一张检查表几十上百格),
+    每格重建 2222 行状态表就是 O(格数×库)。判据仍然只有 STD_REF_PAT + 这一份 _sub,
+    不另开第二套 —— 换写法可以, 换尺子不行。
+    """
+    st_map: dict[tuple, str] = {}
+    # ⚠ 2026-10 修: 旧查询对 'GB 30077-2013' 这类带空格的库记录永远匹配不上 → 废止版漏替换。
+    # 再修: 用 _base_code(去 /T、去年份) + 年份做键 —— 'GB/T 50034-2013' 与库中
+    # 'GB 50034-2013' 归一后同为 ('GB50034', 2013), 消除 /T 与空格变体差异。
+    for _c, _s in conn.execute("SELECT code, state FROM standard_db"):
+        st_map.setdefault((_base_code(_c), _year(_c)), _s or "")
+
+    def _make_sub(changes: list[str]):
+        def _sub(m):
+            yr = m.group(4)
+            full = ref_code(m)
+            try:
+                state = st_map.get((_base_code(full), int(yr)), "")
+                # 按全号匹配不到时再按原样查一次
+                if not state:
+                    row = conn.execute("SELECT state FROM standard_db WHERE code=?", (full,)).fetchone()
+                    state = (row[0] if row else None) or ""
+                # state 漏标时按 replace_of 反查补判 (见 is_superseded 的事故说明)
+                sup = None if state in ("废止", "已废止") else is_superseded(conn, full)
+                if state not in ("废止", "已废止") and not sup:
+                    return m.group(0)
+                cur = resolve_current(conn, full)
+                if not cur or not cur.get("code"):
+                    return m.group(0)
+                if (cur.get("state") or "") in ("废止", "已废止"):
+                    return m.group(0)          # 解析到的仍是废止版 → 不动
+                new_code = cur["code"]
+                if _year(new_code) <= int(yr):
+                    return m.group(0)          # 没更新 → 不动
+                # 保留原文书写风格: 若有"前缀 编号"的空格则保留, 破折号形态保留
+                spaced = bool(re.match(r"^[A-Za-z/]+\s+\d", m.group(0)))
+                dash = "—" if "—" in m.group(0) else "-"
+                # 前缀与编号取**现行版自身**(不能用 _base_code, 它抹掉了 /T 标记)
+                m2 = re.match(r"^(GBZ/T|GB/T|GBZ|GB/Z|GB)\s*(\d+(?:\.\d+)?)", new_code)
+                if not m2:
+                    return m.group(0)
+                pfx, rest = m2.group(1), m2.group(2)
+                yr_new = new_code[new_code.rfind("-") + 1:]
+                new_full = f"{pfx} {rest}{dash}{yr_new}" if spaced else f"{pfx}{rest}{dash}{yr_new}"
+                changes.append(f"{m.group(0)} → {new_full}")
+                return new_full
+            except Exception:
+                return m.group(0)
+        return _sub
+
+    def fix(text: str) -> tuple[str, list[str]]:
+        if not text:
+            return text, []
+        changes: list[str] = []
+        return STD_REF_PAT.sub(_make_sub(changes), text), changes
+
+    return fix
+
+
+def rows_of(conn: sqlite3.Connection, sql: str, args=()) -> list[list]:
+    """官方数据层 → 行, **读出即做标准号兜底** (2026-10-15 用户拍板: 代码兜底)
+
+    规则库 (emergency_rule / protection_rule / management_rule / ppe_item / oel_limit…)
+    存的"依据标准号"实测就有废止版 (本地与生产都挂着 GBZ 2.2—2007 / GB/T 18664—2002),
+    而部署刻意排除 data/ → 不能假设两份库都被同步过。废止号不得进报告:
+    在**唯一读出点**纠版, 比在十几处拼接点各补一遍可靠 (漏一处就漏印)。
+    """
+    fix = make_ref_fixer(conn)
+    rows = []
+    for r in conn.execute(sql, args).fetchall():
+        rows.append([fix(v)[0] if isinstance(v, str) else v for v in r])
+    return rows
+
+
 def fix_standard_refs(text: str, conn: sqlite3.Connection | None = None) -> tuple[str, list[str]]:
     """把 text 中**废止/无效**标准号替换为现行版 (确定性, 不靠 LLM)
 
@@ -250,58 +326,12 @@ def fix_standard_refs(text: str, conn: sqlite3.Connection | None = None) -> tupl
             own = True
         except Exception:
             return text, []
-
-    # 引用形态一律走模块级 STD_REF_PAT (与 V-05/std_guard 同一把尺子, 见其定义处注释)
-    re_ref = STD_REF_PAT
-    changes: list[str] = []
-    # 状态表 (基准): (base, 年份) → state。
-    # ⚠ 2026-10 修: 旧查询对 'GB 30077-2013' 这类带空格的库记录永远匹配不上 → 废止版漏替换。
-    # 再修: 用 _base_code(去 /T、去年份) + 年份做键 —— 'GB/T 50034-2013' 与库中
-    # 'GB 50034-2013' 归一后同为 ('GB50034', 2013), 消除 /T 与空格变体差异。
-    st_map: dict[tuple, str] = {}
-    for _c, _s in conn.execute("SELECT code, state FROM standard_db"):
-        st_map.setdefault((_base_code(_c), _year(_c)), _s or "")
-
-    def _sub(m):
-        yr = m.group(4)
-        full = ref_code(m)
-        try:
-            state = st_map.get((_base_code(full), int(yr)), "")
-            # 按全号匹配不到时再按原样查一次
-            if not state:
-                row = conn.execute("SELECT state FROM standard_db WHERE code=?", (full,)).fetchone()
-                state = (row[0] if row else None) or ""
-            # state 漏标时按 replace_of 反查补判 (见 is_superseded 的事故说明)
-            sup = None if state in ("废止", "已废止") else is_superseded(conn, full)
-            if state not in ("废止", "已废止") and not sup:
-                return m.group(0)
-            cur = resolve_current(conn, full)
-            if not cur or not cur.get("code"):
-                return m.group(0)
-            if (cur.get("state") or "") in ("废止", "已废止"):
-                return m.group(0)          # 解析到的仍是废止版 → 不动
-            new_code = cur["code"]
-            if _year(new_code) <= int(yr):
-                return m.group(0)          # 没更新 → 不动
-            # 保留原文书写风格: 若有"前缀 编号"的空格则保留, 破折号形态保留
-            spaced = bool(re.match(r"^[A-Za-z/]+\s+\d", m.group(0)))
-            dash = "—" if "—" in m.group(0) else "-"
-            # 前缀与编号取**现行版自身**(不能用 _base_code, 它抹掉了 /T 标记)
-            m2 = re.match(r"^(GBZ/T|GB/T|GBZ|GB/Z|GB)\s*(\d+(?:\.\d+)?)", new_code)
-            if not m2:
-                return m.group(0)
-            pfx, rest = m2.group(1), m2.group(2)
-            yr_new = new_code[new_code.rfind("-") + 1:]
-            new_full = f"{pfx} {rest}{dash}{yr_new}" if spaced else f"{pfx}{rest}{dash}{yr_new}"
-            changes.append(f"{m.group(0)} → {new_full}")
-            return new_full
-        except Exception:
-            return m.group(0)
-
-    out = re_ref.sub(_sub, text)
-    if own:
-        conn.close()
-    return out, changes
+    # 判定与替换逻辑全部在 make_ref_fixer (单一产地); 逐格场景请直接用它避免重复建表
+    try:
+        return make_ref_fixer(conn)(text)
+    finally:
+        if own:
+            conn.close()
 
 
 if __name__ == "__main__":

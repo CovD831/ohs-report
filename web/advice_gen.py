@@ -17,18 +17,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def query_measures(conn, issue_type: str) -> list[dict]:
-    """按问题类别查询标准措施条款"""
+    """按问题类别查询标准措施条款
+
+    读规则库一律走 rows_of: 库里存着废止标准号 (实测 GB/T 18664—2002 这类) 时,
+    依据列不得原样进报告 —— 兜底在唯一的读出点做, 不在这里逐条拼。
+    """
+    from web.standard_version import rows_of
     m = []
     if issue_type in ("超标", "化学"):
-        for r in conn.execute("SELECT check_point, std_code, clause FROM protection_rule "
+        for r in rows_of(conn, "SELECT check_point, std_code, clause FROM protection_rule "
                               "WHERE hazard_category IN ('化学毒物','粉尘')"):
             m.append({"measure": r[0], "basis": f"{r[1]} {r[2]}"})
     if issue_type in ("噪声", "物理"):
-        for r in conn.execute("SELECT check_point, std_code, clause FROM protection_rule "
+        for r in rows_of(conn, "SELECT check_point, std_code, clause FROM protection_rule "
                               "WHERE hazard_category IN ('噪声','高温','振动','辐射')"):
             m.append({"measure": r[0], "basis": f"{r[1]} {r[2]}"})
     if issue_type in ("制度", "管理"):
-        for r in conn.execute("SELECT require, std_code, clause FROM management_rule"):
+        for r in rows_of(conn, "SELECT require, std_code, clause FROM management_rule"):
             m.append({"measure": r[0], "basis": f"{r[1]} {r[2] or ''}".strip()})
     return m
 

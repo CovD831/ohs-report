@@ -335,7 +335,9 @@ def _physical_det_table(conn, dets: list) -> dict | None:
 
 
 def _rows_of(conn, sql, args=()):
-    return [list(r) for r in conn.execute(sql, args).fetchall()]
+    """官方数据层读行 → 标准号兜底在 web.standard_version.rows_of 单点完成"""
+    from web.standard_version import rows_of
+    return rows_of(conn, sql, args)
 
 
 def _ppe_matrix_table() -> dict | None:
@@ -538,7 +540,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
     """按报告章节 (新11章) 生成表格"""
     if sec == "1":
         # 总论: 评价依据表 (标准库)
-        refs = conn.execute("SELECT code, name FROM standard_ref ORDER BY id").fetchall()
+        refs = _rows_of(conn, "SELECT code, name FROM standard_ref ORDER BY id")
         rows = []
         for i, (code, name) in enumerate(refs, 1):
             rows.append([i, code, name, "见标准库"])
@@ -1193,9 +1195,9 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             _ri = len(lim_rows)                       # 该因素在表中的行号
             # ⚠ 连同 source_standard 一起取出: 逐格记录该限值来自标准库哪一条,
             #   使"每个限值可点开看 GBZ 2.1—2019 某某 PC-TWA=N" (审计可逐行溯源)
-            recs = conn.execute(
+            recs = _rows_of(conn,
                 "SELECT oel_type, value, source_standard FROM oel_limit "
-                "WHERE factor_name LIKE ?", (fac + "%",)).fetchall()
+                "WHERE factor_name LIKE ?", (fac + "%",))
             oels, srcs = {}, {}
             for r in recs:
                 # sqlite3.Row 或 tuple 都兼容

@@ -366,12 +366,13 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
             if assess is not None:
                 try:
                     from .projects_db import _conn as _mconn
+                    from .standard_version import rows_of as _rows_of
                     _mc = _mconn()
                     # 匹配 category=受限空间/特殊作业 或 require 含 盲板/置换/氧含量/通风
                     kws = ("受限空间", "特殊作业", "有限空间", "密闭空间", "盲板", "氧含量", "置换", "上锁")
-                    rows = _mc.execute(
+                    rows = _rows_of(_mc,
                         f"SELECT require, std_code, clause FROM management_rule WHERE " +
-                        " OR ".join(["require LIKE ?"] * len(kws)), tuple(f"%{k}%" for k in kws)).fetchall()
+                        " OR ".join(["require LIKE ?"] * len(kws)), tuple(f"%{k}%" for k in kws))
                     _mc.close()
                     for r, std, clause in rows:
                         mg += f"\n- [{std} {clause}] {r}" if std else f"\n- {r}"
@@ -615,11 +616,12 @@ def _std_clauses(sec: str) -> str:
         return ""
     try:
         from .projects_db import _conn as _mc
+        from .standard_version import rows_of
         conn = _mc()
         # category='受限空间' 直接命中全文化条款(8.4.7清点/8.4.9储罐等行为细则不含关键词)
-        rows = conn.execute(
+        rows = rows_of(conn,
             "SELECT require, std_code, clause FROM management_rule WHERE category='受限空间' OR " +
-            " OR ".join(["require LIKE ?"] * len(kws)), tuple(f"%{k}%" for k in kws)).fetchall()
+            " OR ".join(["require LIKE ?"] * len(kws)), tuple(f"%{k}%" for k in kws))
         conn.close()
     except Exception:
         return ""

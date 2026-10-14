@@ -119,8 +119,11 @@ def _build_phys_limit_table(name: str, conn) -> dict | None:
     if not factors:
         return None
     rows = []
+    # rows_of: 限值表的"依据标准"列直接来自库里存的 source_standard,
+    # 实测本地/生产都挂着废止版 (GBZ 2.2—2007) → 读出即纠, 不指望数据已被同步
+    from web.standard_version import rows_of
     for f in factors:
-        for r in conn.execute(
+        for r in rows_of(conn,
                 "SELECT factor_name, oel_type, value, unit, conditions, source_standard "
                 "FROM oel_limit WHERE factor_name=? ORDER BY oel_type", (f,)):
             nm, otype, val, unit, cond, src = (str(x or "") for x in r)

@@ -282,12 +282,17 @@ _WRITING_GUIDE = """
 
 
 def _design_base() -> str:
-    """标准措施条款摘要 (系统查询, 供建议类prompt)"""
+    """标准措施条款摘要 (系统查询, 供建议类prompt)
+
+    走 rows_of: 规则库里若存着废止标准号, 不能把它喂进 prompt —— 那等于让 LLM
+    照抄一个我们自己在 V-05 里判为硬伤的写法 (兜底替换是在生成之后, 源头就该干净)。
+    """
+    from web.standard_version import rows_of
     conn = connect()
     lines = []
-    for r in conn.execute("SELECT check_point, std_code, clause FROM protection_rule"):
+    for r in rows_of(conn, "SELECT check_point, std_code, clause FROM protection_rule"):
         lines.append(f"- [{r[1]} {r[2]}] {r[0][:40]}")
-    for r in conn.execute("SELECT require, std_code, clause FROM management_rule"):
+    for r in rows_of(conn, "SELECT require, std_code, clause FROM management_rule"):
         lines.append(f"- [{r[1]} {r[2]}] {r[0][:40]}")
     conn.close()
     return "\n".join(l for l in lines if l)[:1500]
