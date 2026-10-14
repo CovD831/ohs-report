@@ -104,15 +104,20 @@ def check_traceability(text: str, project_data: dict) -> list[dict]:
     import sqlite3 as _s3
     _con = None
     std_factors = set()
+    bench_degraded = []
     try:
         from knowledge.oel import connect as _ocon
         _con = _ocon()
+        # ⚠ 列名修正 (2026-10-15): 原写 `oel_limit.name` / `hazard_factor.hazard_name`,
+        #   两列**都不存在** (真实: factor_name / name)。加上外面 except: pass, 结果是
+        #   std_factors 永远为空 → B 维度的"标准库豁免"一直在走下面那份手抄 40 项回退集,
+        #   从未真的用 425+357 条标准库判过幻觉。这就是"评测绿其实是空结果"。
         std_factors = {str(r[0]).strip() for r in _con.execute(
-            "SELECT DISTINCT name FROM oel_limit WHERE name LIKE '%' ").fetchall()}
+            "SELECT DISTINCT factor_name FROM oel_limit WHERE factor_name IS NOT NULL").fetchall()}
         std_factors |= {str(r[0]).strip() for r in _con.execute(
-            "SELECT DISTINCT hazard_name FROM hazard_factor LIMIT 2000").fetchall()}
-    except Exception:
-        pass
+            "SELECT DISTINCT name FROM hazard_factor WHERE name IS NOT NULL").fetchall()}
+    except Exception as e:
+        bench_degraded.append(f"标准库读取失败: {e}")
     if not std_factors:
         # 回退: 标准条文专有因子 (限值表/健康影响表引用, 非项目检测因子 — 检测因子必须溯源)
         std_factors = {"甲醛", "氨", "乙醇", "甲醇", "甲苯", "二甲苯", "苯乙烯", "盐酸", "硫酸",
@@ -121,6 +126,10 @@ def check_traceability(text: str, project_data: dict) -> list[dict]:
                        "二氧化硫", "三氧化铬", "铬酸盐", "镍", "锰", "铅", "汞", "焦炉逸散物",
                        "高温", "噪声", "振动", "局部振动", "工频电场", "紫外辐射", "微波辐射",
                        "激光辐射", "X射线", "γ射线"}
+        bench_degraded.append("B 维度降级为手抄回退集 (40 项) — 结果不可当证据")
+        # ⚠ 不许静默: 降级必须喊出来, 否则"绿"会被读成"通过"
+        print("⚠️  B 维度降级: 标准库未载入, 豁免集退回手抄 40 项; "
+              "本轮 traceability 分数不可与正常轮次比较。", file=sys.stderr)
         # 说明: 物理因素(高温/噪声/振动/电场等)是GBZ 2.2标准条文引用, 豁免溯源;
         #      检测类因子(聚乙烯粉尘/白炭黑/电焊烟尘/滑石粉尘/其他粉尘)不放回退集 —
         #      这些出现在报告正文且项目data无对应 → 应报幻觉(C004)
@@ -140,6 +149,10 @@ def check_traceability(text: str, project_data: dict) -> list[dict]:
                 "severity": "medium",
                 "note": f"报告中出现危害因素「{m}」但项目数据中无对应因子 (可能是幻觉或遗漏)",
             })
+    for msg in bench_degraded:
+        # 降级不留沉默: 记为可见 issue, 让这一轮不可能被读成"满分通过"
+        issues.append({"type": "bench_degraded", "rule_id": "B-00", "severity": "medium",
+                       "note": "评测自身降级: " + msg})
     return issues
 
 
@@ -153,18 +166,23 @@ def check_oel_citations(text: str, conn) -> list[dict]:
         return re.sub(r"[\s,，]", "", s.lower())
     issues = []
     # 报告中的限值引用形如 "PC-TWA 5 mg/m³" / "PC-TWA(总尘) 5mg/m³"
-    cites = re.findall(r"PC-TWA[^0-9]{0,12}(\d+(?:\.\d+)?)\s*(?:mg/m3|mg/m³|mg/m3)", text, re.I)
-    for c in cites:
-        # 查库: 有 PC-TWA 限值 == 报告值?
-        rows = conn.execute("SELECT DISTINCT value FROM oel_limit WHERE type LIKE '%TWA%'").fetchall()
-        std_vals = {_normalize(str(r[0])) for r in rows}
+    cites = re.findall(r"PC-TWA[^0-9]{0,12}(\d+(?:\.\d+)?)\s*(?:mg/m3|mg/m³)", text, re.I)
+    # ⚠ 修正 (2026-10-15): 原 SQL 用 `oel_limit.type` — 该列不存在 (真实 oel_type),
+    #   且这条从未被 main 调用过, 所以这个错误一直没暴露。查询同时提到循环外
+    #   (原来每条引用都全表扫一次)。
+    rows = conn.execute("SELECT DISTINCT value FROM oel_limit WHERE oel_type LIKE '%TWA%'").fetchall()
+    std_vals = {_normalize(str(r[0])) for r in rows if r[0] is not None}
+    if not std_vals:
+        return [{"type": "bench_degraded", "rule_id": "C-00", "severity": "medium",
+                 "note": "评测自身降级: oel_limit 未取到任何 PC-TWA 值, C 维度结果不可用"}]
+    for c in dict.fromkeys(cites):
         cv = _normalize(c)
         if cv not in std_vals:
             issues.append({
                 "type": "oel_mismatch", "rule_id": "C-01",
                 "reported": c,
-                "severity": "high" if cv else "low",
-                "note": f"报告引用限值 PC-TWA {c} mg/m³ 未在标准库 oel_limit 中找到精确值"
+                "severity": "medium",
+                "note": f"报告引用限值 PC-TWA {c} mg/m³ 未在标准库 oel_limit 中找到精确值",
             })
     return issues
 
@@ -356,10 +374,11 @@ def main():
         print(f"⚠️ 警告: --project-json 仅含 {len(_mats)} 条 materials — 若为截断快照, B维度(溯源)"
               f"可能误报'因子无对应'。建议 --pid 或传全量 data JSON。", file=sys.stderr)
 
-    text = ""
-    import docx
-    d = docx.Document(args.docx)
-    text = "\n".join(p.text for p in d.paragraphs)
+    # 评测输入文字: **段落 + 表格单元格** (原来只取 paragraphs —— 而限值/危害因素
+    # 恰恰长在表里, 所以 C 维度即使被调用也会永远扫不到东西)
+    from tools.export_fingerprint import texts_from_docx  # 单一取字口径, 与内容指纹同源
+    _paras, _cells, _ = texts_from_docx(Path(args.docx))
+    text = "\n".join(_paras + [c[3] for c in _cells])
 
     # 标准结构: 取 SUBS/SUBS3 (若报告生成器提供)
     std_sections = []
@@ -378,6 +397,13 @@ def main():
     results = {"docx": args.docx, "pid": args.pid, "bench_version": BENCH_VERSION}
     results["A_internal_consistency"] = check_internal_consistency(text)
     results["B_traceability"] = check_traceability(text, project_data)
+    # C 维度 (限值正确性) 首次接入: 定义于 :160 但历史上从未被调用过
+    from knowledge.oel import connect as _ocon
+    _c = _ocon()
+    try:
+        results["C_oel_citations"] = check_oel_citations(text, _c)
+    finally:
+        _c.close()
     results["D_structure"] = check_structure(Path(args.docx), std_sections)
     results["E_tables"] = check_tables(Path(args.docx), project_data)
     results["F_completeness"] = check_completeness(Path(args.docx), project_data)
@@ -392,11 +418,13 @@ def main():
     results["scores"] = {
         "data_consistency": _score(results["A_internal_consistency"]),
         "traceability": _score(results["B_traceability"]),
+        "oel_citations": _score(results["C_oel_citations"]),
         "structure": _score(results["D_structure"]),
         "tables": _score(results["E_tables"]),
         "completeness": _score(results["F_completeness"]),
     }
-    results["total_deterministic"] = round(sum(results["scores"].values()) / 5, 1)
+    # 除数改为维度条数 (原来硬编码 /5, 加一维就会静默压分)
+    results["total_deterministic"] = round(sum(results["scores"].values()) / len(results["scores"]), 1)
 
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
