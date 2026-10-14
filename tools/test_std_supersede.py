@@ -7,7 +7,6 @@
 用法: .venv/bin/python tools/test_std_supersede.py
 """
 import os
-import re
 import sqlite3
 import sys
 
@@ -18,7 +17,7 @@ DB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "
 conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
 
 from web.standard_version import (fix_standard_refs, is_superseded,  # noqa: E402
-                                  resolve_current, supersession_index)
+                                  supersession_index)
 from web.validators import _check_standards  # noqa: E402
 
 n_pass = n_fail = 0
