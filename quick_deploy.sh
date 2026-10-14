@@ -37,7 +37,7 @@ echo "    包大小: ${_sz}MB"
 [ "$_sz" -gt 20 ] && echo "  ⚠ 包偏大(${_sz}MB) — 检查是否漏排大目录, 大包易传断"
 
 # 部署前校验: 关键源码目录必须在包里 (防"漏送目录"类静默失败)
-for _must in web/app.py knowledge/project_assess.py knowledge/gbz1_loader.py tools/audit_numbers.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py web/section_filler.py web/section_style_spec.json web/llm_draft.py web/word_export.py web/standard_version.py web/report_parser.py web/structure_data.py web/table_builder.py web/hazard_grid.py web/report_struct.py web/unit_gen.py web/validators.py; do
+for _must in web/app.py knowledge/project_assess.py knowledge/gbz1_loader.py tools/audit_numbers.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py web/section_filler.py web/section_style_spec.json web/llm_draft.py web/word_export.py web/standard_version.py web/report_parser.py web/structure_data.py web/table_builder.py web/hazard_grid.py web/report_struct.py web/unit_gen.py web/validators.py web/derived_fields.py web/field_projection.py knowledge/ppe_vertical.py web/thi_rating.py; do
   if ! tar tzf /tmp/ohs_src.tgz "$_must" >/dev/null 2>&1; then
     echo "❌ 包内缺少 $_must — 打包规则有误, 中止"; exit 1
   fi
@@ -74,12 +74,12 @@ curl -s -o /dev/null -w '公网: %{http_code}\n' https://paiyipai.xyz/login
 # ⚠ 关键: 校验"新代码真的进容器了" (防"部署成功但代码是旧的"静默假成功)
 # 比对本地与容器内关键文件的 md5
 # ⚠⚠ 教训 (2026-10): 清单必须覆盖**本轮改过的文件** —— 只列固定几个文件,
-#   改了别的文件就校验不到 = 等于没验。本轮改动: optfix
-#   (section_filler 气象表旁路 / structure_data region_facts 段落侧接线 /
-#    knowledge.ppe_vertical 发放周期惯例 + 新增 web/thi_rating.py)。
+#   改了别的文件就校验不到 = 等于没验。本轮改动: P0校验器 + 4a解冻
+#   (validators V-01/V-02/V-03 接通 + derived_fields/field_projection 定员口径唯一产地
+#    + structure_data MUST_COVER_CHECK + word_export 场景4 单元格级单向升级)。
 echo "=== 6. 源码一致性校验 (本地 vs 容器) ==="
 _mismatch=0
-for _f in web/app.py knowledge/project_assess.py knowledge/gbz1_loader.py knowledge/ppe_vertical.py web/table_skeleton.py web/section_filler.py web/section_style_spec.json web/word_export.py web/llm_draft.py web/standard_version.py web/orig_table_map.py web/report_parser.py web/structure_data.py web/table_builder.py web/hazard_grid.py web/report_struct.py web/unit_gen.py web/thi_rating.py web/validators.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py tools/compare_real_report.py; do
+for _f in web/app.py knowledge/project_assess.py knowledge/gbz1_loader.py knowledge/ppe_vertical.py web/table_skeleton.py web/section_filler.py web/section_style_spec.json web/word_export.py web/llm_draft.py web/standard_version.py web/orig_table_map.py web/report_parser.py web/structure_data.py web/table_builder.py web/hazard_grid.py web/report_struct.py web/unit_gen.py web/thi_rating.py web/validators.py web/derived_fields.py web/field_projection.py tools/extract_mgmt_facts.py tools/patch_missing_current_std.py tools/compare_real_report.py; do
   _l=$(md5 -q "$_f" 2>/dev/null || md5sum "$_f" | cut -d' ' -f1)
   _r=$(ssh $SRV "docker exec ohs-report md5sum /app/$_f 2>/dev/null | cut -d' ' -f1")
   if [ "$_l" = "$_r" ]; then
