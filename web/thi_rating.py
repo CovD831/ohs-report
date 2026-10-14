@@ -360,9 +360,9 @@ if __name__ == "__main__":
     import os
     import sqlite3
     import sys
-    os.chdir('/Users/abaaba/Projects/ohs-report')
     sys.path.insert(0, '.')
-    conn = sqlite3.connect('data/ohs.db')
+    from knowledge.paths import DB_PATH
+    conn = sqlite3.connect(str(DB_PATH))   # 不再靠 os.chdir + 相对路径
     for nm, cs in [("丙酮", "67-64-1"), ("甲醇", "67-56-1"), ("甲苯", "108-88-3"),
                    ("乙酸乙酯", "141-78-6"), ("二聚环戊二烯", "77-73-6"),
                    ("苯醌", "106-51-4"), ("邻苯二甲酸酐", "85-44-9"),

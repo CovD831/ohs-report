@@ -161,7 +161,8 @@ if __name__ == "__main__":
     print("=== 依据索引引擎演示 ===\n")
     # 判定依据 (GBZ 2.1)
     import sqlite3
-    conn = sqlite3.connect("data/ohs.db")
+    from knowledge.paths import DB_PATH
+    conn = sqlite3.connect(str(DB_PATH))
     print("[10.2.5.3 判定依据]")
     from knowledge.judge_cli import judge_chemical
     j = judge_chemical(conn, "甲苯", 30, 95, None)

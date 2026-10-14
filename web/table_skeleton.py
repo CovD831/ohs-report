@@ -403,7 +403,8 @@ if __name__ == "__main__":
     import json
     import sqlite3
 
-    c = sqlite3.connect("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+    from knowledge.paths import DB_PATH
+    c = sqlite3.connect(str(DB_PATH))
     c.row_factory = sqlite3.Row
     row = c.execute("SELECT data FROM project WHERE id=?", ("c8c7ff0a4d",)).fetchone()
     d = json.loads(row[0])

@@ -202,7 +202,8 @@ if __name__ == "__main__":
     import sys
 
     sys.path.insert(0, "/Users/abaaba/Projects/ohs-report")
-    c = sqlite3.connect("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+    from knowledge.paths import DB_PATH
+    c = sqlite3.connect(str(DB_PATH))
     c.row_factory = sqlite3.Row
     for pid in [r[0] for r in c.execute("SELECT id FROM project LIMIT 40")][:6]:
         d = json.loads(c.execute("SELECT data FROM project WHERE id=?", (pid,)).fetchone()[0])

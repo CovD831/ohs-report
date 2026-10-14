@@ -318,14 +318,13 @@ def fix_standard_refs(text: str, conn: sqlite3.Connection | None = None) -> tupl
     own = False
     if conn is None:
         try:
-            from pathlib import Path as _P
-            db = _P(__file__).resolve().parent.parent / "data" / "ohs.db"
-            if not db.exists():
-                return text, []
-            conn = sqlite3.connect(str(db))
+            from knowledge.oel import OfficialSchemaMissing, connect_ro
+            conn = connect_ro()           # 读路径走只读连接 (S1a′): 校验时不可能顺手建表
             own = True
-        except Exception:
-            return text, []
+        except OfficialSchemaMissing:
+            return text, []               # 库/schema 不在 → 明确这一种降级, 其余异常照常外抛
+        except OSError as e:              # 文件权限等设备级问题: 也不该伪装成"没有引用要改"
+            raise RuntimeError(f"标准号纠版无法打开库: {e}") from e
     # 判定与替换逻辑全部在 make_ref_fixer (单一产地); 逐格场景请直接用它避免重复建表
     try:
         return make_ref_fixer(conn)(text)

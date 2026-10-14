@@ -11,7 +11,7 @@ import time
 import uuid
 from pathlib import Path
 
-DB = Path(__file__).resolve().parent.parent / "data" / "ohs.db"
+from knowledge.paths import DB_PATH as DB
 
 
 def _conn() -> sqlite3.Connection:

@@ -192,7 +192,8 @@ def _standard_benchmark() -> str:
         db = Path(__file__).resolve().parent.parent / "data" / "ohs.db"
         if not db.exists():
             return ""
-        conn = sqlite3.connect(str(db))
+        from knowledge.oel import connect_ro
+        conn = connect_ro()   # 只读 (S1a′)
         refs = resolve_all_refs(conn)
         conn.close()
     except Exception:

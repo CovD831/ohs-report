@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from acquire.base import PoliteFetcher  # noqa: E402
 
-DB = Path(__file__).resolve().parent.parent / "data/ohs.db"
+from knowledge.paths import DB_PATH as DB
 CATALOG = Path(__file__).resolve().parent.parent / "acquire/raw/nhc_gbz/all_catalog.jsonl"
 
 # GBZ/T 196—2025 第2章 规范性引用文件 (标准号→名称)

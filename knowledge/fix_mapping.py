@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-DB = Path(__file__).resolve().parent.parent / "data/ohs.db"
+from knowledge.paths import DB_PATH as DB
 
 
 def main():

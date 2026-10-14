@@ -8,7 +8,7 @@ sys.path.insert(0, "/Users/abaaba/Projects/ohs-report")
 from web.number_provenance import audit_tables  # noqa: E402
 from web.table_builder import build_data_tables  # noqa: E402
 
-DB = Path("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+from knowledge.paths import DB_PATH as DB
 conn = sqlite3.connect(str(DB))
 conn.row_factory = sqlite3.Row
 

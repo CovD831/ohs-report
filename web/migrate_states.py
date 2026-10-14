@@ -11,7 +11,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-DB = Path(__file__).resolve().parent.parent / "data" / "ohs.db"
+from knowledge.paths import DB_PATH as DB
 
 # 旧 → 新 (关联性: 哪个旧章的文本最接近哪个新章)
 MAP = {

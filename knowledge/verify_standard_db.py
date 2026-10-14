@@ -32,7 +32,8 @@ REF_196 = [
 
 
 def verify():
-    conn = sqlite3.connect("data/ohs.db")
+    from knowledge.oel import connect_ro
+    conn = connect_ro()   # 纯读核验走只读连接 (原先这里是相对路径, 换 cwd 会静默连到一个空库)
     print("=" * 72)
     print("一、评价依据 26 项 → 现行版核验")
     print("=" * 72)

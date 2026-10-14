@@ -32,7 +32,7 @@ from web.projects_db import get_project, create_project, update_project, seed_de
 from web.projects_db import get_project_data as _get_project_data_pdb
 
 ROOT = Path(__file__).resolve().parent.parent
-DB = ROOT / "data" / "ohs.db"
+from knowledge.paths import DB_PATH as DB
 TEMPLATES = Path(__file__).resolve().parent.parent / "web" / "templates"
 
 app = FastAPI(title="职业病危害预评价报告工作台")
@@ -45,6 +45,12 @@ if os.getenv("SEED_DEMO", "").lower() in {"1", "true", "yes"}:
 from web import auth as _auth  # noqa: E402
 
 _auth.init_users()
+# 官方数据层 schema 的显式前置条件 (S1a′): 读路径改用只读连接之后, "26 张表存在"
+# 不能再靠某条写路径碰巧先跑过一次 oel.connect() 来保证 —— 缺 schema 要在这里响,
+# 而不是等到导出时报 no such table: oel_limit。
+from knowledge.oel import ensure_official_schema as _ensure_official_schema  # noqa: E402
+
+_ensure_official_schema()
 _sessions: dict[str, dict] = {}  # token -> user info
 GUEST_RE = re.compile(r"guest-[0-9a-f]{6}")
 

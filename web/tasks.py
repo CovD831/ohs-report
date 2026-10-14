@@ -12,7 +12,7 @@ from pathlib import Path
 
 from concurrent.futures import ThreadPoolExecutor
 
-DB = Path(__file__).resolve().parent.parent / "data" / "ohs.db"
+from knowledge.paths import DB_PATH as DB
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ohsjob")
 _jobs: dict[str, dict] = {}  # job_id -> 内存态 (progress 实时)
 

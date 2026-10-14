@@ -86,8 +86,9 @@ def main(argv: list[str]) -> int:
     if not argv:
         print(__doc__)
         return 2
-    db = "data/ohs.db"
-    conn = sqlite3.connect(db)
+    from knowledge.paths import DB_PATH
+    from knowledge.oel import connect_ro
+    conn = connect_ro()   # 只读
     total = 0
     for path in argv:
         text = _read_any(path)

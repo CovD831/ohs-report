@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, "/Users/abaaba/Projects/ohs-report")
 
 # 用临时库副本, 不污染真库
-SRC = Path("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+from knowledge.paths import DB_PATH as SRC   # 别再硬编码开发机绝对路径
 TMP = Path(tempfile.mkdtemp()) / "ohs.db"
 shutil.copy(SRC, TMP)
 for suf in ("-wal", "-shm"):

@@ -199,7 +199,8 @@ if __name__ == "__main__":
     import sqlite3
     import time
 
-    c = sqlite3.connect("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+    from knowledge.paths import DB_PATH
+    c = sqlite3.connect(str(DB_PATH))
     c.row_factory = sqlite3.Row
     d = json.loads(c.execute("SELECT data FROM project WHERE id=?", ("c8c7ff0a4d",)).fetchone()[0])
     print("region =", repr(_region_of(d)))
