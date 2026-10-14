@@ -247,12 +247,18 @@ def _find_ghs(conn, name: str, cas: str | None) -> dict | None:
     return None
 
 
-def rate_substance(conn, name: str, cas: str | None = None) -> dict | None:
+def rate_substance(conn, name: str, cas: str | None = None,
+                   min_have: int | None = None) -> dict | None:
     """按 GBZ/T 230—2025 计算单一物质危害程度
 
     返回 None = 数据不足, 调用方应标「待补充」(宁缺勿错)
     返回 dict = {thi, level, grade, detail:[(指标, F, k, 依据)], basis, source, matched}
+
+    min_have: 覆盖模块级 MIN_HAVE 门槛 (2026-10-14 C 方案加)。报告侧需要**明知数据不足**
+      也出等级 (按注6, 并标注 实测n/8项 + 待复核), 故允许以 min_have=0 取回结果;
+      调用方必须自己处理"未定级"的表达, 不得把裸等级当已定级结论。
     """
+    gate = MIN_HAVE if min_have is None else min_have
     if not name:
         return None
     g = _find_ghs(conn, name, cas)
@@ -319,7 +325,7 @@ def rate_substance(conn, name: str, cas: str | None = None) -> dict | None:
     _acc("蓄积性", f8, WEIGHTS["accumulation"], why8)
 
     total_items = len(WEIGHTS)
-    if have < MIN_HAVE:
+    if have < gate:
         return None  # 实测项不足 → 数据严重不足, 不输出分级
 
     level, grade = grade_of(thi_note6)

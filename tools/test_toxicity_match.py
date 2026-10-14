@@ -9,8 +9,15 @@
 断言:
   1. 严禁跨物质子串匹配(丙酮/丙酮氰醇、乙酸/乙酸乙烯酯、苯/乙苯)
   2. 同义名组仍能命中(氯化氢及盐酸 ↔ 盐酸)
-  3. 未收录 → 「待补充」(不编造)
+  3. 串物质守卫在**合成库**里断言 (见下"为什么不用真库")
+  4. 真库只断言 C 口径的取值形态: 非等级标签不得进「危害程度」列
+
+⚠ 2026-10-14 C 方案后, 本文件第 3 块曾直接拿真库字符串比对 (丙酮→待补充、
+  丙酮氰醇→剧毒)。改成注6 单值后两物质都落到「极度危害（按注6…）」,
+  字符串不再可判别 → 张冠李戴就算复发也测不出来。故跨物质守卫下沉到
+  合成库: 两行 level 人为设成不同等级, 串了必然露馅。
 """
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -20,9 +27,19 @@ sys.path.insert(0, str(ROOT))
 from knowledge.oel import connect              # noqa: E402
 from web.section_filler import _same_substance, lookup_toxicity  # noqa: E402
 
+GRADES = ("轻度危害", "中度危害", "高度危害", "极度危害")
 fails = []
 
-# --- 1. 单元: 跨物质必须 False ---
+
+def check(label, cond, detail=""):
+    if cond:
+        print(f"  ✓ {label}")
+    else:
+        fails.append(f"{label} {detail}")
+        print(f"  ✗ {label} {detail}")
+
+
+print("### 1. 单元: 跨物质必须判为不同")
 CROSS = [
     ("丙酮", "丙酮氰醇"),
     ("乙酸", "乙酸乙烯酯"),
@@ -31,46 +48,70 @@ CROSS = [
     ("甲醇", "甲醇钠"),
 ]
 for a, b in CROSS:
-    if _same_substance(a, b):
-        fails.append(f"跨物质误判为同一: {a!r} ~ {b!r}")
-print(f"  ✓ 跨物质判定 {len(CROSS)} 例均 False" if not any("跨物质" in f for f in fails) else "")
+    check(f"{a} ≠ {b}", not _same_substance(a, b), "← 误判为同一物质")
 
-# --- 2. 单元: 同义名组必须 True ---
+print("\n### 2. 单元: 同义名组必须判为同一")
 SAME = [
     ("氯化氢及盐酸", "盐酸"),
     ("甲苯", "甲苯"),
     ("三氯甲烷（氯仿）", "三氯甲烷"),
 ]
 for a, b in SAME:
-    if not _same_substance(a, b):
-        fails.append(f"同义名组漏判: {a!r} ~ {b!r}")
-print(f"  ✓ 同义名组 {len(SAME)} 例均 True" if not any("同义名组" in f for f in fails) else "")
+    check(f"{a} = {b}", _same_substance(a, b), "← 漏判")
 
-# --- 3. 集成: 真实查表 ---
+
+def synth(rows):
+    """只建 lookup_toxicity 会读到的表; 其余表缺失 → _thi_grade_cell 走 except 返回 None"""
+    c = sqlite3.connect(":memory:")
+    c.execute("CREATE TABLE hazard_toxicity(factor_name TEXT, aliases TEXT, level TEXT, source TEXT)")
+    c.executemany("INSERT INTO hazard_toxicity VALUES(?,?,?,?)", rows)
+    return c
+
+
+print("\n### 3. 合成库: 串物质必然露馅 (level 人为设成不同等级)")
+# A. 事故原貌: 库里只有"邻名"物质, 查询物质本身未收录 → 必须待补充
+c = synth([
+    ("丙酮氰醇", "", "剧毒", "真实报告表5.2-1"),
+    ("乙酸乙烯酯", "", "中度危害", "真实报告表5.2-1"),
+    ("乙苯", "", "高度危害", "真实报告表5.2-1"),
+])
+for fac, expect_label in (("丙酮", "不吞「丙酮氰醇」"),
+                          ("乙酸", "不吞「乙酸乙烯酯」"),
+                          ("苯", "不吞「乙苯」")):
+    r = lookup_toxicity(c, fac)
+    check(f"{fac} 未收录 → 待补充 ({expect_label})", r == "待补充", f"实得 {r!r}")
+c.close()
+
+# B. 两行都在: 必须取自身行, 且非等级标签一律不进列
+c = synth([
+    ("丙酮氰醇", "", "剧毒", "真实报告表5.2-1"),
+    ("丙酮", "", "轻度危害", "真实报告表5.2-1"),
+])
+r = lookup_toxicity(c, "丙酮")
+check("丙酮 取自身行(轻度危害), 不是丙酮氰醇的等级", r == "轻度危害", f"实得 {r!r}")
+r = lookup_toxicity(c, "丙酮氰醇")
+check("丙酮氰醇 的「剧毒」标签不进危害程度列", r == "待补充", f"实得 {r!r}")
+c.close()
+
+print("\n### 4. 真库: C 口径取值形态")
 conn = connect()
-r_acetone = lookup_toxicity(conn, "丙酮")
-if r_acetone == "剧毒":
-    fails.append("丙酮 仍被判「剧毒」(串到丙酮氰醇) — 严重")
-elif r_acetone != "待补充":
-    fails.append(f"丙酮 期望「待补充」, 实得 {r_acetone!r}")
-else:
-    print("  ✓ 丙酮 → 待补充 (未串到丙酮氰醇)")
+r = lookup_toxicity(conn, "丙酮")
+check("丙酮 不含异物质标签「剧毒」", "剧毒" not in r, f"实得 {r!r}")
+check("丙酮 为等级(可带注6标注)或待补充",
+      r == "待补充" or r.startswith(GRADES), f"实得 {r!r}")
 
-r_hcl = lookup_toxicity(conn, "氯化氢及盐酸")
-if r_hcl == "待补充":
-    fails.append("氯化氢及盐酸 未能经同义组命中盐酸")
-else:
-    print(f"  ✓ 氯化氢及盐酸 → {r_hcl} (同义组命中)")
+r = lookup_toxicity(conn, "氯化氢及盐酸")
+check("氯化氢及盐酸 经同义组命中盐酸的权威定级", r == "中度危害", f"实得 {r!r}")
 
-r_cyan = lookup_toxicity(conn, "丙酮氰醇（按CN 计）")
-if r_cyan != "剧毒":
-    fails.append(f"丙酮氰醇 期望「剧毒」, 实得 {r_cyan!r}")
-else:
-    print("  ✓ 丙酮氰醇 → 剧毒 (自身命中)")
+r = lookup_toxicity(conn, "丙酮氰醇（按CN 计）")
+check("丙酮氰醇（按CN 计） 不再印标签「剧毒」", "剧毒" not in r, f"实得 {r!r}")
+check("丙酮氰醇（按CN 计） 为等级或待补充",
+      r == "待补充" or r.startswith(GRADES), f"实得 {r!r}")
+conn.close()
 
 print()
 if fails:
     for f in fails:
         print(f"  ✗ {f}")
     sys.exit(1)
-print("通过: 3/3")
+print("跨物质守卫 + C 口径: 通过")

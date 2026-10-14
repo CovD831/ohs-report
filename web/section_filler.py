@@ -399,6 +399,41 @@ def _same_substance(a: str, b: str) -> bool:
     return False
 
 
+def _cas_from_oel(conn, fac: str) -> str | None:
+    """CAS 只取 oel_limit (GBZ 2.1—2019 权威登记), 不手填; 多异构体取首个并保留全串。"""
+    try:
+        r = conn.execute("SELECT cas FROM oel_limit WHERE factor_name=? AND cas IS NOT NULL "
+                         "AND trim(cas) != '' LIMIT 1", (fac,)).fetchone()
+        return r[0].strip() if r and r[0] else None
+    except sqlite3.OperationalError:
+        return None
+
+
+def _thi_grade_cell(conn, fac: str) -> str | None:
+    """按 GBZ/T 230—2025 **注6** 算危害程度 → 「等级（按注6；实测n/8项，待复核）」
+
+    口径演进 (2026-10-14 用户拍板, 取代上一轮的"下界为主"):
+      - 注6 原文:「缺乏蓄积性、致癌性、致敏性、生殖毒性分级有关数据的物质的分项指标
+        暂按类别1 赋分」—— 这是**法定算法**, 评审按标准复算必然得到同一个值;
+      - 上一轮入库的"缺项按0"下界是自创保守口径, 同一物质两法差 3 级 (苯醌: 29 轻度 vs
+        77 极度); 曾试过写成「轻度~极度」区间, 但下界**恒为轻度**(缺项按0必然低),
+        区间没有信息量, 已废弃;
+      - 但仍不假装已定级: 格子内必须带 实测项数 + 待复核, 一眼看出数据不足。
+      → 报告侧用 min_have=0 取回结果 (数据不足也要显示), "未定级"的表达由本函数负责。
+    """
+    try:
+        from web.thi_rating import rate_substance
+        r = rate_substance(conn, fac, _cas_from_oel(conn, fac), min_have=0)
+    except Exception:
+        return None
+    if not r:
+        return None
+    hi = r.get("level_note6") or ""
+    if not hi:
+        return None
+    return f"{hi}（按注6；实测{r.get('have', 0)}/8项，待复核）"
+
+
 def lookup_toxicity(conn, fac: str) -> str:
     """查危害程度分级 (hazard_toxicity 表, 确定性查表)
 
@@ -410,25 +445,46 @@ def lookup_toxicity(conn, fac: str) -> str:
       3. 同义名组精确拆分(「氯化氢及盐酸」↔「盐酸」)
     ⚠ 曾用任意子串包含匹配 → 实测踩坑: 「丙酮」(低毒溶剂) 匹到「丙酮氰醇」(剧毒),
       张冠李戴。物质身份必须**确定**, 故禁止无约束子串。
+
+    取值口径 (2026-10-14 C 方案):
+      - 权威定级 (真实报告 5.2-1 取证 / GHS 名录给出 GBZ/T 230 四级之一) → 原样单值;
+      - **我们算的** (source 含 thi) → 交给 _thi_grade_cell 按注6 出等级并标注实测项数;
+      - 库里存的不是等级 (如 '致癌'/'剧毒'/'待补充' 这类标签) → **不得进本列**
+        (实测当前 4 项目的 assess.hazards 未命中此类行, 属潜在风险, 守卫成本为零);
+      - 无行且算不出 → 「待补充」。
     """
+    GRADES = ("轻度危害", "中度危害", "高度危害", "极度危害")
     if not fac:
         return "待补充"
     try:
         r = conn.execute(
-            "SELECT level FROM hazard_toxicity WHERE factor_name=?", (fac,)
+            "SELECT level, source FROM hazard_toxicity WHERE factor_name=?", (fac,)
         ).fetchone()
+        if r is None:
+            for name, aliases, level, source in conn.execute(
+                "SELECT factor_name, aliases, level, source FROM hazard_toxicity"
+            ):
+                if _same_substance(name, fac):
+                    r = (level, source)
+                    break
+                for a in (aliases or "").split("|"):
+                    if a.strip() and _same_substance(a, fac):
+                        r = (level, source)
+                        break
+                if r:
+                    break
         if r:
-            return r[0]
-        for name, aliases, level in conn.execute(
-            "SELECT factor_name, aliases, level FROM hazard_toxicity"
-        ):
-            if _same_substance(name, fac):
+            level, source = r[0] or "", r[1] or ""
+            if level in GRADES:
+                if "thi" in str(source).lower():
+                    return _thi_grade_cell(conn, fac) or level
                 return level
-            for a in (aliases or "").split("|"):
-                if a.strip() and _same_substance(a, fac):
-                    return level
+            # 存的不是等级 → 忽略该标签, 下探到 THI 或 待补充
+        cell = _thi_grade_cell(conn, fac)
+        if cell:
+            return cell
     except sqlite3.OperationalError:
-        pass  # 表未建 → 待补充
+        pass  # 表未建 → 走 THI 兜底
     return "待补充"
 
 
