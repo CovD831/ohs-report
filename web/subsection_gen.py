@@ -103,8 +103,8 @@ def build_subsection(conn: sqlite3.Connection, sec: str, sub: str, assess: dict)
 
 if __name__ == "__main__":
     from knowledge.project_assess import assess_project
-    from knowledge.oel import connect
-    conn = connect()
+    from knowledge.oel import connect_ro
+    conn = connect_ro()
     r = assess_project(conn, {"name": "t", "industry": "261", "equipment": ["酯化釜"],
                               "detections": [{"factor": "甲苯", "ctwa": 0.5}]})
     for sub in ("2.1", "2.2", "3.1", "4.5", "7.3"):

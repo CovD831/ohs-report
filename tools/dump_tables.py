@@ -3,11 +3,12 @@
 用法: python tools/dump_tables.py out.sql ghs_class hazard_toxicity ...
 """
 import re
-import sqlite3
 import sys
 from pathlib import Path
 
-DB = Path(__file__).resolve().parent.parent / "data" / "ohs.db"
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: iterdump 只读, 路径走单一产地)
 
 
 def main() -> int:
@@ -17,7 +18,7 @@ def main() -> int:
     out = sys.argv[1]
     tables = set(sys.argv[2:])
 
-    conn = sqlite3.connect(DB)
+    conn = connect_ro()
     n_create = n_insert = 0
     with open(out, "w", encoding="utf-8") as f:
         f.write("PRAGMA foreign_keys=OFF;\nBEGIN;\n")

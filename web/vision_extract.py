@@ -34,6 +34,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from knowledge.paths import VISION_CACHE_DIR  # noqa: E402  (数据目录唯一产地, 见该文件)
+
 BASE = os.environ.get("LLM_BASE_URL",
                       "https://workbuddy2api.henryai.top/v1/chat/completions")
 MODEL = os.environ.get("LLM_MODEL", "deepseek-v4.1-flash")
@@ -321,6 +323,11 @@ def _cache_path(pdf_path: Path) -> Path:
     ⚠ 必须缓存: 125 页扫描件跑一次 ≈17 分钟 / ¥5.5, 而同一份检测报告
       在导入/重导/校验流程里会被反复读到。不缓存 = 每次都等 17 分钟。
     键含 size+mtime → 报告文件更新后自动失效, 不会拿旧结果。
+
+    目录取自 knowledge/paths.VISION_CACHE_DIR (S1c′ D0): 原来这里有个 `_data_dir()`
+    用 `next(p for p in (Path("/app"), 仓库父目录) if (p/"data").exists())` 自行猜根,
+    那是与 DB_PATH 无关的第三把尺子 —— "库在一个目录、材料/缓存在另一个目录"的
+    错配正来自这类各算各的产地, 所以全部收成一个 DATA_DIR 的派生。
     """
     import hashlib
     try:
@@ -328,16 +335,10 @@ def _cache_path(pdf_path: Path) -> Path:
         raw = f"{pdf_path.resolve()}|{st.st_size}|{int(st.st_mtime)}|{MODEL}"
     except OSError:
         return Path("/dev/null")
-    cd = _data_dir() / "vision_cache"
+    cd = VISION_CACHE_DIR
     cd.mkdir(parents=True, exist_ok=True)
     return cd / f"{hashlib.sha1(raw.encode()).hexdigest()[:16]}.json"
 
-
-def _data_dir() -> Path:
-    """数据目录 (本地 data/ 或容器 /app/data)"""
-    root = next((p for p in (Path("/app"), Path(__file__).resolve().parent.parent)
-                 if (p / "data").exists()), Path.cwd())
-    return root / "data"
 
 
 def vision_detections(pdf_path: Path, index: dict | None = None,

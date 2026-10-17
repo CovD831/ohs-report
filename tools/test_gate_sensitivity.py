@@ -180,7 +180,14 @@ pm = (ROOT / "tools" / "p0_metrics.py").read_text(encoding="utf-8")
 ids_in_p0 = re.findall(r'"([0-9a-f]{10})"', pm.split("PIDS = [")[1].split("]")[0])
 check("本门的项目名单与 p0_metrics 同步", PIDS, ids_in_p0)
 door_src = (ROOT / "tools" / "export_fingerprint.py").read_text(encoding="utf-8")
-check("指纹模块不写库 (只 import connect 取数)", "UPDATE " not in door_src.upper() and ".execute(\"INSERT" not in door_src, True)
+# 原来这里是字符串级假断言 ("UPDATE " not in door_src and '.execute("INSERT' not in src):
+# 它查不出 oel.connect() 的 executescript(DDL)、查不出 ALTER TABLE、也查不出 WAL 副作用,
+# 而它保护的对象当时正开着可写连接跑 DDL —— 假绿了一整轮 (S1c 计划 W6)。
+# 换成 tools/chain_audit.py 那把尺子: 验收链取数函数里不得有写侧工厂/_conn/写类 SQL。
+from tools.chain_audit import chain_write_sites  # noqa: E402
+check("指纹链的取数函数不写库 (判据与 test_acceptance_readonly 同源)",
+      chain_write_sites(ROOT), [])
+check("指纹模块里已不再出现写侧工厂调用", "connect()" in door_src and "connect_ro()" not in door_src, False)
 
 sys.stdout.flush()
 print(f"\n=== 结果: {n_pass} 绿 / {n_fail} 红 ===")

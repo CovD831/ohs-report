@@ -11,14 +11,14 @@ import time
 import uuid
 from pathlib import Path
 
+from knowledge.oel import connect_ro
+from knowledge.paths import DATA_DIR
 from knowledge.paths import DB_PATH as DB
+from knowledge.paths import MATERIALS_DIR, same_origin
 
 
-def _conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB), timeout=5)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.execute("PRAGMA journal_mode=WAL")
+def _ensure_schema(conn: sqlite3.Connection) -> None:
+    """project 表的结构准备 (DDL + owner_id 迁移)。拆出来只为让"读"能不碰它。"""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS project (
           id        TEXT PRIMARY KEY,
@@ -33,8 +33,57 @@ def _conn() -> sqlite3.Connection:
     # 迁移: 旧库可能没有 owner_id 列
     cols = [r["name"] for r in conn.execute("PRAGMA table_info(project)").fetchall()]
     if "owner_id" not in cols:
-        conn.execute("ALTER TABLE project ADD COLUMN owner_id TEXT DEFAULT ''")
+        try:
+            conn.execute("ALTER TABLE project ADD COLUMN owner_id TEXT DEFAULT ''")
+        except sqlite3.OperationalError as e:
+            # 同样是 check-then-act 形状 (查列 → 加列), 两个进程会抢。
+            # 这里**不**直接吞: 重新读一次列名, 只有"列确实已在"才当它是并发赢家的成果,
+            # 否则原样抛出 —— 吞掉 OperationalError 会把"库根本没法用"伪装成"迁移完成"。
+            now = [r["name"] for r in conn.execute("PRAGMA table_info(project)").fetchall()]
+            if "owner_id" not in now:
+                raise
+            print(f"[schema] project.owner_id 已由并发进程添加, 本次跳过 ({e})")
     conn.commit()
+
+
+def ensure_runtime_schema() -> None:
+    """运行时表结构就绪 (S1c′ D1): 启动期显式调一次, 读路径从此不再碰 DDL。
+
+    原状是 `_conn()` 每次调用都 `CREATE TABLE IF NOT EXISTS` + `PRAGMA journal_mode=WAL`
+    (+ 可能的 ALTER)。看着无害, 但它让**只读取数也在写库**: 主验收门
+    (tools/export_fingerprint.py → get_project_data → _conn) 每次跑都要开一次可写连接,
+    于是"验收链是只读的"这句写在注释里的话没有任何东西保证 —— 见 tools/test_import_purity.py
+    与 tools/test_acceptance_readonly.py 的行为级判据。
+    """
+    conn = sqlite3.connect(str(DB), timeout=5)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
+    try:
+        _ensure_schema(conn)
+    finally:
+        conn.close()
+
+
+def _conn() -> sqlite3.Connection:
+    """可写连接 (写路径专用)。自带 schema 准备, 所以单跑脚本/CLI 不必先调启动步骤。"""
+    conn = sqlite3.connect(str(DB), timeout=5)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    _ensure_schema(conn)
+    return conn
+
+
+def _ro() -> sqlite3.Connection:
+    """只读连接 (取数专用): 不建表、不设 WAL、不 mkdir。
+
+    缺 `project` 表时直接抛 `no such table: project` —— **不做静默建表兜底**:
+    读路径顺手建表正是"验收链在写库"的源头, 而空 volume 首启的正常修法是在
+    启动钩子里跑 ensure_runtime_schema() (web/app.py:_bootstrap)。
+    """
+    conn = connect_ro()
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -46,8 +95,14 @@ def _owner_key(user: dict | None) -> str:
 
 
 # ============ 生命周期 (C档: 自动过期规则, 通用不针对个案) ============
-MATERIALS_DIR = DB.parent / "materials"
+# MATERIALS_DIR 的产地是 knowledge/paths.py (与 DB_PATH 同源), 不在这里派生 ——
+# 见 cleanup_expired() 的说明: "库指到别处、材料目录没跟着走" 会删掉真实企业材料。
 EMPTY_PROJECT_TTL = 30 * 86400        # 空项目(未命名+无材料+无生成) 30天回收
+
+
+class LifecycleRefused(RuntimeError):
+    """生命周期回收拒绝执行。具名错误, 因为它的含义是"这里的数据不属于本进程",
+    静默跳过会让每次启动都少做一次清理而没人知道。"""
 
 
 def _project_used(pid: str, data: dict, name: str) -> bool:
@@ -60,15 +115,35 @@ def _project_used(pid: str, data: dict, name: str) -> bool:
     return (MATERIALS_DIR / pid).exists()
 
 
-def cleanup_expired() -> dict:
-    """生命周期自动回收 (启动时调用, 幂等):
-    1. 空项目: 未命名+无提取数据+无生成+无材料目录, 超TTL → 删 db 行
-       (游客访问首页自动建项目, 大量从未使用的行会堆积)
-    2. 孤儿材料目录: 目录在但 db 无此项目 → 删目录
-    有生成内容/用户命名的项目一律不动。"""
+def cleanup_expired(apply_rows: bool = False, apply_dirs: bool = False,
+                    verbose: bool = True) -> dict:
+    """生命周期自动回收 (启动期调用, 幂等)。两个开关**分开**, 因为两件事的风险差一个量级:
+
+    1. `apply_rows` —— 删"空项目行": 未命名 + 无提取数据 + 无生成 + 无材料目录, 超 TTL。
+       游客每次访问首页自动建一个项目, 不清会堆几千行。删的都是"库里一行且没有任何文件"。
+    2. `apply_dirs` —— 删"孤儿材料目录" (`shutil.rmtree`), **默认关, 生产建议长期关着**。
+
+    为什么目录这条默认关 (判据是从产生路径推出来的, 不是保守起见):
+      · `_project_used()` 里"**有材料目录的项目**"永远判为已使用 → TTL 从不删它的行;
+      · 用户主动删项目的 `/api/projects/<pid>` (api_delete_project) 是**行 + 目录一起删**;
+      · 所以"目录在、库里没行"只剩三种来源: 删到一半崩了、换/挂错库、手改 DB。
+        也就是说孤儿目录是**异常信号**而不是日常垃圾。把它做成每次启动自动 rmtree,
+        等于让一次错配就变成不可逆的数据丢失 (本地 data/materials 实测 249MB 真实企业材料)。
+      · 攒着的代价是有界的、可观测的: 每次启动把清单打在日志里, 要删就人判后用
+        `--apply` 的批处理工具删 (与数据清洗 A 组同一套做法), 不在启动路径里自动动手。
+
+    原状 (S1c′ D0 之前): `web/app.py` 在 **import 期**无条件跑本函数且只有一个 apply,
+    于是任何 `import web.app` (取证工具、守卫套、挂错 volume 的容器首启) 都带 rmtree 能力。
+    现在: 只在服务启动跑, 且两个开关都要显式传。
+
+    两道硬闸 (即使 apply_dirs=True 也不越):
+      闸1 `same_origin(MATERIALS_DIR)`: 目录必须在本进程 DATA_DIR 子树内。
+      闸2 **库里一个项目 id 都读不到时不扫目录**: "目录在、库里无此行" 在
+         空库/读挂了的库上恒成立, 那正是把全部材料目录判成孤儿的情形。
+    """
     now = time.time()
-    conn = _conn()
-    dropped_rows = 0
+    conn = _conn() if apply_rows else _ro()   # 不动行就只开只读连接 (启动不写库)
+    dropped_rows = would_drop_rows = 0
     ids = set()
     for r in conn.execute("SELECT id, name, data, updated FROM project").fetchall():
         ids.add(r["id"])
@@ -77,27 +152,63 @@ def cleanup_expired() -> dict:
         except Exception:
             data = {}
         if not _project_used(r["id"], data, r["name"]) and (now - (r["updated"] or now)) > EMPTY_PROJECT_TTL:
-            conn.execute("DELETE FROM project WHERE id=?", (r["id"],))
-            conn.execute("DELETE FROM task_job WHERE pid=?", (r["id"],))
-            dropped_rows += 1
-    conn.commit()
+            # 计数口径与目录那侧**必须同构**: dropped_* = 真删了几个, would_drop_* = 检出几个。
+            # 第一版这里只在 apply 时加计数, 于是 dry-run 报"检出 1 行"被读成"删了 1 行"。
+            if apply_rows:
+                conn.execute("DELETE FROM project WHERE id=?", (r["id"],))
+                conn.execute("DELETE FROM task_job WHERE pid=?", (r["id"],))
+                dropped_rows += 1
+            else:
+                would_drop_rows += 1
+    if apply_rows:
+        conn.commit()
     conn.close()
+
     # 孤儿材料目录 (db 行已不存在)
-    dropped_dirs = 0
-    if MATERIALS_DIR.exists():
+    orphans: list[str] = []
+    refused = ""
+    if not MATERIALS_DIR.exists():
+        pass
+    elif not ids:
+        refused = "project 表读到 0 个 id"
+        if apply_dirs:
+            raise LifecycleRefused(
+                f"{refused}, 但 {MATERIALS_DIR} 存在 → 拒绝按孤儿删目录 "
+                f"(库与材料错配是删数据的唯一路径; 确认无误后用逐批 --apply 的工具清理)")
+    elif not same_origin(MATERIALS_DIR):
+        refused = f"{MATERIALS_DIR} 不在 DATA_DIR({DATA_DIR}) 子树内"
+        if apply_dirs:
+            raise LifecycleRefused(f"{refused} → 拒绝 rmtree")
+    else:
         for d in MATERIALS_DIR.iterdir():
             if d.is_dir() and d.name not in ids:
-                import shutil
-                shutil.rmtree(d, ignore_errors=True)
-                dropped_dirs += 1
-    return {"dropped_rows": dropped_rows, "dropped_dirs": dropped_dirs}
+                orphans.append(str(d))
+                if apply_dirs:
+                    import shutil
+                    shutil.rmtree(d, ignore_errors=True)
+    out = {"dropped_rows": dropped_rows, "would_drop_rows": would_drop_rows,
+           "dropped_dirs": len(orphans) if apply_dirs else 0,
+           "would_drop_dirs": len(orphans), "apply_rows": apply_rows,
+           "apply_dirs": apply_dirs, "refused": refused}
+    if verbose and (dropped_rows or would_drop_rows or orphans or refused):
+        print(f"[lifecycle] 空项目行 真删 {dropped_rows} / 检出 {would_drop_rows}"
+              f" ({'apply_rows=1' if apply_rows else '只报不删'})"
+              + f", 孤儿材料目录 真删 {len(orphans) if apply_dirs else 0} / 检出 {len(orphans)}"
+              f" ({'apply_dirs=1' if apply_dirs else '只报不删'})"
+              + (f": {[Path(p).name for p in orphans[:5]]}"
+                 f"{'…' if len(orphans) > 5 else ''}" if orphans else "")
+              + (f" [跳过目录扫描: {refused}]" if refused else ""))
+    return out
+
 
 
 def get_project(pid: str) -> dict | None:
-    conn = _conn()
-    r = conn.execute("SELECT id, name, data, status, owner_id FROM project WHERE id=?",
-                     (pid,)).fetchone()
-    conn.close()
+    conn = _ro()
+    try:
+        r = conn.execute("SELECT id, name, data, status, owner_id FROM project WHERE id=?",
+                         (pid,)).fetchone()
+    finally:
+        conn.close()
     if not r:
         return None
     return {"id": r["id"], "name": r["name"],
@@ -108,11 +219,12 @@ def get_project(pid: str) -> dict | None:
 def get_project_data(pid: str) -> dict:
     """项目输入 (评估管线取数格式): dict(project.data) + name。
 
-    原 `web/app.py:_get_project_data` 迁入 (S1a, 2026-10-15) —— 不是为整洁, 是因为
-    `web/app.py` 在 import 期就跑 `_auth.init_users() / _tasks.init_tasks() /
-    cleanup_expired()` (**写库**)。实测每次导出验收都会改动 users/task_job 行,
-    一个"只读取证工具"不该有写副作用; 官方数据层虽未受影响 (data_stamp --check 已验),
-    但门要可信, 取数就必须能从无副作用的模块进来。
+    原 `web/app.py:_get_project_data` 迁入 (S1a, 2026-10-15) —— 不是为整洁, 是因为当时
+    `web/app.py` 在 **import 期**就跑 `_auth.init_users() / _tasks.init_tasks() /
+    cleanup_expired()` (**写库**, 后者还能 rmtree 材料目录)。实测每次导出验收都会改动
+    users/task_job 行, 一个"只读取证工具"不该有写副作用。
+    S1c′ D0 已把那批调用移进启动钩子 (import web.app 现在零副作用), 但取数仍留在本模块:
+    取证/导出工具不该为了拿一个 dict 而 import 整个 web 层。
     """
     p = get_project(pid)
     if not p:
@@ -165,10 +277,12 @@ def create_new_project(user: dict | None, name: str = "", industry: str = "") ->
 def list_reports(user: dict | None) -> list[dict]:
     """列出当前身份的报告 (只返回 owner 自己的)"""
     owner = _owner_key(user)
-    conn = _conn()
-    rows = conn.execute("SELECT id, name, data, status, owner_id, updated FROM project "
-                        "WHERE owner_id=? ORDER BY updated DESC", (owner,)).fetchall()
-    conn.close()
+    conn = _ro()
+    try:
+        rows = conn.execute("SELECT id, name, data, status, owner_id, updated FROM project "
+                            "WHERE owner_id=? ORDER BY updated DESC", (owner,)).fetchall()
+    finally:
+        conn.close()
     return [{"id": r["id"], "name": r["name"],
              "data": json.loads(r["data"]), "status": r["status"],
              "owner_id": r["owner_id"], "updated": r["updated"]} for r in rows]
@@ -176,10 +290,12 @@ def list_reports(user: dict | None) -> list[dict]:
 
 def list_all_reports() -> list[dict]:
     """管理后台: 全部报告"""
-    conn = _conn()
-    rows = conn.execute("SELECT id, name, data, status, owner_id, updated FROM project "
-                        "ORDER BY updated DESC").fetchall()
-    conn.close()
+    conn = _ro()
+    try:
+        rows = conn.execute("SELECT id, name, data, status, owner_id, updated FROM project "
+                            "ORDER BY updated DESC").fetchall()
+    finally:
+        conn.close()
     return [{"id": r["id"], "name": r["name"],
              "data": json.loads(r["data"]), "status": r["status"],
              "owner_id": r["owner_id"], "updated": r["updated"]} for r in rows]

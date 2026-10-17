@@ -35,6 +35,7 @@ sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8")
 
 import knowledge.standard_version
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
 from knowledge.standard_version import make_ref_fixer, norm_code  # noqa: E402
 
 # (表, 存标准号的列, 主键列) — 只列"会印进报告的依据列"
@@ -77,7 +78,7 @@ def table_exists(conn: sqlite3.Connection, t: str) -> bool:
 
 
 def main() -> int:
-    db = ROOT / "data" / "ohs.db"
+    db = DB_PATH
     conn = sqlite3.connect(str(db))
     fix = make_ref_fixer(conn)
     plan: list[tuple[str, int, str, str, str, str]] = []   # (表, 主键列, 主键, 列, 旧值, 新值)

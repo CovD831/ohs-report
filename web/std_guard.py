@@ -23,7 +23,7 @@ from pathlib import Path
 # 标准号形态与归一化 = 单一产地 knowledge.standard_version (2026-10-14 收口)
 #   此处原有一份自己的 _ART/_norm: 分隔符集少一个 U+2212、前缀写成 '/?\s*T?'
 #   (会把 'GB T 123' 这类非法写法也吞进来), 与改写器/V-05 三把尺子不一致。
-from knowledge.standard_version import STD_REF_PAT as _ART, norm_code as _norm, ref_code  # noqa: E402
+from knowledge.standard_version import STD_REF_PAT as _ART, norm_code as _norm, ref_code, content_hold  # noqa: E402
 
 
 def superseded_map(conn: sqlite3.Connection) -> dict[str, str]:
@@ -31,6 +31,12 @@ def superseded_map(conn: sqlite3.Connection) -> dict[str, str]:
 
     ⚠ replace_of 语义 = 「本版代替了谁」。所以要建「旧→新」映射,
       应遍历**现行**行的 replace_of, 而非读废止行的 replace_of。
+
+    ⚠ 内容待复核的旧号 (std_render_hold) 不进黑名单: 报告**刻意**保留旧标签 (判据内容尚未
+      按新版复核, 用户拍板保守回退), 这不是"引用了废止号"的误用, 而是"暂不升级"的既定策略。
+      与改写器/V-05 读同一份 content_hold, 保证三把尺子同真同假 (见 knowledge.standard_version)。
+      来源是随代码走的 `std_render_hold.json` (2026-10-16 从官方层表搬出来: 那份登记描述的是
+      "本报告判据的复核状态", 不是法规事实); 文件读不到时 content_hold 具名抛错, 不静默当空集。
     """
     out: dict[str, str] = {}
     # 主流: 现行行的 replace_of 指向被它替代的旧版
@@ -42,6 +48,9 @@ def superseded_map(conn: sqlite3.Connection) -> dict[str, str]:
     # 兜底: 废止行本身也进黑名单(替代号未知 → 空串)
     for (code,) in conn.execute("SELECT code FROM standard_db WHERE state='废止'"):
         out.setdefault(_norm(code), "")
+    # 剔除内容待复核的旧号 (保留旧标签是既定策略, 不作为废止误用报警)
+    for held in content_hold(conn):
+        out.pop(held, None)
     return out
 
 
@@ -86,9 +95,8 @@ def main(argv: list[str]) -> int:
     if not argv:
         print(__doc__)
         return 2
-    from knowledge.paths import DB_PATH
     from knowledge.oel import connect_ro
-    conn = connect_ro()   # 只读
+    conn = connect_ro()   # 只读 (路径由 knowledge.paths 单一产地决定, 不在此另拼)
     total = 0
     for path in argv:
         text = _read_any(path)

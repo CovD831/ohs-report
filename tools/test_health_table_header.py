@@ -11,7 +11,6 @@
 """
 import importlib.util
 import json
-import sqlite3
 import sys
 from pathlib import Path
 
@@ -42,22 +41,26 @@ else:
     print(f"  ✓ spec 5.2.1 表头 = {th}")
 
 # --- 2. built_tables 污染 ---
-conn = sqlite3.connect(ROOT / "data" / "ohs.db")
-for pid, data in conn.execute("SELECT id, data FROM project"):
-    if not data:
-        continue
-    try:
-        d = json.loads(data)
-    except (ValueError, TypeError):
+# 取数走** sanctioned 读口** web.projects_db.list_all_reports() (S1c″ D4′):
+#   上一版这里是 `sqlite3.connect(ROOT/"data"/"ohs.db")` —— 可写模式打开 + 路径硬编码,
+#   而本文件在 GUARD_TESTS 名单里, 容器里 `ROOT/data` **就是挂载进去的生产库**。
+#   于是"切流量前跑守卫套"这一步本身在给生产库开可写连接 (WAL 辅助文件的生灭/回写),
+#   而且硬编码路径让 OHS_DATA_DIR 指到临时卷时它照读真实库 —— 演练根本测不到它。
+from web.projects_db import list_all_reports      # noqa: E402
+
+stale_hit = 0
+for r in list_all_reports():
+    d = r.get("data") or {}
+    if not d:
         continue
     t = (d.get("built_tables") or {}).get("健康影响表")
     if t:
         cols = t.get("cols") or []
         if any(f in cols for f in STALE):
-            fails.append(f"项目 {pid[:12]} built_tables.健康影响表 仍是旧表头: {cols}")
-conn.close()
+            fails.append(f"项目 {r['id'][:12]} built_tables.健康影响表 仍是旧表头: {cols}")
+            stale_hit += 1
 if not any("built_tables" in f for f in fails):
-    print("  ✓ built_tables 无旧表头污染")
+    print(f"  ✓ built_tables 无旧表头污染 (扫 {len(list_all_reports())} 个项目)")
 
 # --- 3. 迁移脚本可运行(防回退) ---
 mig = _load(ROOT / "tools" / "migrate_health_table.py", "mig_health")

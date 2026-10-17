@@ -5,9 +5,13 @@
 用法: python tools/migrate_strip_heading.py [--apply]
 """
 import sys, json, re, sqlite3, shutil, datetime
+from pathlib import Path
 sys.stdout.reconfigure(encoding='utf-8')
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
 
-DB = 'data/ohs.db'
+DB = str(DB_PATH)  # (原为 'data/ohs.db' —— 跟着 cwd 走, 错目录跑会静默建空库)
 APPLY = '--apply' in sys.argv
 
 # 与 llm_draft._strip_md_tables ③ 完全同规则 (单一产地: 复制常量, 不各自实现)

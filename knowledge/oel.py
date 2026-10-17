@@ -58,9 +58,11 @@ def ensure_official_schema() -> None:
     """官方表存在性的显式前置条件 (启动期调用一次)。
 
     为什么需要: 26 张官方表的 DDL 只在 `connect()` 里被执行, 而 `web/auth.py` 只建
-    users/audit_log, `web/app.py:134` 的 connect() 在写路径里 —— 也就是说今天
+    users/audit_log, `web/app.py` 里的 connect() 都在写路径上 —— 也就是说今天
     "官方表存在"是各条路径碰巧先跑过一次 connect() 的结果。读门改用 connect_ro() 之后,
     空 volume 首启会直接 no such table; 所以把它变成有人负责的启动步骤。
+    (调 `_bootstrap` 顺序时实测到: 空 volume 上必须先有 DATA_DIR 再谈建表,
+     `sqlite3.connect()` 在目录不存在时是 `unable to open database file`。)
     """
     conn = connect()
     try:

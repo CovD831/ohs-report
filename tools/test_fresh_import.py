@@ -25,7 +25,6 @@
 退出码 0 = 通过
 """
 import shutil
-import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -100,11 +99,13 @@ def main() -> int:
     update_project(pid, p["name"], merged)
 
     # ① h14 物理表 (空骨架不得覆盖现算)
-    from knowledge.oel import connect
+    # connect_ro (S1c″ D4′): 这一段全是读 (assess_project / _physical_det_table /
+    # _tables_for_sub), 旧版用写侧工厂 connect() = 每次跑都 mkdir + executescript(DDL)。
+    from knowledge.oel import connect_ro
     from knowledge.project_assess import assess_project
     from web.section_filler import _physical_det_table
     from web import word_export as WE
-    kconn = connect()
+    kconn = connect_ro()
     proj = {"name": p["name"], "industry": "", "equipment": merged.get("equipment") or [],
             "detections": merged["detections"], "process_text": merged.get("process_text") or "",
             "materials": merged.get("materials") or [], "staffing": merged.get("staffing") or [],
@@ -163,14 +164,29 @@ def main() -> int:
           f" 修复前=04公司名占位)")
 
     # 清理测试项目 (防污染项目列表)
+    # 这一处**是有意的写** (write-runtime): 本文件是"导入→持久化→消费"全链回归,
+    # create_project/save_upload/update_project 走的就是生产写路径; 收尾删掉自己建的测试项目。
+    # 它不在 quick_deploy 的 GUARD_TESTS/LOCAL_TESTS 里 → 容器里永不执行, 碰不到挂载的生产库。
+    # 旧版 `except Exception: pass` 会把"没删掉"吞掉 → 项目列表里留一个 __test_fresh_import 僵尸,
+    # 现在改为点名 (残留是可看见的, 不是静默的)。
     try:
         from web.projects_db import _conn as _pc
         c = _pc()
         c.execute("DELETE FROM project WHERE id=?", (pid,))
         c.commit()
         c.close()
-    except Exception:
-        pass
+        print(f"  清理: 测试项目 {pid} 已删除")
+    except Exception as e:
+        print(f"  ⚠ 清理失败: 测试项目 {pid} 残留在库里 ({type(e).__name__}: {e}) —— "
+              f"手工删: DELETE FROM project WHERE id='{pid}'")
+    # 行删了不等于没留痕: 本轮实测这次跑完 `data/materials/<pid>` 和种进去的视觉缓存都还在
+    # —— 正是 D4 里"孤儿目录是异常信号"那一类。自己建的东西自己收干净, 收不干净就点名。
+    for what, p in (("材料目录", project_dir(pid)), ("视觉缓存", cp)):
+        try:
+            shutil.rmtree(p) if p.is_dir() else p.unlink(missing_ok=True)
+            print(f"  清理: {what} {p.name} 已删除")
+        except Exception as e:
+            print(f"  ⚠ 清理失败: {what} 残留 {p} ({type(e).__name__}: {e})")
 
     all_ok = bool(ok_noise and ok_cstel and ok_pt and ok_mount and ok_dup and ok_merge and ok_name and ok_auth)
     print()

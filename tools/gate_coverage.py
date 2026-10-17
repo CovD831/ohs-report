@@ -27,18 +27,33 @@
   .venv/bin/python tools/gate_coverage.py --write     # 跑导出+分级, 落 JSON
   .venv/bin/python tools/gate_coverage.py --offline    # 复用缓存 trace, 只重算分级
   .venv/bin/python tools/gate_coverage.py --audit      # 打印 unknown 与未处置的 branch/prompt
+  .venv/bin/python tools/gate_coverage.py --iddiff     # 只读对表 (不落盘): 新身份键 vs 旧基线逐条差异清单
+
+身份键 (S1c″-D5′ 前半段, 2026-10-17):
+  站点身份 = (file, fn, 表名集合, SELECT 列多重集, 语句指纹, 同形重数 dup)。
+  行号降级为**参考属性**, 不再进键 —— 2026-10-16 实测: 活代码加几行注释让 17 个站点行号 +1,
+  基线整批"漂移", 而 total_sites/printed/gate_visible/protected_now 四个计数一个都没动:
+  纯排版噪声却要求验收的人逐条人肉确认。新键全部由**内容/结构**派生, 代码上下移动时不变;
+  同文件同质的多个读点靠 (语句指纹 + 同形重数) 区分, 给同一张表新增加一个读点会被点名。
+  兼容路径: 旧基线 (tools/golden/gate_coverage.json, 无 key 字段) 的记录可由其
+  (file, fn, tables, sql_full) 内容字段**推导**出新键, --iddiff 即按此对表, 不崩不整判红。
 """
 import argparse
 import ast
+import hashlib
 import json
 import re
 import sqlite3
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+# 库路径走单一产地 knowledge.paths.DB_PATH (2026-10-16): 原来这里三处硬写 ROOT/"data"/"ohs.db",
+#   于是 OHS_DATA_DIR 搬家 (部署演练/变异对照) 时看板读的还是仓库真库 —— 与 tools/data_stamp.py
+#   同一类失效, 由 chain_audit.hardcoded_data_paths() 收口。
+from knowledge.paths import DB_PATH  # noqa: E402
 sys.stdout.reconfigure(encoding="utf-8")
 
 OUT = ROOT / "tools" / "golden" / "gate_coverage.json"
@@ -62,7 +77,7 @@ TABLE_SINK = re.compile(r"(rows|cells|cols|table|body|out|res|items)", re.I)
 
 
 def official_tables() -> set[str]:
-    con = sqlite3.connect(f"file:{ROOT / 'data' / 'ohs.db'}?mode=ro", uri=True)
+    con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
     try:
         return {r[0] for r in con.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")} - {
@@ -264,6 +279,41 @@ def _func_ctx(tree: ast.AST) -> dict[str, tuple[set[int], set[int]]]:
     return ctx
 
 
+def _scan_tree(tree: ast.AST, relpath: str, tables: set[str]) -> list[dict]:
+    """单个 AST 的官方层读点抽取 (S1c″-D5′: 从 static_sites 拆出, 让变异测试能喂合成源码)"""
+    out = []
+    fmap, pmap = _enclosing_func(tree), _parent_map(tree)
+    cctx, ftab = _func_ctx(tree), _func_table(tree)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        sql = ""
+        for a in node.args:
+            if isinstance(a, ast.List):
+                sql = " ".join(_lit(e) for e in a.elts)
+                if sql:
+                    break
+            s = _lit(a)
+            if s and re.search(r"\bselect\b", s, re.I):
+                sql = s
+                break
+        if not sql or not re.search(r"\bSELECT\b", sql, re.I):
+            continue
+        hit = sorted({t for t in TBL_RE.findall(sql) if t in tables})
+        if not hit:
+            continue
+        fn = fmap.get(node.lineno, "")
+        bis, fis = cctx.get(fn, (set(), set()))
+        assigned_to = find_assigned_to(node, pmap)
+        kind, why = classify(sql, fn, node, pmap, assigned_to, bis, fis, ftab.get(fn))
+        out.append({"file": relpath, "line": node.lineno,
+                    "tables": hit, "fn": fn,
+                    "sql_full": re.sub(r"\s+", " ", sql).strip(),
+                    "sql": re.sub(r"\s+", " ", sql).strip()[:180],
+                    "kind": kind, "why": why})
+    return out
+
+
 def static_sites(tables: set[str]) -> list[dict]:
     out = []
     for d in BASE_DIRS:
@@ -272,35 +322,7 @@ def static_sites(tables: set[str]) -> list[dict]:
                 tree = ast.parse(f.read_text(encoding="utf-8"))
             except (SyntaxError, UnicodeDecodeError):
                 continue
-            fmap, pmap = _enclosing_func(tree), _parent_map(tree)
-            cctx, ftab = _func_ctx(tree), _func_table(tree)
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                sql = ""
-                for a in node.args:
-                    if isinstance(a, ast.List):
-                        sql = " ".join(_lit(e) for e in a.elts)
-                        if sql:
-                            break
-                    s = _lit(a)
-                    if s and re.search(r"\bselect\b", s, re.I):
-                        sql = s
-                        break
-                if not sql or not re.search(r"\bSELECT\b", sql, re.I):
-                    continue
-                hit = sorted({t for t in TBL_RE.findall(sql) if t in tables})
-                if not hit:
-                    continue
-                fn = fmap.get(node.lineno, "")
-                bis, fis = cctx.get(fn, (set(), set()))
-                assigned_to = find_assigned_to(node, pmap)
-                kind, why = classify(sql, fn, node, pmap, assigned_to, bis, fis, ftab.get(fn))
-                out.append({"file": str(f.relative_to(ROOT)), "line": node.lineno,
-                            "tables": hit, "fn": fn,
-                            "sql_full": re.sub(r"\s+", " ", sql).strip(),
-                            "sql": re.sub(r"\s+", " ", sql).strip()[:180],
-                            "kind": kind, "why": why})
+            out.extend(_scan_tree(tree, str(f.relative_to(ROOT)), tables))
     return out
 
 
@@ -368,7 +390,7 @@ def probe_tables() -> dict:
     import sqlite3 as _s3
     from tools.export_fingerprint import PIDS, digest, export
 
-    real = ROOT / "data" / "ohs.db"
+    real = DB_PATH
     copy = Path("/tmp/gate_probe_ohs.db")
     orig = _s3.connect
 
@@ -424,20 +446,38 @@ def probe_tables() -> dict:
     return out
 
 
-def apply_overrides(sites: list[dict]) -> list[dict]:
-    """人工定性落盘 (file,line) → {kind, why}
-    unknown 不该靠"看一遍就忘"来消化: 结论进 overrides.json, 分级结果才可复算。
-    允许把 unknown/printed 改成任何更保守的值; 想把 branch 抬成 printed 必须在 why 里写清依据。"""
-    ov = ROOT / "tools" / "golden" / "gate_coverage_overrides.json"
+def apply_overrides(sites: list[dict],
+                    ov_path: Path | None = None) -> tuple[list[dict], list[str]]:
+    """人工定性落盘 —— 给"行号确实需要人判"的例外用。迁移期接受两种键 (S1c″-D5′):
+      · 旧形 "file:line": 按当前代码行号命中站点 (行号本就是这类例外的判据的一部分);
+      · 新形 "file|fn|tables|cols|shape|dup" (含 "|"): 直接对 site["key"], 不随行号漂。
+    **命中不到任何站点的登记必须点名 (僵尸 override)**, 不许静默留着 —— 与
+    chain_audit 的"豁免登记腐烂"、test_dataset_door 的"登记腐烂"同一纪律:
+    被登记的调用点搬走了要报, 否则例外会变成"永久放行"。
+    返回 (sites, 僵尸键列表)。"""
+    ov = ov_path or (ROOT / "tools" / "golden" / "gate_coverage_overrides.json")
     if not ov.exists():
-        return sites
+        return sites, []
     data = json.loads(ov.read_text(encoding="utf-8"))
-    by = {(k.split(":")[0], int(k.split(":")[1])): v for k, v in data.items()}
+    by_line: dict[tuple, tuple[str, dict]] = {}
+    by_key: dict[str, tuple[str, dict]] = {}
+    for k, v in data.items():
+        m = re.match(r"^(.+):(\d+)$", k) if "|" not in k else None
+        if m:
+            by_line[(m.group(1), int(m.group(2)))] = (k, v)
+        else:
+            by_key[k] = (k, v)
+    hit: set[str] = set()
     for s in sites:
-        v = by.get((s["file"], s["line"]))
-        if v:
+        got = by_key.get(s.get("key", "")) or by_line.get((s["file"], s["line"]))
+        if got:
+            ok, v = got
             s["kind"], s["why"] = v["kind"], "人工定性: " + v["why"]
-    return sites
+            s["override_ref"] = ok
+            if "|" not in ok and "key" in s:      # 旧形命中 → 顺带报出它现在对应的新键, 便于迁移对表
+                s["override_new_key"] = s["key"]
+            hit.add(ok)
+    return sites, sorted(set(data) - hit)
 
 
 def probe_columns() -> dict:
@@ -452,7 +492,7 @@ def probe_columns() -> dict:
     import shutil
     from tools.export_fingerprint import PIDS, digest, export
 
-    real = ROOT / "data" / "ohs.db"
+    real = DB_PATH
     copy = Path("/tmp/gate_cols_ohs.db")
     orig = sqlite3.connect
     saved = dict(sqlite3_connect=sqlite3.connect)
@@ -536,6 +576,95 @@ def _select_cols(sql: str) -> list[str]:
     return out
 
 
+# ================= 身份键 (S1c″-D5′ 前半段) =================
+# 键形状: file | fn | tables(升序) | cols(升序多重集) | 语句指纹(归一 SQL 的 sha1[:12]) | dup
+#   · 为什么免疫排版: 六个分量全部由**内容与结构**派生 —— 行号、注释、空行一个都不参与;
+#     加一行注释让后面所有站点行号 +1 时, 键集体不变 (2026-10-16 那 17 条假漂移会塌缩成 0)。
+#   · 为什么不吞新读点: 同一文件同一函数再写一条一模一样的 SELECT, 语句指纹相同,
+#     靠同形重数 dup (组内按源码行序 0..n-1) 让"第 N 个同形站点"各有其键;
+#     新增一条 → 键多重集多一个元素, diff 能点名。组内交换/中间插删不改多重集, 不造假差异。
+#   · 兼容路径: 旧基线记录没有这些字段, key_parts 会现场从 (file, fn, tables, sql_full) 推导,
+#     所以 --iddiff 能读旧基线对表, 不崩、不整判红。
+KEY_FIELDS = ("file", "fn", "tables", "cols", "shape", "dup")
+
+
+def _shape_hash(sql: str) -> str:
+    s = re.sub(r"\s+", " ", sql).strip()
+    return hashlib.sha1(s.encode("utf-8")).hexdigest()[:12]
+
+
+def key_parts(rec: dict) -> tuple:
+    """(file, fn, tables, cols, shape) —— cols/shape 缺失时从 sql_full 现场推导 (旧基线兼容)"""
+    cols = rec.get("cols")
+    if cols is None:
+        cols = _select_cols(rec.get("sql_full") or rec.get("sql", ""))
+    return (rec["file"], rec.get("fn", ""),
+            ",".join(sorted(rec.get("tables") or [])),
+            ",".join(sorted(cols)),
+            rec.get("shape") or _shape_hash(rec.get("sql_full") or rec.get("sql", "")))
+
+
+def assign_keys(sites: list[dict]) -> list[dict]:
+    """给每个站点补 cols/shape/dup/key (行号只留作人用参考, 不进键)。可重入: 对已有键的记录
+    再跑一遍结果不变 (cols/shape 已物化, dup 按 (file,line) 源码序重排, 基线内行序单调)。"""
+    groups: dict[tuple, int] = {}
+    for s in sorted(sites, key=lambda x: (x["file"], x["line"])):
+        p = key_parts(s)
+        dup = groups.get(p, 0)
+        groups[p] = dup + 1
+        s["cols"] = sorted(p[3].split(",")) if p[3] else []
+        s["shape"], s["dup"] = p[4], dup
+        s["key"] = "|".join((s["file"], s["fn"], p[2], p[3], p[4], str(dup)))
+    return sites
+
+
+def diff_keys(old_sites: list[dict], new_sites: list[dict]) -> dict:
+    """按键多重集对比两份**已 assign_keys** 的站点表。
+    返回: gone/added (Counter, 含重数), modified (gone↔added 配对: 同 file+fn, 内容分量变化),
+    gone_only/added_only (配不上对的), line_moves (键相同但行号集不同 = 纯排版漂移, 新键免疫)。"""
+    oc = Counter(s["key"] for s in old_sites)
+    nc = Counter(s["key"] for s in new_sites)
+    gone, added = oc - nc, nc - oc
+    olines: dict[str, list[int]] = defaultdict(list)
+    nlines: dict[str, list[int]] = defaultdict(list)
+    orec: dict[str, dict] = {}
+    nrec: dict[str, dict] = {}
+    for s in old_sites:
+        olines[s["key"]].append(s["line"])
+        orec.setdefault(s["key"], s)
+    for s in new_sites:
+        nlines[s["key"]].append(s["line"])
+        nrec.setdefault(s["key"], s)
+    line_moves = [{"key": k, "old": sorted(olines[k]), "new": sorted(nlines[k])}
+                  for k in sorted(oc & nc) if sorted(olines[k]) != sorted(nlines[k])]
+
+    modified, used = [], set()
+    for gk in sorted(gone):
+        gp = gk.split("|")
+        cands = [ak for ak in sorted(added)
+                 if ak not in used and gp[0] == ak.split("|")[0] and gp[1] == ak.split("|")[1]]
+        if not cands:
+            continue
+        ak = min(cands, key=lambda a: sum(1 for x, y in zip(a.split("|"), gp) if x != y))
+        changed = [f for f, x, y in zip(KEY_FIELDS, ak.split("|"), gp) if x != y]
+        if 1 <= len(changed) <= 3:          # 同 file+fn 且最多三个内容分量变 → 认定为"改造过的站点"
+            used.add(ak)
+            modified.append({"gone_key": gk, "added_key": ak, "changed": changed,
+                             "old": orec[gk], "new": nrec[ak]})
+    gone_only = [k for k in sorted(gone) if k not in {m["gone_key"] for m in modified}]
+    added_only = [k for k in sorted(added) if k not in used]
+    return {"gone": gone, "added": added, "modified": modified,
+            "gone_only": gone_only, "added_only": added_only, "line_moves": line_moves}
+
+
+def four_counts(sites: list[dict]) -> dict:
+    """四项计数 (阳性对照口径): total_sites / printed / gate_visible / protected_now"""
+    return {"total_sites": len(sites),
+            "printed": sum(1 for s in sites if s["kind"] == "printed"),
+            "gate_visible": sum(1 for s in sites if s.get("gate_visible")),
+            "protected_now": sum(1 for s in sites if s.get("gate_visible") and s["kind"] == "printed")}
+
+
 def migration_list() -> dict:
     """S1b′ 迁移白名单: printed × 门可见, 再按**列级**牙齿分档。
 
@@ -575,6 +704,69 @@ def migration_list() -> dict:
             "sites": sorted(sites, key=lambda x: (x["file"], x["line"]))}
 
 
+def iddiff_report(old_path: Path, new_sites: list[dict], zombies: list[str]) -> dict:
+    """只读对表 (不落盘, 不重打基线): 旧基线记录按内容推导新键, 与当前扫描逐键对账, 打印
+    "如果按新键重打基线会差多少条、每条差在哪"。返回统计 dict 供守卫复用。"""
+    old = json.loads(old_path.read_text(encoding="utf-8"))
+    old_sites = assign_keys(old["sites"])
+    cn_old, cn_new = four_counts(old_sites), four_counts(new_sites)
+    print("=== ① 四项计数对账 (旧基线 vs 当前重算; 语义结论必须一致) ===")
+    for k, v in cn_new.items():
+        same = cn_old[k] == v
+        print(f"  {k:14s} 基线={cn_old[k]:4d}  现在={v:4d}  {'✓ 一致' if same else '✗ 不一致'}")
+    d = diff_keys(old_sites, new_sites)
+    n_gone, n_added = sum(d["gone"].values()), sum(d["added"].values())
+    print(f"\n=== ② 按新键重打基线: 差 {n_gone + n_added} 条记录 "
+          f"(消失 {n_gone} + 新增 {n_added}; 其中改造配对 {len(d['modified'])} 对 = {2 * len(d['modified'])} 条) ===")
+    for m in d["modified"]:
+        ch = []
+        for f in m["changed"]:
+            if f == "dup":
+                continue
+            a = dict(zip(KEY_FIELDS, m["gone_key"].split("|")))[f]
+            b = dict(zip(KEY_FIELDS, m["added_key"].split("|")))[f]
+            ch.append(f"{f}: {a or '∅'}→{b or '∅'}")
+        print(f"  [改造 {len(ch)}处内容分量] {m['old']['file']}:{m['old']['line']}"
+              f"→{m['new']['file']}:{m['new']['line']}  fn={m['old']['fn']}")
+        for c in ch:
+            print(f"      · {c}")
+        print(f"      sql(旧): {(m['old'].get('sql_full') or '')[:88]}")
+        print(f"      sql(新): {(m['new'].get('sql_full') or '')[:88]}")
+        print(f"      性质: 内容真变化 (表/列/语句指纹变), 不是排版 —— 旧键下这类必须逐条人判, 新键直接点名")
+    for k in d["gone_only"]:
+        s = next(x for x in old_sites if x["key"] == k)
+        print(f"  [消失] {s['file']}:{s['line']} fn={s['fn']} tables={k.split('|')[2]}")
+        print(f"      sql: {(s.get('sql_full') or '')[:88]}")
+        print(f"      性质: 站点被删/迁到别的函数 (fn 变) —— 需人判去向")
+    for k in d["added_only"]:
+        s = next(x for x in new_sites if x["key"] == k)
+        print(f"  [新增] {s['file']}:{s['line']} fn={s['fn']} tables={k.split('|')[2]} dup={s['dup']}")
+        print(f"      sql: {(s.get('sql_full') or '')[:88]}")
+        print(f"      性质: 新读点 (同形重数键 dup>0 时=给同一张表又加了一个, 不会被吞)")
+    print(f"\n=== ③ 排版免疫实测 (这次改造的目的本身) ===")
+    print(f"  键两侧都在但行号集移动: {len(d['line_moves'])} 个键")
+    moved_sites = sum(len(x['new']) for x in d['line_moves'])
+    print(f"  —— 按旧键 (file,line) 这些会报成 {moved_sites} 条'变化' (全是假漂移); 按新键 {len(d['line_moves'])} 条真差异都不用报")
+    for lm in d["line_moves"]:
+        print(f"    · {lm['key'].split('|')[0]} fn={lm['key'].split('|')[1]} dup#{lm['key'].split('|')[5]}"
+              f" 行号 {lm['old']} → {lm['new']}")
+    print(f"\n=== ④ overrides 对表 (僵尸必须点名) ===")
+    ovf = ROOT / "tools" / "golden" / "gate_coverage_overrides.json"
+    if ovf.exists():
+        data = json.loads(ovf.read_text(encoding="utf-8"))
+        byref = {s.get("override_ref"): s for s in new_sites if s.get("override_ref")}
+        for k in sorted(data):
+            s = byref.get(k)
+            if s:
+                print(f"  ✓ 命中 {k}  → 现在对应新键 {s['key']}"
+                      f" (行号参考 {s['file']}:{s['line']})")
+        for z in zombies:   # 判据=登记键在当前站点表里命中不到 (僵尸 override, 同 chain_audit 豁免腐烂口径)
+            print(f"  ✗ 僵尸 override: {z} —— 当前代码里命中不到任何站点, 要么删登记, 要么调用点不该被删")
+        if not zombies:
+            print(f"  僵尸 0 条 ({len(data)} 条登记全部命中)")
+    return {"counts_old": cn_old, "counts_new": cn_new, "diff": d, "zombies": zombies}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     g = ap.add_mutually_exclusive_group(required=True)
@@ -586,8 +778,23 @@ def main() -> int:
                    help="列级牙齿图: 对表级已见的表逐列探 (~21 分钟, 只写 /tmp 副本)")
     g.add_argument("--migration-list", action="store_true",
                    help="按当前代码重算迁移白名单 (printed×可见×列级牙齿), 需先有 gate_coverage.json")
+    g.add_argument("--iddiff", action="store_true",
+                   help="只读对表 (不落盘): 旧基线按内容推导新身份键, 与当前重算逐键 diff + 僵尸 override")
     args = ap.parse_args()
     tables = official_tables()
+
+    if args.iddiff:
+        if not OUT.exists():
+            print(f"无基线 {OUT.name}, --iddiff 是拿它做对账对象的, 先由主代理 --write")
+            return 1
+        if not TRACE.exists():
+            print(f"无缓存 trace ({TRACE.name}), --iddiff 不跑导出, 先 --write")
+            return 1
+        sites = grade(static_sites(tables), json.loads(TRACE.read_text(encoding="utf-8")))
+        sites = assign_keys(sites)
+        sites, zombies = apply_overrides(sites)
+        iddiff_report(OUT, sites, zombies)
+        return 0
 
     if getattr(args, "migration_list"):
         if not OUT.exists():
@@ -650,7 +857,10 @@ def main() -> int:
         print(f"无缓存 trace ({TRACE.name}), 先 --write")
         return 1
     sites = grade(sites, tr)
-    sites = apply_overrides(sites)
+    sites = assign_keys(sites)          # 新身份键随 --write/--offline 落盘 (行号仍保留为参考属性)
+    sites, zombies = apply_overrides(sites)
+    for z in zombies:
+        print(f"⚠ 僵尸 override: {z} —— 登记了但当前代码命中不到任何站点 (要么删登记, 要么调用点不该被删)")
 
     stats = {
         "total_sites": len(sites),

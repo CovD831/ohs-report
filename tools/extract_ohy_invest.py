@@ -11,8 +11,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MAT = ROOT / "data" / "materials"
-OUT = ROOT / "data" / "ohy_invest.json"
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DATA_DIR, MATERIALS_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
+MAT = MATERIALS_DIR
+OUT = DATA_DIR / "ohy_invest.json"
 
 KEY_ROW = re.compile(r"职业卫生管理机构组织工作经费|职业病防护设施费用|防治经费")
 

@@ -64,8 +64,9 @@ print(f"表题字体: {cf.most_common(2)}")
 # ---- 4. 内容: 关键数据点 ----
 print()
 print("--- 关键数据点是否落到正文 ---")
-import sqlite3
-c = sqlite3.connect("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+import sqlite3  # noqa: F811,E402
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 路径走 knowledge.paths 单一产地)
+c = connect_ro()
 c.row_factory = sqlite3.Row
 row = c.execute("SELECT data FROM project WHERE id=?", (PID,)).fetchone()
 if row:

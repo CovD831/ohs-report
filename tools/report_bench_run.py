@@ -13,6 +13,10 @@ from __future__ import annotations
 import argparse, json, subprocess, sys, os
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地, 认 OHS_DATA_DIR)
+
 HERE = Path(__file__).resolve().parent
 
 
@@ -20,7 +24,7 @@ def main():
     ap = argparse.ArgumentParser(description="报告完整评测 (确定性 + 非确定性)")
     ap.add_argument("--docx", required=True, help="报告 docx")
     ap.add_argument("--pid", help="项目 id")
-    ap.add_argument("--db", default="data/ohs.db")
+    ap.add_argument("--db", default=str(DB_PATH))
     ap.add_argument("--reference", help="参考报告 (原报告) docx")
     ap.add_argument("--project-json", help="项目 data JSON")
     ap.add_argument("--skip-judge", action="store_true", help="跳过 LLM Judge")

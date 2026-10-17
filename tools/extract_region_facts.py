@@ -32,8 +32,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8")
 
-FACTS_PATH = ROOT / "data" / "region_facts.json"
-MAT_ROOT = ROOT / "data" / "materials"
+from knowledge.paths import DATA_DIR, MATERIALS_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
+
+FACTS_PATH = DATA_DIR / "region_facts.json"
+MAT_ROOT = MATERIALS_DIR
 
 # ── 规则: field → [(正则, 值清洗)] ; group(1) = 值 ─────────────────────────
 _N = r"([0-9]+(?:\.[0-9]+)?)"
@@ -190,9 +192,10 @@ def _resolve_full_pid(prefix: str) -> str:
 def _region_of_pid(pid: str) -> str:
     """从项目库取地区名 (企业画像 region → location 规则抽取兜底)"""
     import sqlite3
+    from knowledge.oel import connect_ro  # 只读工厂: 路径走 knowledge.paths 单一产地
     from web.table_builder import extract_region
     try:
-        c = sqlite3.connect(str(ROOT / "data" / "ohs.db"))
+        c = connect_ro()
         c.row_factory = sqlite3.Row
         row = c.execute("SELECT data FROM project WHERE id=?", (pid,)).fetchone()
         c.close()

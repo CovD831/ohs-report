@@ -27,30 +27,86 @@ from jinja2 import Environment, FileSystemLoader
 from knowledge.evidence_engine import evidence_for_section  # noqa: E402
 from web.report_struct import CHAPTERS, SUBS, SUBS3, SUBS4  # noqa: E402
 from knowledge.project_assess import assess_project  # noqa: E402
-from knowledge.oel import connect  # noqa: E402
+from knowledge.oel import connect, connect_ro  # noqa: E402  (connect=写侧两处, connect_ro=读)
 from web.projects_db import get_project, create_project, update_project, seed_demo, get_or_create_report, update_section_state
 from web.projects_db import get_project_data as _get_project_data_pdb
 
 ROOT = Path(__file__).resolve().parent.parent
-from knowledge.paths import DB_PATH as DB
+from knowledge.paths import DATA_DIR, DB_PATH as DB  # noqa: E402
 TEMPLATES = Path(__file__).resolve().parent.parent / "web" / "templates"
 
-app = FastAPI(title="职业病危害预评价报告工作台")
-env = Environment(loader=FileSystemLoader(str(TEMPLATES)), autoescape=True)
-# 演示数据只能通过显式环境变量开启，生产环境默认关闭。
-if os.getenv("SEED_DEMO", "").lower() in {"1", "true", "yes"}:
-    seed_demo()
+def _bootstrap() -> None:
+    """启动期写侧准备 (S1c′ D0), 整段跨进程串行 (D4)。
 
-# 用户认证 + 审计 (多人使用基础设施)
+    D4 为什么要上锁: 生产 CMD 是 `uvicorn --workers 2`, 两个进程**各跑一遍** lifespan。
+    2026-10-16 本地部署演练在空 volume 上实测到: `init_users()` 的
+    "查一下有没有用户 → 没有就插 admin" 是 check-then-act, 两个 worker 都查到空、
+    都去插, 输的那个抛 `UNIQUE constraint failed: users.username`,
+    uvicorn 打 `Application startup failed. Exiting.` —— **服务静默少一个 worker**,
+    日志里只有一行 traceback。所以串行化放在这段外面 (整段一次), 而不是逐个函数打补丁。
+    详见 knowledge/paths.py:startup_lock()。
+    """
+    # 数据目录: 全项目**唯一**一次 mkdir 在这里 (写侧), 且在任何建表/插行之前。
+    # 必须在拿锁之前: 锁文件本身要落在 DATA_DIR 里。
+    # 为什么显式写这一行: `sqlite3.connect(str(DB))` 在目录不存在时直接
+    # `unable to open database file` —— 空 volume 首启原本会炸在官方建表之前
+    # (本轮 D0 的空 volume 演练实测到的)。seed_demo() 也写库, 所以 mkdir 必须在它前面。
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    from knowledge.paths import startup_lock
+    with startup_lock():
+        _bootstrap_steps()
+
+
+def _bootstrap_steps() -> None:
+    """真正的启动步骤 (只在 startup_lock 里跑)。拆成两个函数是为了让
+    "整段被锁包住" 这件事在 AST 上可查 (tools/test_import_purity.py B2)。
+
+    这几件事原来全在 **import 期**跑: init_users() / ensure_official_schema() /
+    init_tasks() / seed_demo() / **cleanup_expired()**。最后那个是上了膛的枪 —— 它
+    会对"库里没有对应行"的材料目录 `shutil.rmtree`, 而本地 data/materials 是
+    **193MB 真实企业材料**。于是 `import web.app` 这个动作 (取证工具、守卫套、
+    挂错 volume 的容器首启) 本身就带删数据的能力, 且完全不可见。
+    现在: import 零副作用, 写侧准备只在服务启动时按显式顺序跑一遍。
+    """
+    if os.getenv("SEED_DEMO", "").lower() in {"1", "true", "yes"}:
+        seed_demo()                                  # 演示数据只能显式开启, 生产默认关
+    # 官方数据层 schema 的显式前置条件 (S1a′): 读路径改用只读连接之后, "26 张表存在"
+    # 不能再靠某条写路径碰巧先跑过一次 oel.connect() 来保证 —— 缺 schema 要在这里响,
+    # 而不是等到导出时报 no such table: oel_limit。
+    from knowledge.oel import ensure_official_schema
+    ensure_official_schema()
+    # 运行时表 (project) 的结构准备: 取数路径从 S1c′ D1 起改用只读连接, 不再顺手建表,
+    # 所以"project 表存在"必须在这里负责一次 (空 volume 首启否则直接 no such table)。
+    from web.projects_db import ensure_runtime_schema
+    ensure_runtime_schema()
+    # 用户认证 + 审计 (多人使用基础设施)
+    from web import auth as _auth
+    _auth.init_users()
+    from web import tasks as _tasks
+    _tasks.init_tasks()
+    # 生命周期自动回收: 只在服务启动跑, 且"删行"与"删目录"两个开关分开。
+    #   OHS_LIFECYCLE_ROWS (默认 1): 回收空项目行 —— 无数据无目录超 30 天, 低风险。
+    #   OHS_LIFECYCLE_DIRS (默认 0): rmtree 孤儿材料目录 —— **默认关**: 孤儿目录只可能
+    #     来自"删一半崩了/换库/手改 DB"这类异常, 它本身是报警信号; 自动删等于把一次
+    #     错配变成不可逆的数据丢失 (详见 web/projects_db.cleanup_expired 的说明)。
+    def _on(name: str, default: str) -> bool:
+        return os.getenv(name, default).lower() in {"1", "true", "yes"}
+    from web.projects_db import cleanup_expired
+    cleanup_expired(apply_rows=_on("OHS_LIFECYCLE_ROWS", "1"),
+                    apply_dirs=_on("OHS_LIFECYCLE_DIRS", "0"))
+
+
+async def _lifespan(_app: FastAPI):
+    _bootstrap()
+    yield
+
+
+app = FastAPI(title="职业病危害预评价报告工作台", lifespan=_lifespan)
+env = Environment(loader=FileSystemLoader(str(TEMPLATES)), autoescape=True)
+
+# 用户认证 + 审计 (仅取模块; 建表已移到 _bootstrap, 不在 import 期)
 from web import auth as _auth  # noqa: E402
 
-_auth.init_users()
-# 官方数据层 schema 的显式前置条件 (S1a′): 读路径改用只读连接之后, "26 张表存在"
-# 不能再靠某条写路径碰巧先跑过一次 oel.connect() 来保证 —— 缺 schema 要在这里响,
-# 而不是等到导出时报 no such table: oel_limit。
-from knowledge.oel import ensure_official_schema as _ensure_official_schema  # noqa: E402
-
-_ensure_official_schema()
 _sessions: dict[str, dict] = {}  # token -> user info
 GUEST_RE = re.compile(r"guest-[0-9a-f]{6}")
 
@@ -105,8 +161,10 @@ _cache = {}
 
 def _get_project_data(pid: str) -> dict:
     """从数据库读项目输入 (评估管线输入格式) — 单一实现在 web.projects_db.get_project_data,
-    这里只留薄包装给 app.py 内部与既有调用点 (迁出原因: 验收/导出工具 import web.app
-    会连带触发 init_users/init_tasks/cleanup_expired 的**写库副作用**)。"""
+    这里只留薄包装给 app.py 内部与既有调用点。
+    (迁出时的事实: 那时 `import web.app` 会连带跑 init_users/init_tasks/cleanup_expired
+     的**写库副作用**; S1c′ D0 已把它们移进启动钩子, import 现在零副作用。
+     迁出仍然保留 —— 取证/导出工具不该依赖整个 web 层才能取数。"""
     return _get_project_data_pdb(pid)
 
 
@@ -154,7 +212,7 @@ def _get_assess(pid: str) -> dict:
     """
     key = f"assess:{pid}"
     if key not in _cache:
-        conn = connect()
+        conn = connect_ro()
         proj = _get_project_data(pid)
         assess = assess_project(conn, proj)
         # 把完整项目数据(含hazard_grid)塞进 _project_data, 供 fill_section/build_grid 内嵌表格取数
@@ -1507,7 +1565,7 @@ def api_export(pid: str, request: Request):
     _rno = ensure_report_no(pid)
     p = gp(pid) or p
     data = p["data"]
-    conn = connect()
+    conn = connect_ro()
     project = {"id": pid, "name": p["name"], "industry": data.get("industry", ""),
                "equipment": data.get("equipment", []),
                "detections": data.get("detections", []),
@@ -1541,7 +1599,7 @@ def api_export(pid: str, request: Request):
     # 把完整项目数据塞进 assess._project_data, 供 fill_section 内嵌表格取数
     assess["_project_data"] = dict(project)
     conn.close()
-    out = ROOT / "data" / f"report_{pid}.docx"
+    out = DATA_DIR / f"report_{pid}.docx"
     export_docx(project, assess, out, section_states=data.get("section_states"))
     return {"ok": True, "path": f"/data/report_{pid}.docx", "size": out.stat().st_size}
 
@@ -1552,7 +1610,7 @@ def api_download_report(pid: str, request: Request):
         return JSONResponse({"error": "无权访问"}, status_code=403)
 
     """下载导出的 Word 报告 (受控, 不走裸 /data 路径, 避免nginx拦截)"""
-    out = ROOT / "data" / f"report_{pid}.docx"
+    out = DATA_DIR / f"report_{pid}.docx"
     if not out.is_file():
         return JSONResponse({"error": "报告不存在, 请先导出"}, status_code=404)
     return FileResponse(out, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -1564,7 +1622,7 @@ def report_file(filename: str):
     """只允许下载生成的 Word 报告，禁止暴露数据库和上传材料。"""
     if not re.fullmatch(r"report_[A-Za-z0-9_-]+\.docx", filename):
         return JSONResponse({"error": "not found"}, status_code=404)
-    target = ROOT / "data" / filename
+    target = DATA_DIR / filename
     if not target.is_file():
         return JSONResponse({"error": "not found"}, status_code=404)
     return FileResponse(
@@ -1667,16 +1725,13 @@ def api_generate_sub(pid: str, sec: str, sub: str):
 
 
 # ===== 后台批量生成 (关页面不中断, 进度可轮询) =====
+# 只 import 模块; task_job 建表在 _bootstrap (S1c′ D0: import 期零副作用)。
 from web import tasks as _tasks  # noqa: E402
 
-_tasks.init_tasks()
-
-# ===== 生命周期自动回收 (C档: 空项目TTL + 孤儿材料目录, 启动时幂等执行) =====
-from web.projects_db import cleanup_expired as _cleanup_expired  # noqa: E402
-
-_lifecycle = _cleanup_expired()
-if _lifecycle["dropped_rows"] or _lifecycle["dropped_dirs"]:
-    print(f"[lifecycle] 回收空项目 {_lifecycle['dropped_rows']} 行, 孤儿材料目录 {_lifecycle['dropped_dirs']} 个")
+# ===== 生命周期自动回收 (C档: 空项目TTL + 孤儿材料目录) =====
+# 原状: import 期无条件执行 `cleanup_expired()`, 其中含对孤儿材料目录的 `shutil.rmtree`
+# → 任何 `import web.app` 都可能删真实企业材料。现由 _bootstrap 在服务启动时按
+# OHS_LIFECYCLE_APPLY 显式决定要不要真删 (两道硬闸见 web/projects_db.cleanup_expired)。
 
 
 def _fix_standard_refs(text: str) -> tuple[str, list[str]]:
@@ -1684,7 +1739,8 @@ def _fix_standard_refs(text: str) -> tuple[str, list[str]]:
 
     函数体已迁至 **knowledge/standard_version.fix_standard_refs** (单一产地, 2026-10):
     原实现留在 web/app.py 时, tools/ 侧脚本 import 会连带触发 app 的副作用
-    (_cleanup_expired / init_tasks)。此处保留同名薄包装, 调用点不变。
+    (init_users/init_tasks, 以及 **cleanup_expired 的 rmtree**)。此处保留同名薄包装,
+    调用点不变。(那些副作用在 S1c′ D0 已移进启动钩子, import web.app 现在零副作用。)
     """
     from knowledge.standard_version import fix_standard_refs
     return fix_standard_refs(text)
@@ -1874,14 +1930,13 @@ def _run_bench_after_generate(pid: str):
         return
     # 用正式报告文件 (生成时已导出 /app/data/report_{pid}.docx) — 与网页下载/export 一致
     # (修复: 钩子自 export_docx(assess={}) 漏 18 张表 → 评测失真)
-    from pathlib import Path as _P2
-    out_path = _P2(__file__).resolve().parent.parent / "data" / f"report_{pid}.docx"
+    out_path = DATA_DIR / f"report_{pid}.docx"
     if not out_path.exists():
         # 回退: 现场导出 (assess 从正式 assess 缓存取, 不空)
         try:
             import tempfile
             from web.word_export import export_docx
-            out_path = _P2(tempfile.gettempdir()) / f"bench_{pid}.docx"
+            out_path = Path(tempfile.gettempdir()) / f"bench_{pid}.docx"
             # ⚠ 必须带 _project_data, 否则 fill_section 拿不到项目数据 →
             #   内嵌表(含 PPE 6 列)全空 → 评测失真 (曾传 {} 漏 18 张表)
             _a = assess_project(_conn_tasks(), pd)
@@ -2032,12 +2087,12 @@ def sub_section_content(pid: str, sec: str, sub: str, request: Request):
         # 兜底: 该节还没生成过 → 用 subsection_gen 的模板占位 (内容可能与标题目不一致,
         # 故标记 src, 前端应提示"该节尚未生成")
         from web.subsection_gen import build_subsection
-        built = build_subsection(connect(), sec, sub, result)
+        built = build_subsection(connect_ro(), sec, sub, result)
         paragraphs = built["paragraphs"]
         src = "fallback_template"
     try:
         from web.word_export import _tables_for_sub
-        tables = _tables_for_sub(connect(), sec, sub, result) or []
+        tables = _tables_for_sub(connect_ro(), sec, sub, result) or []
     except Exception as _e:
         logging.getLogger("ohs").warning("sub_section_content: 表格取数失败 %s: %s", sub, _e)
 
@@ -2086,11 +2141,11 @@ def section_content(pid: str, sec: str, request: Request):
               "3": ["10.2.3"], "4": ["10.2.4"], "6": ["10.2.6", "10.2.7"],
               "7": ["10.2.7"], "8": ["10.2.8"], "9": ["10.2.9"]}
     ev_secs = ev_map.get(sec, [sec])
-    paragraphs = fill_section_paragraphs(connect(), sec, result, sk["paragraphs"])
-    tables = fill_section(connect(), sec, result)
+    paragraphs = fill_section_paragraphs(connect_ro(), sec, result, sk["paragraphs"])
+    tables = fill_section(connect_ro(), sec, result)
     evidence = []
     for es in ev_secs:
-        evidence += evidence_for_section(connect(), es, result)
+        evidence += evidence_for_section(connect_ro(), es, result)
     return {"section": sec, "title": sk["title"], "paragraphs": paragraphs,
             "tables": tables, "evidence": evidence}
 

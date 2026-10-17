@@ -25,7 +25,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DB = ROOT / "data" / "ohs.db"
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
+DEFAULT_DB = DB_PATH
 
 # (id, clause, old, new)  -- old 必须与库中现值逐字一致, 否则报 MISS
 CHANGES = [

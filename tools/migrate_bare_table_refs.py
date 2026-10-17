@@ -25,7 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8")
-DB = ROOT / "data" / "ohs.db"
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
+DB = DB_PATH
 
 # (pid, sec, old, new) — old 必须全节唯一且命中; MISS 即报错 (防假绿)
 RULES = [

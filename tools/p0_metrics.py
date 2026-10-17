@@ -17,6 +17,7 @@ PIDS = ["ada54603a9", "c8c7ff0a4d", "2863a36451", "57ffa2b3b0"]
 from docx import Document  # noqa: E402
 from tools.export_e2e import build_project  # noqa: E402
 from knowledge.oel import connect  # noqa: E402
+from knowledge.paths import DATA_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
 from knowledge.project_assess import assess_project  # noqa: E402
 from web.projects_db import get_project_data as _get_project_data  # noqa: E402
 from web.validators import validate_section  # noqa: E402
@@ -90,7 +91,7 @@ for pid in PIDS:
     project = build_project(pid)
     assess = assess_project(conn, project)
     assess["_project_data"] = dict(project)
-    docx_path = ROOT / "data" / f"report_{pid}_{TAG}.docx"
+    docx_path = DATA_DIR / f"report_{pid}_{TAG}.docx"
     export_docx(project, assess, docx_path, section_states=data.get("section_states"))
     m = docx_metrics(docx_path)
     m["validators"] = validator_metrics(pid, data, assess)

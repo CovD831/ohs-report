@@ -18,14 +18,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
-def _conn():
-    return connect()
-
-
 def extract_units(project: dict, assess: dict) -> list[dict]:
     """从项目数据提取三级单元 (四类)"""
-    from knowledge.oel import connect
-    conn = connect()
+    from knowledge.oel import connect_ro
+    conn = connect_ro()
     units = []
     hazards = assess.get("hazards", [])
 
@@ -63,7 +59,8 @@ def extract_units(project: dict, assess: dict) -> list[dict]:
     units += proc_units[:15]
 
     # 3) 岗位型 (A2d)
-    f_d = Path(__file__).resolve().parent.parent / "data" / "materials" / "A2d_劳动定员表.csv"
+    from knowledge.paths import MATERIALS_DIR  # 数据目录唯一产地, 认 OHS_DATA_DIR
+    f_d = MATERIALS_DIR / "A2d_劳动定员表.csv"
     if f_d.exists():
         import csv
         with open(f_d, encoding="utf-8-sig") as fh:
@@ -104,8 +101,8 @@ def build_units(sec: str, sub: str, project: dict, assess: dict) -> list[dict]:
 
 def llm_material_text(factor: str, project: dict, assess: dict) -> str:
     """物质单元 LLM 深度描述 (完整毒理学段, 数据来自知识库+材料)"""
-    from knowledge.oel import connect
-    conn = connect()
+    from knowledge.oel import connect_ro
+    conn = connect_ro()
     # 知识库数据: 毒理/英文/CAS/限值
     eff = conn.execute("SELECT factor, english, cas, effect, note, source FROM health_effect WHERE factor=? LIMIT 1",
                        (factor,)).fetchone()
@@ -152,8 +149,8 @@ def material_deep(factor: str, project: dict, assess: dict) -> str:
 
 if __name__ == "__main__":
     from knowledge.project_assess import assess_project
-    from knowledge.oel import connect
-    conn = connect()
+    from knowledge.oel import connect_ro
+    conn = connect_ro()
     r = assess_project(conn, {"name": "t", "industry": "261",
                               "equipment": ["酯化釜|丙酮", "纯化槽|甲苯"],
                               "detections": [], "process_text": "- 车间 生产厂房（二） | 工序 特殊单体 | 密闭 密闭 | 危害 密闭"})

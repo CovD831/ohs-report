@@ -13,36 +13,54 @@ ROOT = next((p for p in (Path("/app"), Path(__file__).resolve().parent.parent)
              if (p / "web" / "app.py").exists()), Path(__file__).resolve().parent.parent)
 sys.path.insert(0, str(ROOT))
 
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 路径走 knowledge.paths 单一产地)
+
 import docx  # noqa: E402
 from docx.oxml.ns import qn  # noqa: E402
 
-# 骨架表名 → 报告表题的关键词 (表题用报告体措辞, 不含骨架内部名)
-# 例: 骨架"班制定员表" → 表题"表3.1-2 本项目生产岗位定员表"
-# ⚠ 首版直接用骨架名去 match 表题 → 假报 17/19 缺失 (表题措辞不同)
-CAP_HINT = {
-    "班制定员表": ["定员"], "项目概况表": ["经济技术指标", "概况"],
-    "原辅材料表": ["原辅材料"], "产品产量表": ["产品方案", "产品产量"],
-    "设备明细表": ["设备设施"], "建构筑物表": ["建构筑物", "建（构）筑物"],
-    "类比危害分布表": ["类比企业", "危害因素识别"],
-    "气象因素表": ["气象"], "选址检查表": ["选址"],
-    "总体布局检查表": ["总体布局"], "工艺检查表": ["工艺"],
-    "设备布局检查表": ["设备及布局", "设备布局"],
-    "建筑卫生学检查表": ["卫生学检查"], "卫生特征分级表": ["分级"],
-    "辅助用室设置表": ["辅助用室设置"], "辅助用室检查表": ["辅助用室检查"],
-    "噪声接触限值表": ["噪声"], "高温接触限值表": ["高温"],
-    "防护设施检查表": ["防护设施"], "应急救援检查表": ["应急"],
-    # ⚠ 表题措辞与骨架内部名不同, hints 要覆盖真实表题用词 (否则假报"缺失")
-    "危害因素识别表": ["危害因素", "分布一览"], "健康影响表": ["健康影响", "对人体健康的影响"],
-    "物理因素健康影响表": ["物理因素对人类健康", "物理因素对健康", "物理因素对人体"],
-    "PPE配备表": ["个体防护", "PPE", "个人防护用品配备"],
-    "管理制度检查表": ["管理检查", "职业卫生管理"],
-    "接触限值表": ["接触限值"], "关键控制点表": ["关键控制点"],
-    "类比可比性表": ["可比性", "评价参数的比较", "类比项目与本项目"], "劳动强度分级表": ["劳动强度"],
-    "类比PPE配备表": ["类比企业", "PPE"], "类比PPE有效性表": ["有效性"],
-    "PPE拟配置检查表": ["拟配置"],
-    "室内空气质量标准表": ["空气质量"],
-    "类比工作日写实表": ["写实"], "应急物资清单": ["应急"],
-}
+# 骨架表名 → 期望表题子串 —— **从产品真源推导, 不再手工维护别名表**。
+# 病根复盘 (2026-10): 旧 CAP_HINT 是第三份手抄名单, 「设备明细表」hint 写 09-28 的
+# 旧措辞「设备设施」, 真表题 10-03 定稿「本项目涉及的主要生产装置及设备」→ 两套真源
+# 漂移, 表明明在导出里却被判「导出未见」(判据错, 不是产品缺陷)。
+# 现在期望表题直接推自 _SUB_TABLE_MAP.wanted × ORIG_TABLE_NOS/ORIG_CAPTIONS
+# (即 _write_tables_named 运行时真正取用的那两份), 产品改措辞 → 判据自动跟上。
+def caption_hints() -> dict[str, list[str]]:
+    """wanted/骨架表名 → 期望表题子串集 (与 _write_tables_named 的配对规则同构)
+
+    配对规则 (与产品一致):
+      - 槽位平行 (wanted/nos/caps 等长): wanted[i] ↔ 「nos[i] caps[i]」整行, 只认这一行;
+      - 有取证但非平行 (2.1.1 拆表): 该节「表号 表题」全部行任一命中;
+      - 无取证节 / nos≠caps 长度 (卫生异常, 由 hygiene 判红): 期望 = 内部名
+        (产品回退分支的表题原文)。
+    ⚠ 有取证时**不放内部名兜底** —— 否则「表题回退内部名」这一原始 bug 形态
+    会自证清白 (内部名出现在表题里 = 判据命中 = 假绿)。"""
+    from web.orig_table_map import ORIG_CAPTIONS, ORIG_TABLE_NOS
+    from web.word_export import _SUB_TABLE_MAP, _match_wanted
+    hints: dict[str, list[str]] = {}
+    for sub, m in sorted(_SUB_TABLE_MAP.items()):
+        if not m:
+            continue
+        wanted = m[1] or []
+        nos = ORIG_TABLE_NOS.get(sub) or []
+        caps = ORIG_CAPTIONS.get(sub) or []
+        lines = [f"{n} {c}" for n, c in zip(nos, caps)] if nos and len(nos) == len(caps) else []
+        parallel = bool(wanted) and bool(lines) and len(lines) == len(wanted)
+        for w in wanted:
+            hs = hints.setdefault(w, [])
+            if parallel:
+                i = _match_wanted(wanted, w)
+                cand = [lines[i]] if i is not None else lines
+            elif lines:
+                cand = lines
+            else:
+                cand = [w]
+            for c in cand:
+                if c not in hs:
+                    hs.append(c)
+    return hints
+
+
+CAP_HINT = caption_hints()
 
 
 def extract_table_captions(doc) -> list[str]:
@@ -62,7 +80,7 @@ def table_shapes(doc) -> list[tuple[int, int]]:
 
 def main():
     pid = sys.argv[1] if len(sys.argv) > 1 else "c8c7ff0a4d"
-    conn = sqlite3.connect(str(ROOT / "data" / "ohs.db"))
+    conn = connect_ro()
     conn.row_factory = sqlite3.Row
     data = json.loads(conn.execute("SELECT data FROM project WHERE id=?", (pid,)).fetchone()["data"])
 

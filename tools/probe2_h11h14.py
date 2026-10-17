@@ -79,7 +79,10 @@ for tag, rel in (('新泰', 'data/vision_cache/a66517be268181e6.json'),
             e.get('table_type'), e.get('_page')))
 
 # ---------- 3. 标准库: hazard_factor / oel_limit 物理 ----------
-conn = sqlite3.connect(str(REPO / 'data/ohs.db'))
+import sys
+sys.path.insert(0, str(REPO))
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 路径走 knowledge.paths 单一产地)
+conn = connect_ro()
 conn.row_factory = sqlite3.Row
 P('########## 库表 ##########')
 tabs = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]

@@ -43,8 +43,9 @@ from docx.text.paragraph import Paragraph  # noqa: E402
 from knowledge.standard_version import STD_REF_PAT, ref_code  # noqa: E402
 # ⚠ 导出相关的重依赖 (web.app / knowledge.project_assess / tools.export_e2e / web.word_export)
 #   **故意放在 export() 内部 import**: test_gate_sensitivity 只用本模块的纯函数
-#   (texts_from_docx / digest / diff), 不该为了做门禁把 web.app 的导入副作用
-#   (_cleanup_expired / init_tasks) 拖进容器里的守卫步骤。
+#   (texts_from_docx / digest / diff), 不该为了做门禁把整个 web 层拉起来。
+#   (历史上还有一层原因: import web.app 会跑建表与 cleanup_expired 的写库副作用;
+#    S1c′ D0 已把它们移进启动钩子, 现在 import 零副作用 —— 延迟 import 作为依赖边界保留。)
 
 H = lambda s: hashlib.sha1(s.encode("utf-8")).hexdigest()[:12]  # noqa: E731
 
@@ -103,13 +104,13 @@ def digest(path: Path) -> dict:
 
 def export(pid: str, out_dir: Path) -> Path:
     """与 p0_metrics.py:88-94 同一套取数/导出, 逐行对齐 (口径变了 = 门失效)"""
-    from knowledge.oel import connect
+    from knowledge.oel import connect_ro  # S1c′ D1: 主验收门必须只读取数
     from knowledge.project_assess import assess_project
     from tools.export_e2e import build_project
     from web.projects_db import get_project_data as _get_project_data
     from web.word_export import export_docx
 
-    conn = connect()
+    conn = connect_ro()
     try:
         data = _get_project_data(pid)
         project = build_project(pid)

@@ -13,8 +13,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.stdout.reconfigure(encoding="utf-8")
 
-DB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "ohs.db")
-conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 库路径走 knowledge.paths 单一产地, 认 OHS_DATA_DIR)
+conn = connect_ro()
 
 from knowledge.standard_version import (fix_standard_refs, is_superseded,  # noqa: E402
                                   supersession_index)

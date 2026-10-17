@@ -28,6 +28,11 @@
 import sqlite3
 import sys
 import argparse
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
 
 DDL = """
 CREATE TABLE IF NOT EXISTS hazard_toxicity (
@@ -85,7 +90,7 @@ BASIS = "GBZ/T 230-2025 (THI分级); 形态=真实报告5.2-1取证"
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default="data/ohs.db")
+    ap.add_argument("--db", default=str(DB_PATH))
     ap.add_argument("--apply", action="store_true")
     args = ap.parse_args()
 

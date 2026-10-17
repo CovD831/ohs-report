@@ -1,0 +1,10 @@
+{
+ "_说明": "「编号已更新、判据内容尚未按新版一手文本复核」的替代关系登记。命中即保留旧标签、不做等号替换。消费方四个且读同一份: 改写器 RefFixer.replacement / V-05 web.validators / 废止黑名单 web.std_guard.superseded_map / 读出纠版不变式 tools.test_std_currentize。单一产地 knowledge/paths.STD_RENDER_HOLD_FILE。复核完成后: 更新判据内容 + 删除本登记项 (见 knowledge/check_result_templates.py 的说明)。",
+ "entries": [
+  {
+   "old_code": "GB/T18664-2002",
+   "new_code": "GB18664-2025",
+   "reason": "GB 18664-2025 已于 2026-09-01 实施并全部代替 GB/T 18664-2002；但术语(用品→装备)、缺氧阈值、适合性检验频次、新增判废章、APF 数值表等内容级差异尚未取得一手文本复核，protection_rule 判据仍按 2002 版整理。复核前保留旧标签，不做等号替换。一手文本来源：openstd.samr.gov.cn（GB 18664-2025 全文预览）"
+  }
+ ]
+}

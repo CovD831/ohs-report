@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, "/Users/abaaba/Projects/ohs-report")
 
 import web.word_export as we
-from knowledge.oel import connect as oc
+from knowledge.oel import connect as oc, connect_ro  # noqa: E402
 
 PID = "c8c7ff0a4d"
 
@@ -27,7 +27,7 @@ def _spy(conn, sec, sn, assess):
 
 we._tables_for_sub = _spy
 
-c = sqlite3.connect("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+c = connect_ro()
 c.row_factory = sqlite3.Row
 d = json.loads(c.execute("SELECT data FROM project WHERE id=?", (PID,)).fetchone()["data"])
 from knowledge.project_assess import assess_project

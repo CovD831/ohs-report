@@ -10,13 +10,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, "/Users/abaaba/Projects/ohs-report")
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 路径走 knowledge.paths 单一产地)
 
 PID = "c8c7ff0a4d"
 PAT = re.compile(r"接触水平[^。；;]{0,40}(?:低于|符合|未超过)[^。；;]{0,40}(?:限值|PC-TWA|mg/m)")
 
 
 def main():
-    c = sqlite3.connect("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+    c = connect_ro()
     c.row_factory = sqlite3.Row
     d = json.loads(c.execute("SELECT data FROM project WHERE id=?", (PID,)).fetchone()["data"])
     old = {k: (v or {}).get("text") or "" for k, v in (d.get("section_states") or {}).items()}

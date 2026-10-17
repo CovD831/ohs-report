@@ -25,8 +25,13 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 MANIFEST = ROOT / "data_stamp.json"
-DB = ROOT / "data" / "ohs.db"
+# 库路径走单一产地 knowledge.paths.DB_PATH (2026-10-16 修): 这里原本硬写 ROOT/"data"/"ohs.db",
+#   于是 `OHS_DATA_DIR` 搬家时它读的**还是仓库里那份真库**。实测踩出来的: 给临时副本的
+#   oel_limit 改一格再跑 --check, 它照样报"一致" —— 差点把这条尺子误判成"看不见内容变化",
+#   而真相是它根本没看那棵树。路径收口 (S1a′) 漏了这支, 补上。
+from knowledge.paths import DB_PATH as DB  # noqa: E402
 
 # 不参与版本戳的表: 运行时状态与项目业务数据 (生产/本地本就应不同)
 RUNTIME_TABLES = {"project", "users", "audit_log", "task_job", "equipment_material",

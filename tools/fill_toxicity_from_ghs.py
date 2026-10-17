@@ -22,7 +22,11 @@ import sqlite3
 import sys
 from pathlib import Path
 
-DB = Path(__file__).resolve().parent.parent / "data" / "ohs.db"
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
+
+DB = DB_PATH
 
 CAS_RE = re.compile(r"^\d{2,7}-\d{2}-\d$")   # 严格 CAS 格式
 

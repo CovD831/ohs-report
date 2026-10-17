@@ -13,22 +13,30 @@
 设计纪律:
   1. **数据来源优先级**按标准 A.2.1: GHS 分类数据 → 国家技术标准 → 官方数据。
      本模块只用 ghs_class (GHS) + oel_limit/health_effect (国家标准) + 沸点等理化常数。
-  2. **缺项双算法 + 透明标注** (2026-10-14 修正):
+  2. **主口径唯一 = 标准注6** (2026-10-16 用户拍板"统一到注6", 取代上一轮的"下界为主"):
      - 标准「注6」: 缺乏蓄积性/致癌性/致敏性/生殖毒性数据的分项**暂按类别1 (4分) 赋分**;
-     - 但 skill 已实测注6 兜底会让 THI **系统性虚高** (氨: GHS 按公式算 82→极度危害,
-       真稿实为高度危害Ⅲ级) —— 因为多数物质 8 项里只有 1~2 项有数据。
-     → 本模块**同时给出两个值**: `thi_note6` (按标准注6, 法定算法) 与
-       `thi_zero` (缺项按0, 下界), 并输出 `missing` 清单与 `have` 计数。
-       调用方**优先用 thi_note6** (标准算法), 但当 `have < 4` (数据严重不足) 时
-       返回 None → 标待补充, 不输出可能失真的分级。
-     → detail 里逐项标明「注6兜底」还是「实测」, 供人工复核。
+     - 本模块**同时返回两个值**, 但只有一个主口径:
+         `thi` / `level` / `grade` = `thi_note6` / `level_note6` / `grade_note6` (法定算法)
+         `thi_zero` / `level_zero` / `grade_zero` = 缺项按0 的下界, **仅供人工复核参照**,
+         不得作为任何调用方消费、入库或印出来的"那个值";
+     - **为什么必须唯一**: 上一轮下界是主输出, 于是 `hazard_toxicity` 里存的、脚本算的、
+       报告里印的 (注6 标注) 各说一套 —— 实测 104 行里存值与注6 同值的只有 1 行;
+     - **诚实表达数据不足不靠换口径**, 而靠调用方标注实测项数
+       (web/section_filler._thi_grade_cell → 「…（按注6；实测n/8项，待复核）」),
+       报告里不得出现裸的注6 等级;
+     - ⚠ 注6 兜底会让 THI **系统性虚高** (8 项缺 5 项时, 缺项 5×4分×权重 = 虚高 30+)。
+       与真稿定级对表 (2026-10-16 本轮量: hazard_toxicity 里 19 条「真稿给了四级 + 我们能算」
+       的行) —— 注6 只对上 **1** 条 (丙烯腈), 下界对上 **8** 条, 另 10 条两法都不一致。
+       → 选注6 当主口径的理由是「评审按标准复算必然得到同一个值」, **不是**「它更准」;
+         把它当已定级结论就是错的, 所以「待复核」标注属于口径的一部分。
+     - 严格门槛 `have < MIN_HAVE` 仍然返回 None (回填工具因此不会存低置信行)。
   3. **CAS 精确匹配优先** (skill 教训: 「丙酮」曾被子串匹配到「丙酮氰醇」→ 剧毒误配)。
   4. 输出带完整 detail (每项 F/k/来源), 便于人工复核与溯源。
 
 用法:
     from web.thi_rating import rate_substance
     r = rate_substance(conn, "丙酮", cas="67-64-1")
-    if r: r["level"], r["thi"], r["detail"]
+    if r: r["level"], r["thi"], r["detail"]     # level/thi 就是注6 值, 与 r["level_note6"] 恒等
 """
 from __future__ import annotations
 
@@ -55,7 +63,7 @@ GRADES = [
 ]
 
 # 实测项数下限: 8 项里至少 4 项有实测数据才输出分级 (低于此 → 数据严重不足)
-# 2026-10-14 用户拍板「方案B」定 4:
+# 2026-10-14 用户拍板「方案B」定 4; 2026-10-16 拍板「统一到注6」后**门槛不动, 只换主口径**。
 #   实测两种算法的结果对比 (14 物质):
 #     物质          实测项  注6兜底THI   下界THI   真稿(同公司另一产线,仅参照)
 #     甲醇            3      71 极度      23 轻度    中度危害
@@ -66,8 +74,12 @@ GRADES = [
 #     马来酸酐         3      66 极度      30 轻度    —
 #     N,N-二甲基苯胺   3      68 极度      20 轻度    —
 #   → 注6 兜底系统性虚高 (8项缺5项时, 5项×4分×权重=虚高30+), 与真稿普遍差 2 级;
-#     下界算法系统性偏低 (缺项按0), 但方向诚实: 实测项少→值低→促人工复核。
-#   用户选 B = 下界为主输出 + 注6 值入 basis 参照 + **实测<4 项一律不输出**。
+#     下界算法系统性偏低 (缺项按0) —— 它诚实, 但不是标准里的算法。
+#   方案 B (2026-10-14) = 下界为主输出 + 注6 值入 basis 参照 + 实测<4 项一律不输出;
+#   2026-10-16 改为 = **注6 为主输出** + 下界降为参照值 + 门槛与标注不变。
+#     换口径的代价本轮量化过: 库里 19 条「真稿已给四级且我们算得出」的行, 注6 只对得上 1 条
+#     (丙烯腈), 下界对得上 8 条 → 所以主输出**必须**带「按注6；实测n/8项，待复核」的标注,
+#     裸等级不许进报告 (判据与变异: tools/test_toxicity_cell.py)。
 #   后果: 14 个目标物质里仅 3 个 (苯乙烯/苯醌 + 3项实测的甲醇等被排除) 可写,
 #         「丙酮/乙酸乙酯/二甲苯/二聚环戊二烯」因 GHS 缺急性毒性分类而实测仅2项
 #         → 维持待补充 (官方数据层覆盖缺口, 非算法问题, 已如实上报)。
@@ -254,6 +266,11 @@ def rate_substance(conn, name: str, cas: str | None = None,
     返回 None = 数据不足, 调用方应标「待补充」(宁缺勿错)
     返回 dict = {thi, level, grade, detail:[(指标, F, k, 依据)], basis, source, matched}
 
+    **口径唯一**: `thi`/`level`/`grade` 恒等于 `thi_note6`/`level_note6`/`grade_note6`
+      (标准注6 = 主口径, 2026-10-16 拍板)。`thi_zero`/`level_zero`/`grade_zero` 是"缺项按0"
+      的下界, 只作为复核参照随结果返回 —— 消费它们等于引入第二套口径, 判据会红
+      (tools/test_toxicity_cell.py 的「口径唯一」不变式)。
+
     min_have: 覆盖模块级 MIN_HAVE 门槛 (2026-10-14 C 方案加)。报告侧需要**明知数据不足**
       也出等级 (按注6, 并标注 实测n/8项 + 待复核), 故允许以 min_have=0 取回结果;
       调用方必须自己处理"未定级"的表达, 不得把裸等级当已定级结论。
@@ -330,17 +347,26 @@ def rate_substance(conn, name: str, cas: str | None = None,
 
     level, grade = grade_of(thi_note6)
     level_z, grade_z = grade_of(thi_zero)
-    # 主输出 = 下界 (诚实方向: 数据少→值低→促人工复核); 注6 值仅入 basis 供参照
+    # 主输出 = **注6 (法定算法)** —— 2026-10-16 用户拍板"统一到注6", 取代上一轮的"下界为主"。
+    #   理由: 评审按标准复算必然得到注6 的值; 而"缺项按0"是自创口径, 同一物质两法差 3 级
+    #   (苯醌: 下界 29 轻度 vs 注6 77 极度) —— 一个量只能有一个主口径, 否则
+    #   `hazard_toxicity` 里存的、报告里印的、脚本算的会各说一套。
+    #   本轮实测的"各说一套"规模 (可复算: 对 hazard_toxicity 全 104 行跑 rate_substance,
+    #   min_have=0 → 91 行算得出; 其中存值与注6 同值的只有 1 行 (丙烯腈), 与下界同值 9 行;
+    #   按严格门槛 min_have=4 → 30 行, 存值与注6 同值仍只有 1 行)。
+    #   下界仍随结果返回 (`thi_zero`/`level_zero`) 供人工复核参照, 但它不再是任何调用方
+    #   消费的"那个值"; 数据不足的诚实表达在调用方
+    #   (web/section_filler._thi_grade_cell 标「实测n/8项，待复核」)。
     return {
-        "thi": round(thi_zero, 1),
+        "thi": round(thi_note6, 1),
         "thi_note6": round(thi_note6, 1),
         "thi_zero": round(thi_zero, 1),
-        "level": level_z,
-        "grade": grade_z,
-        "level_zero": level_z,
-        "grade_zero": grade_z,
+        "level": level,
+        "grade": grade,
         "level_note6": level,
         "grade_note6": grade,
+        "level_zero": level_z,
+        "grade_zero": grade_z,
         "detail": detail,
         "have": have,
         "missing": missing,
@@ -348,21 +374,20 @@ def rate_substance(conn, name: str, cas: str | None = None,
         "matched_name": g["name"],
         "matched_cas": g["cas"],
         "basis": (f"GBZ/T 230—2025 表1 THI计算; 分项指标由GHS分类(附录B.1)映射, "
-                  f"扩散性用理化常数; 实测{have}/{total_items}项"
-                  f"(缺{','.join(missing)}); "
-                  f"缺项按0计THI={round(thi_zero,1)}→{level_z}; "
-                  f"若按标准注6(缺项按类别1)THI={round(thi_note6,1)}→{level}"),
+                  f"扩散性用理化常数; 实测{have}/{total_items}项(缺{','.join(missing)}); "
+                  f"按标准注6(缺项按类别1)THI={round(thi_note6,1)}→{level}; "
+                  f"参照: 缺项按0计THI={round(thi_zero,1)}→{level_z}"),
         "source": f"gbz_t_230_2025_thi + ghs_class({g['match']})",
     }
 
 
 if __name__ == "__main__":
-    import os
-    import sqlite3
     import sys
     sys.path.insert(0, '.')
-    from knowledge.paths import DB_PATH
-    conn = sqlite3.connect(str(DB_PATH))   # 不再靠 os.chdir + 相对路径
+    from knowledge.oel import connect_ro
+    # 只读取数: 这一段是"打印一份对表面", 不该给验收库开可写连接 (S1c″ D4′ 同一条线);
+    # 路径也只从 knowledge.paths 的单一产地取, 于是 OHS_DATA_DIR 搬家时它跟着搬。
+    conn = connect_ro()
     for nm, cs in [("丙酮", "67-64-1"), ("甲醇", "67-56-1"), ("甲苯", "108-88-3"),
                    ("乙酸乙酯", "141-78-6"), ("二聚环戊二烯", "77-73-6"),
                    ("苯醌", "106-51-4"), ("邻苯二甲酸酐", "85-44-9"),
@@ -375,7 +400,7 @@ if __name__ == "__main__":
             print(f"{nm:<14} → 数据不足 (None)")
             continue
         print(f"{nm:<14} THI={r['thi']:<6} {r['level']} (grade {r['grade']}) "
-              f"have={r['have']} miss={r['missing']}")
+              f"have={r['have']} miss={r['missing']} | 参照下界 {r['thi_zero']} {r['level_zero']}")
         for k, f, w, why in r["detail"]:
             print(f"      {k:<12} F={str(f):<5} k={w} × {'' if f is None else f} = "
                   f"{'—' if f is None else f*w:<5} | {why}")

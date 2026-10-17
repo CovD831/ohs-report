@@ -13,7 +13,8 @@
   10.2.3.1 工程概况   industry_chain (行业分类全层级) + industry_risk (风险分类)
   10.2.5.1 危害识别   hazards (设备/工序→危害→OEL/方法/分类/危化品)
   10.2.5.2 健康效应   occupational_diseases (危害→可能职业病)
-  10.2.5.3 危害程度   judgements (判定) + grades (作业分级 229) + level_summary
+  10.2.5.3 危害程度   judgements (判定) + grades (作业分级 229, 按 hazard_factor.category
+                      路由到 229.1/229.2/229.3/229.4; 定不出级的行也留, 依据列写明原因)
   10.2.8  PPE       ppe_recommendations (危害类别→防护装备)
   10.2.9  健康监护   surveillance (危害→检查项目/周期)
   10.2.3.7 建筑卫生学 illumination_check (车间→照度标准值)
@@ -24,6 +25,7 @@
       | 危害→监护规则/PPE | 危害×检测→判定+作业分级 | 车间→照度检查
 用法: python3 -m knowledge.project_assess
 """
+import re
 import sys
 from pathlib import Path
 
@@ -33,9 +35,10 @@ from knowledge.identify_demo import split_materials  # noqa: E402
 from knowledge.judge_cli import (judge_chemical, judge_physical, judge_bio,  # noqa: E402
                                  get_oel, level_of)
 from knowledge.grade_engine import (grade_chemical, grade_dust, grade_heat,  # noqa: E402
-                                    WM_TABLE)
+                                    WM_TABLE, plan_grade, DUST_WM_HOLD, DUST_B_HOLD,
+                                    HEAT_INPUT_HOLD)
 
-# 物理因素→作业分级函数映射 (注意: 物理因素用 229 无单独函数, 高温/噪声走特殊)
+# 物理因素→判定函数映射 (判据是名字清单, 只用于**判定**分支; 作业分级不再走它, 见 _catalog_of)
 PHYSICAL_FACTORS = ("噪声", "高温", "手传振动", "工频电场", "微波辐射",
                     "超高频辐射", "高频电磁场", "紫外辐射")
 
@@ -71,15 +74,22 @@ def _parse_ctwa(v) -> float | None:
         return None
 
 
+# 关系式写法的分档 ('＜10' / '<10%' / '≥50') —— 检测行里的 sio2 有时存的就是这种字符串
+_SIO2_REL = re.compile(r"^([≤≥<>＝=＜＞]{1,2})\s*(\d+(?:\.\d+)?)\s*%?$")
+
+
 def _sio2_band(v) -> str | None:
-    """游离SiO2含量(%) → GBZ/T 229.1 表4 的分档键。
+    """游离SiO2含量(M, %) → GBZ/T 229.1—2025 表1 的分档键。
 
     ⚠ 关键: WM_TABLE 的键是**分档**("<10"/"10-50"/"50-80"/">80"),
       而检测报告(尤其视觉提取)给的是**原始百分数**(如 3.39)。
-      直接把 "3.39" 传进 WM_TABLE.get() 会取默认值 4 = **最坏分档** → 分级偏高。
-      必须先分档。
+      直接把 "3.39" 传进 WM_TABLE.get() 会命中不到档 → 旧实现兜到最坏档 (而且旧表的值是
+      2010 版的 1/2/3/4) → 分级既不对也不是"不知道"。必须先分档, 分不出就返回 None。
 
-    分档依据 GBZ/T 229.1 表4: <10 / 10-50 / 50-80 / >80 (%)
+    分档区间按 229.1—2025 第4页表1 逐格核对 (pdf_cells, span 原样顺序):
+      r1 'M＜10'→1 | r2 '10≤M≤50'→2 | r3 '50＜M≤80'→4 | r4 'M＞80'→6
+    → 边界是**左开右闭**递进: M=50 属 10-50 (WM=2), M=50.1 才进 50-80 (WM=4)。
+      旧实现写的是 `n < 50 → 10-50`, 把 M=50 这一格错分进了 50-80 (WM 2→4, 凭空升一档)。
     """
     if v is None:
         return None
@@ -87,18 +97,169 @@ def _sio2_band(v) -> str | None:
     # ① 已是分档键 → 原样返回 (必须先判, 否则 "<10"/">80" 会被 lstrip 改写)
     if s in WM_TABLE:
         return s
-    # ② 原始百分数 → 分档
+    # ② 写成关系式的分档 ('＜10' / '<10%' / '≥50'): 旧实现 `lstrip("<>＜≤")` 把 '＜10' 读成
+    #    10 → 落进 10-50 档 (WM 1→2, 分档反了)。关系式按**区间两端**认, 落在同一档才算认得出。
+    m = _SIO2_REL.match(s)
+    if m:
+        op, num = m.group(1), float(m.group(2))
+        strict = op in ("＜", "<", "＞", ">")
+        if op in ("＜", "<", "≤", "<="):
+            lo, hi = 0.0, num - (0.001 if strict else 0)
+        else:
+            lo, hi = num + (0.001 if strict else 0), 100.0
+        a, b = _sio2_band(lo), _sio2_band(hi)
+        return a if a and a == b else None
+    # ③ 原始百分数 → 按表1 的边界分档
     try:
-        n = float(s.lstrip("<>＜≤").strip())
+        n = float(s.lstrip("<>＜≤≥").strip().rstrip("%"))
     except (TypeError, ValueError):
         return None
     if n < 10:
         return "<10"
-    if n < 50:
+    if n <= 50:                      # 10≤M≤50 (含 50)
         return "10-50"
-    if n <= 80:
+    if n <= 80:                      # 50＜M≤80
         return "50-80"
     return ">80"
+
+
+# 目录/限值名里自带的游离SiO2 标注, 例如
+#   '滑石粉尘（游离SiO2 含量＜10%）' / '矽尘（游离SiO2含量≥10%）' / '稀土粉尘（游离SiO2含量<10 %）'
+# 判据是**标准自己的排版写法** (GBZ 2.1 给粉尘定限值时把分档写进了名字), 不是物质清单 ——
+# 将来新增任何粉尘条目, 只要照标准带这个标注就自动被认, 不需要同步任何名单。
+_SIO2_LABEL = re.compile(r"SiO\s*2\s*含量\s*[（(]?\s*([≤≥<>＝=＜＞]{1,2})\s*(\d+(?:\.\d+)?)\s*%")
+
+
+def _band_from_labels(names) -> tuple[str | None, str]:
+    """一组标准名里的游离SiO2 含量标注 → (唯一分档键 / None, 说明)
+
+    只在接受到**唯一**一档时才给键; 以下几种都必须让调用方走"未定级":
+      · 名字里没有标注            → (None, "本行未实测 M、目录名也未标注分档")
+      · '≥10%' 这类只给下限的标注 → 跨 10-50/50-80/>80 三档, 取哪一档都是编 (None 保留原因)
+      · 多条标注指向不同档        → 不自相裁决 (None)
+    """
+    pins, saw_label = [], False
+    for nm in names:
+        for op, num in _SIO2_LABEL.findall(str(nm or "")):
+            saw_label = True
+            x = float(num)
+            strict = op in ("＜", "<", "＞", ">")
+            # 把 "<10" 这类关系式变成一个取样区间, 两端都落在同一档才算 pin 住
+            if op in ("＜", "<", "≤", "<="):
+                lo, hi = 0.0, x - (0.001 if strict else 0)
+            else:                                    # ≥ / > 只给下限
+                lo, hi = x + (0.001 if strict else 0), 100.0
+            a, b = _sio2_band(lo), _sio2_band(hi)
+            if a and a == b and a not in pins:
+                pins.append(a)
+    if len(pins) == 1:
+        return pins[0], f"目录名标注 → {pins[0]}"
+    if not saw_label:
+        return None, "本行未实测 M、目录名也未标注分档"
+    return None, f"目录名标注跨多档({'、'.join(pins) or '只给≥下限'})，定不出唯一 WM"
+
+
+def _norm_factor_names(factor: str) -> tuple[str, str]:
+    """(原写法, 归一写法) —— 归一复用 web.entity_link.name_norm, 判据只有一份"""
+    from web.entity_link import name_norm
+    raw = str(factor or "").strip()
+    return raw, name_norm(raw)
+
+
+def _catalog_of(conn, factor: str) -> tuple[str | None, str | None, str]:
+    """检测行因子名 → (类别字段值, 命中的标准名, 命中途径)。
+
+    作业分级的**唯一**路由取数入口 (#39)。判据全部是库里的字段值, 没有任何物质名清单:
+      1) hazard_factor.name 精确 (归一后)  → category (职业病危害分类目录)
+      2) hazard_factor 双向前缀            → 覆盖 '石灰石粉尘（ 呼尘）'→'石灰石粉尘'、
+         '矽尘'→'矽尘（游离SiO2含量≥10%）' 这类带/缺尾部限定的写法
+      3) oel_limit.factor_name 精确/前缀   → factor_type (限值表自带的另一套类别字段:
+         化学有害因素/物理因素/粉尘/生物因素; '其他粉尘' 在那里是独立条目 '其他粉尘a')
+      4) hazard_factor.name 含检测名       → 覆盖目录里的长登记名
+      5) 全落空 → (None, …) 由调用方**显式降级并注明"未归类"**, 禁止默认按化学物分档
+      (与 web/section_filler._det_bucket 同一口径: 同一批因子在两处必须得同一类别)
+
+    ⚠ 已知的**保守边界** (2026-10-16 实测, 不是漏): 检测名只在限值表里以**别名+括注**登记时
+      (如 '2-丁酮' 在 oel_limit 里是 '甲乙酮（2-丁酮）'), 第 3/4 档都够不着 → 该行走"未归类"
+      并写明原因。为什么不加 `factor_name LIKE '%检测名%'` 这一档: 子串匹配会把短名误绑到
+      **别的类别** (如 '煤' 命中 '煤尘'), 而类别正是这次路由唯一的判据 —— 宁可显式降级,
+      也不能静默绑错部分。要收掉这条尾巴应在官方层补 alias 行 (hazard_factor_alias), 不是改判据。
+    """
+    raw, norm = _norm_factor_names(factor)
+    keys = [k for k in (norm, raw) if k]
+    for k in keys:
+        r = _ds_one(conn, "SELECT category, name FROM hazard_factor WHERE name=? LIMIT 1", (k,))
+        if r:
+            return r[0], r[1], "hazard_factor.name 精确"
+    for k in keys:
+        r = _ds_one(conn, "SELECT category, name FROM hazard_factor WHERE name LIKE ? "
+                          "ORDER BY LENGTH(name) LIMIT 1", (k + "%",))
+        if r:
+            return r[0], r[1], "hazard_factor 标准名以检测名开头"
+        r = _ds_one(conn, "SELECT category, name FROM hazard_factor WHERE ? LIKE name || '%' "
+                          "ORDER BY LENGTH(name) DESC LIMIT 1", (k,))
+        if r:
+            return r[0], r[1], "检测名以 hazard_factor 标准名开头"
+    for k in keys:
+        r = _ds_one(conn, "SELECT factor_name, factor_type FROM oel_limit WHERE factor_name=? "
+                          "OR factor_name LIKE ? ORDER BY LENGTH(factor_name) LIMIT 1", (k, k + "%"))
+        if r:
+            return r[1], r[0], "oel_limit.factor_type"
+    for k in keys:
+        r = _ds_one(conn, "SELECT category, name FROM hazard_factor WHERE name LIKE ? "
+                          "ORDER BY LENGTH(name) LIMIT 1", ("%" + k + "%",))
+        if r:
+            return r[0], r[1], "hazard_factor 标准名含检测名"
+    return None, None, "查无类别"
+
+
+def _oel_rows(conn, std_name: str, factor: str) -> list[tuple]:
+    """因子 (原写法 + 命中标准名) → oel_limit 接触限值行 [(factor_name,oel_type,value,unit)]
+    读门: oel_limit 有 source_standard 列 → 必须走 Dataset (`_ds_rows`), 不能裸 execute。
+    量纲 (oel_type/unit) 是物理因素二级路由的判据, 采样形态 (总尘/呼尘) 在这里配对。"""
+    rows: list[tuple] = []
+    for k in [x for x in dict.fromkeys([str(factor or "").strip(), str(std_name or "").strip()]) if x]:
+        rows.extend(_ds_rows(
+            conn, "SELECT factor_name, oel_type, value, unit FROM oel_limit "
+                  "WHERE factor_name=? OR factor_name LIKE ?", (k, k + "%")))
+    return list(dict.fromkeys(rows))
+
+
+def _paren_token(text: str) -> str:
+    """'石灰石粉尘（ 呼尘）' → '呼尘'; 无尾部括号 → '' (检测行的采样形态就在这儿)"""
+    m = re.search(r"[（(]([^（）()]*)[）)]\s*$", str(text or "").strip())
+    return re.sub(r"\s", "", m.group(1)) if m else ""
+
+
+def _dust_contact_ratio(d: dict, rows: list[tuple], factor: str) -> float | None:
+    """粉尘行的接触比值 B = CTWA / PC-TWA (229.1 式 A.1)。
+
+    采样形态配对 (判据来自字段值, 不是名单): 检测名尾部括号写了 '呼尘'/'总尘' 时,
+    只配 oel_type 里含同一个词的限值行; 没写时按 GBZ/T 192.1 的总尘理解 → 优先 '总尘' 行。
+    ⚠ 229.1 附录 A.3 要求"规定有呼吸性限值者优先测呼吸性粉尘并以此算 B" —— 本项目只测了
+      总尘时, 分级偏低, 这是数据来源的限制不是算法的; 报告里如需定级应补呼尘实测。
+    """
+    raw = _parse_ctwa(d.get("ctwa"))
+    cands = [r for r in rows if "TWA" in str(r[1] or "")]
+    token = _paren_token(factor)
+    if token:
+        hit = [r for r in cands if token in str(r[1] or "")]
+        cands = hit or cands
+    total = [r for r in cands if "总尘" in str(r[1] or "")]
+    cands = total or cands
+    if raw is not None:
+        vals = [float(r[2]) for r in cands if _is_num(r[2]) and float(r[2]) > 0]
+        if vals:
+            return raw / min(vals)          # 多档限值并存时取 B 较大者 (偏保守)
+    return None
+
+
+def _is_num(v) -> bool:
+    try:
+        float(str(v))
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 def merge_process_materials(conn, hazards: dict, process_text: str) -> dict:
@@ -460,6 +621,101 @@ def ppe_for_hazards(conn, hazards: list[dict]) -> list[dict]:
     return out
 
 
+def grade_detections(conn, detections: list[dict]) -> list[dict]:
+    """作业分级 (GBZ/T 229) 的路由 + 计算 —— 判据 = 库里的**类别字段**, 不是物质名清单。
+
+    路由: `hazard_factor.category` (兜底 `oel_limit.factor_type`) 决定 229.1/229.2,
+      物理因素再看该因子接触限值行的**量纲** (oel_type/unit) 分到 229.3 (WBGT) / 229.4 (dB(A));
+      放射性/生物/其他因素、类别查无、量纲无对应部分 → **明确不参与并写明原因**。
+      (旧写法 `"高温" in f` → `d.get("sio2")` → else 化学物, 会把没填 sio2 的粉尘行、噪声行
+       一律按 229.2 分档 → 成品「关键控制点表」给粉尘印化学物的式子, 依据标准选错部分。)
+    输出: 每个因子一条 (同一因子多采样点时"定出级的"赢过"未定级的");
+      定级行带 level/name/g/note, 未定级行 level=None 且 note 就是那句原因 ——
+      下游 (web/section_filler 的关键控制点表) 直接把 note 印进"依据标准"列, 所以
+      **不许静默丢行也不许静默套一个错的式子**: 没级就得让读者看到为什么。
+    """
+    grades_by_factor: dict = {}
+
+    def _put_grade(e: dict) -> None:
+        """同一因子多个采样点 → 只留一条, 且**定出级的那条赢过未定级的那条**。
+        下游 web/section_filler 的关键控制点表是 `for g in grades: _grade[factor]=g` (后写覆盖,
+        且该文件本轮不可改) —— 所以"未定级行不得抹掉已定级行"这个取舍必须在这里就钉死;
+        同为定级行时仍按后写覆盖, 与旧实现/下游口径逐字一致 (旧实现每行都追加, 靠的也是后写)。
+        """
+        old = grades_by_factor.get(e["factor"])
+        if old is not None and old.get("level") is not None and e.get("level") is None:
+            return
+        grades_by_factor[e["factor"]] = e
+
+    for d in detections or []:
+        f = d.get("factor")
+        if not f:
+            continue
+        labor = d.get("labor", "Ⅱ")
+        cat, std_name, via = _catalog_of(conn, f)
+        rows = _oel_rows(conn, std_name, f)
+        dims = [f"{r[1]}|{r[3] or ''}" for r in rows]
+        plan = plan_grade(cat, dims)
+        entry = {"factor": f, "category": cat, "part": plan["part"], "dims": dims,
+                 "route": f"{via}{'' if not cat else f'({cat})'}"}
+        if plan["engine"] is None:
+            _put_grade({**entry, "level": None, "name": None, "note": plan["reason"]})
+            continue
+        g = None
+        if plan["engine"] == "dust":
+            # WM 的两个来源: ①本行实测 M ②标准目录/限值名自带的分档标注; 都没有 → 未定级
+            band, why = _sio2_band(d.get("sio2")), ""
+            if band is None:
+                band, why = _band_from_labels([f, std_name] + [r[0] for r in rows])
+            if band is None:
+                _put_grade({**entry, "level": None, "name": None,
+                            "note": DUST_WM_HOLD.format(why)})
+                continue
+            b = _dust_contact_ratio(d, rows, f)
+            if b is None:
+                b = d.get("btw")
+            if b is None:
+                _put_grade({**entry, "level": None, "name": None, "note": DUST_B_HOLD})
+                continue
+            g = grade_dust(band, float(b), labor)
+        elif plan["engine"] == "heat":
+            # 229.3 表1 需要 WBGT 效应值 + 接触时间率。检测行的声明字段是 value/rate
+            # (judge_physical 用的就是这一对), 分级侧原来读的是没人写的 wbgt/rate_pct →
+            # 两边走法都认; 都没有实测值时**必须留"未定级+原因"**, 不能再拿 30℃/100% 造结论。
+            wbgt = d.get("wbgt") if d.get("wbgt") is not None else d.get("value")
+            rate = d.get("rate_pct") if d.get("rate_pct") is not None else d.get("rate")
+            m = re.search(r"(\d+(?:\.\d+)?)", str(rate)) if rate is not None else None
+            rate_pct = float(m.group(1)) if m else None
+            if not _is_num(wbgt):
+                _put_grade({**entry, "level": None, "name": None, "note": HEAT_INPUT_HOLD})
+                continue
+            g = grade_heat(labor, rate_pct if rate_pct is not None else 100, float(wbgt))
+        elif plan["engine"] == "noise":
+            g = None          # 229.4 原文不在仓库 → 只路由不造表 (reason 已写好)
+        else:                 # chemical: 计算与旧分支逐字一致 (本轮只改"谁能进这一支")
+            if d.get("wd") or d.get("b"):
+                g = grade_chemical(d.get("wd", "中度危害"), d.get("b", 0.5), labor)
+            else:
+                b = None
+                if d.get("ctwa") is not None:
+                    ctwa = _parse_ctwa(d["ctwa"])
+                    oel = get_oel(conn, f)
+                    if oel and ctwa is not None:
+                        b = ctwa / float(oel[0]["value"]) if float(oel[0]["value"]) > 0 else None
+                if b is not None:
+                    g = grade_chemical(d.get("wd", "中度危害"), b, labor)
+        if g:
+            _put_grade({**entry, **g})
+        elif plan["engine"] == "chemical":
+            pass              # 化学物行算不出 B/WD 时与旧实现一致: 不产分级行 (依据列留 '—')
+        else:
+            # 定不出来也要留行: 依据列写明"本该走 229 的哪一支、为什么没级", 不许静默
+            _put_grade({**entry, "level": None, "name": None,
+                        "note": plan["reason"] or "缺该部分分级所需的输入 → 未定级"})
+
+    return list(grades_by_factor.values())
+
+
 def assess_project(conn, project: dict) -> dict:
     """项目评估: 识别 + 判定 + 分级 + 监护 + PPE 全链"""
     # 1) 行业风险分类 + 行业链
@@ -540,43 +796,8 @@ def assess_project(conn, project: dict) -> dict:
             r = judge_chemical(conn, f, d.get("ctwa"), d.get("cste"), d.get("cme"),
                                d.get("peak"))
         judgements.append({"factor": f, **r})
-    # 4) 作业分级 (GBZ/T 229)
-    grades = []
-    for d in project.get("detections", []):
-        f = d["factor"]
-        labor = d.get("labor", "Ⅱ")
-        if "高温" in f:
-            g = grade_heat(labor, d.get("rate_pct", 100), d.get("wbgt", 30))
-        elif d.get("sio2"):
-            # sio2 可能是原始百分数(3.39) 或已分档("<10") → 统一分档后再查表
-            # ⚠ 不分档直接传数会命中 WM_TABLE 默认值 4(最坏分档) → 分级偏高
-            _band = _sio2_band(d["sio2"])
-            if _band:
-                # b = C/PC-TWA; ctwa 缺失时用 btw(接触比值) 兜底, 再退 0.5
-                _b = _parse_ctwa(d.get("ctwa"))
-                if _b is None:
-                    _b = d.get("btw")
-                if _b is None:
-                    _b = 0.5
-                g = grade_dust(_band, float(_b), labor)
-            else:
-                g = None
-        elif d.get("wd") or d.get("b"):
-            g = grade_chemical(d.get("wd", "中度危害"), d.get("b", 0.5), labor)
-        else:
-            # 化学物默认: 用检出浓度/限值 比例 + 中度危害
-            b = None
-            if d.get("ctwa") is not None:
-                ctwa = _parse_ctwa(d["ctwa"])
-                oel = get_oel(conn, f)
-                if oel and ctwa is not None:
-                    b = ctwa / float(oel[0]["value"]) if float(oel[0]["value"]) > 0 else None
-            if b is not None:
-                g = grade_chemical(d.get("wd", "中度危害"), b, labor)
-            else:
-                g = None
-        if g:
-            grades.append({"factor": f, **g})
+    # 4) 作业分级 (GBZ/T 229) —— 路由判据见 grade_detections()
+    grades = grade_detections(conn, project.get("detections") or [])
     # 5) PPE 建议
     ppe = ppe_for_hazards(conn, hazards)
     # 6) 接触水平汇总
@@ -682,9 +903,12 @@ def main():
             mark = "✅" if c["pass"] else "❌"
             print(f"    {mark} {c['rule']}: {c['value']} vs {c['limit']}")
     if result["grades"]:
-        print(f"\n📈 作业分级 (GBZ/T 229):")
+        print("\n📈 作业分级 (GBZ/T 229, 路由判据=库里的类别字段):")
         for g in result["grades"]:
-            print(f"  {g['factor']}: {g['name']} (G={g.get('g', '-')})")
+            lv = g.get("level")
+            tag = f"{lv} {g.get('name')}" if lv else "未定级"
+            print(f"  {g['factor']}: {tag} [{g.get('category') or '未归类'} → "
+                  f"{g.get('part') or '无对应部分'}] (G={g.get('g', '-')}) {g.get('note', '')}")
     if result["ppe"]:
         print(f"\n🧤 PPE 建议 (GB 39800):")
         for p in result["ppe"]:

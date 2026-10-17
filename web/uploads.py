@@ -26,7 +26,12 @@ import shutil
 import uuid
 from pathlib import Path
 
-MATERIAL_ROOT = Path(__file__).resolve().parent.parent / "data" / "materials"
+from knowledge.paths import MATERIALS_DIR
+# 材料存储根: 唯一产地在 knowledge/paths.py (与 DB_PATH 同源)。
+# 以前这里是自己 `Path(__file__).parent.parent/"data"/"materials"` 算一遍, 与
+# web/projects_db.MATERIALS_DIR 是**两把尺子** —— 一旦库被指到别处而这里没跟着走,
+# cleanup_expired() 就会把真实材料判成"孤儿"删掉 (本地 193MB)。
+MATERIAL_ROOT = MATERIALS_DIR
 # 单文件上传上限
 # ⚠ 20MB 太小 (实测 2026-09): 类比检测报告是**扫描件 PDF**, 长兴那份 21MB / 125 页
 #   → 被 20MB 拒绝 → 视觉提取跑不到 → detections 全丢 / SiO2 3.39 丢失。

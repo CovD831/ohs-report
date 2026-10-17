@@ -7,8 +7,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from web.factor_clean import clean_factor_name  # noqa: E402
+from knowledge.paths import VISION_CACHE_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
 
-CACHE = ROOT / "data" / "vision_cache" / "a66517be268181e6.json"
+CACHE = VISION_CACHE_DIR / "a66517be268181e6.json"
 if not CACHE.exists():
     print(f"SKIP: 样本缓存不存在 ({CACHE}) — 服务器无 vision_cache 属预期")
     sys.exit(0)

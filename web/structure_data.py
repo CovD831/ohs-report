@@ -412,8 +412,8 @@ def get_chapter_info(sec: str, project: dict, assess: dict | None = None) -> str
             if region:
                 try:
                     import json as _json
-                    from pathlib import Path as _P
-                    _fp = _P(__file__).resolve().parent.parent / "data" / "region_facts.json"
+                    from knowledge.paths import DATA_DIR  # 数据目录唯一产地, 认 OHS_DATA_DIR
+                    _fp = DATA_DIR / "region_facts.json"
                     _d = _json.loads(_fp.read_text(encoding="utf-8"))
                     _f = _d.get(region) if isinstance(_d, dict) else None
                     if isinstance(_f, dict):

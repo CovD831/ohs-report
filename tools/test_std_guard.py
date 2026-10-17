@@ -102,11 +102,23 @@ _c2.execute("CREATE TABLE standard_db (code TEXT, name TEXT, state TEXT, replace
 check("空库 → 0 命中且不崩",
       scan_superseded("GB/T 23466-2009", _c2), [])
 
-# ---------- 4. 真实 DB (若存在) ----------
-print("\n### 4. 真实 standard_db")
-db = ROOT / "data" / "ohs.db"
-if db.exists():
-    rc = sqlite3.connect(db)
+# ---------- 4. 真实 standard_db (必须跑; 跑不了就是失败, 不是"跳过") ----------
+# 上一版是 `if db.exists(): sqlite3.connect(db) ... else: print("(无 data/ohs.db, 跳过)")`
+# —— 两个问题 (S1c″ D4′):
+#   ① 硬编码 ROOT/data + **可写模式**打开: 本文件在 GUARD_TESTS 里, 容器里 ROOT/data 就是
+#      挂进去的生产库, 每次"切流量前跑守卫套"都给生产库开一次可写连接;
+#   ② 缺库时 print 一句就走, 退出码 0 → 这两条 check **从没执行过也算绿** ("绿而没测")。
+# 现在: 只读工厂 + 路径来自 DB_PATH(认 OHS_DATA_DIR) + 读不到就记一条失败。
+from knowledge.oel import OfficialSchemaMissing, connect_ro      # noqa: E402
+from knowledge.paths import DB_PATH                              # noqa: E402
+
+print(f"\n### 4. 真实 standard_db (DB={DB_PATH})")
+try:
+    rc = connect_ro()
+except (sqlite3.Error, OfficialSchemaMissing) as e:
+    check(f"官方数据层不可读 → 第 4 节无法执行 ({type(e).__name__}: {e})", "不可读", "可读")
+    rc = None
+if rc:
     rm = superseded_map(rc)
     check("真实库黑名单非空", len(rm) > 0, True)
     check("★23466 旧版在真实黑名单",
@@ -125,8 +137,7 @@ if db.exists():
                 hits = scan_superseded(_read_any(str(p)), rc)
                 print(f"    {p.name}: {len(hits)} 处废止引用 {[h['norm'] for h in hits]}")
     rc.close()
-else:
-    print("    (无 data/ohs.db, 跳过)")
+
 
 print()
 print(f"通过 {ok} / {ok + fail}")

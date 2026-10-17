@@ -20,7 +20,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DB = ROOT / "data" / "ohs.db"
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
+DB = DB_PATH
 
 # 旧表号 → 新表号 (按内容主题一一对应; 章号平移遗留)
 REMAP = {

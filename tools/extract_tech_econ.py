@@ -18,7 +18,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "data" / "tech_econ.json"
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DATA_DIR, MATERIALS_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
+OUT = DATA_DIR / "tech_econ.json"
 
 # 「主要技术经济指标」表头特征 (可研 表1.2-11)
 _HDR = ("项目名称", "单位")
@@ -98,7 +100,7 @@ def extract(pdf_path: str) -> dict:
 
 def main():
     write = "--write" in sys.argv
-    mat = ROOT / "data" / "materials"
+    mat = MATERIALS_DIR
     results = {}
     for mdir in sorted(mat.glob("*")):
         if not mdir.is_dir():
@@ -117,7 +119,7 @@ def main():
             print(f"  [错误] {mdir.name}: {e}")
     if write and results:
         # 按项目 id 存
-        allf = ROOT / "data" / "tech_econ.json"
+        allf = OUT
         old = json.loads(allf.read_text(encoding="utf-8")) if allf.exists() else {}
         old.update(results)
         allf.write_text(json.dumps(old, ensure_ascii=False, indent=2), encoding="utf-8")

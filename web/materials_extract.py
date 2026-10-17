@@ -17,10 +17,14 @@
 """
 import csv
 import json
+import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from knowledge.paths import MATERIALS_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
+
 REPORT = Path("/Users/abaaba/Desktop/law/职业病危害预评价报告/长兴--预评（备案稿7-31）_extracted.json")
-OUT = Path(__file__).resolve().parent.parent / "data" / "materials"
+OUT = MATERIALS_DIR
 OUT_DIR = OUT
 
 

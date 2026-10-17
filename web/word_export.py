@@ -21,7 +21,7 @@ from docx.oxml import OxmlElement
 from docx.shared import Cm, Pt  # noqa: E402
 
 from knowledge.project_assess import assess_project  # noqa: E402
-from knowledge.oel import connect  # noqa: E402
+from knowledge.oel import connect_ro  # noqa: E402  (S1c′ D1: 导出是读路径)
 from web.report_struct import CHAPTERS, SUBS, SUBS3, SUBS4  # noqa: E402
 from web.paragraph_gen import gen_paragraphs  # noqa: E402
 from web.section_filler import fill_section  # noqa: E402
@@ -67,8 +67,13 @@ _SUB_TABLE_MAP = {
     # h11/h14: 4.4 类比企业职业病危害因素检测 → 检测表落点 = 4.4.2 检测结果与评价
     # (4.4 有三级子节 4.4.1/4.4.2 → walk 的叶子规则: 二级不挂表, 表跟随叶子三级节;
     #  挂 "4.4" 会被静默跳过 — 即 test_table_mounts 防的那类失败)。
-    # 检测结果表(化学毒物/粉尘…)前缀匹配 + h14 物理因素独立表, 同节一次挂出。
-    "4.4.2": ("4", ["检测结果表", "物理因素检测结果表"]),
+    # wanted 必须写**分桶全名**且按原报告取证序 (粉尘→化学毒物→物理), 与
+    # ORIG_TABLE_NOS/ORIG_CAPTIONS["4.4.2"] 槽位平行:
+    #   旧写法 ("检测结果表", 基名前缀匹配) 让粉尘/化学毒物同抢 slot0,
+    #   _wseq 稳定排序保 fill 现算序 = detections 因素出现序 (defaultdict 插入序)
+    #   → 同一类表跨项目编号不一致 (ada=表4.4-1 粉尘 / c8=表4.4-1 化学毒物, 2026-10-14 实测)。
+    #   未知分桶变体 (如检测结果表(噪声)) 由 _tables_for_sub 的基名兜底放行, 排尾部自动编号。
+    "4.4.2": ("4", ["检测结果表(粉尘)", "检测结果表(化学毒物)", "物理因素检测结果表"]),
     "5.1.1.2": ("5", ["危害因素识别表"]),  # 表5.1-1 危害因素分布一览
     "5.1.4": ("5", ["施工危害因素表"]),  # 表5.1-1 建筑施工过程中劳动者接触的主要职业病危害因素 (真稿表10.1-3)
     "5.2.1": ("5", ["健康影响表"]),  # 表5.2-1 化学因素健康影响
@@ -398,13 +403,19 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     if not wanted:
         return tables
     # 前缀/包含匹配 (检测结果表(化学毒物) 匹配 '检测结果表') — 规则见 _match_wanted
+    # 未知变体兜底基名集: wanted 里带括号的条目去掉括号 = 分桶基名 (如 检测结果表)。
+    # 数据新出现而 ORIG 未取证的变体桶 (如 检测结果表(噪声)) 必须上纸 —
+    # 静默丢弃正是本套回归防的那类失败; 放行者排尾部走自动编号, 不挤占取证槽位。
+    bases = {w.split("(")[0].split("（")[0] for w in wanted if "(" in w or "（" in w}
     res = []
     for t in tables:
-        if _match_wanted(wanted, t["name"]) is None:
-            continue
+        nm = t["name"]
+        if _match_wanted(wanted, nm) is None:
+            if not any(nm.startswith(b) and len(nm) > len(b) for b in bases):
+                continue
         # 去重: 同一"节+表名"只出现一次; 不同节允许复用同名表
         # (原报告同一张检查表在 2.3 现状/6.2 评价/10.4 建议多处出现)
-        key = f"{sub}:{t['name']}"
+        key = f"{sub}:{nm}"
         if key not in _USED_TABLES:
             _USED_TABLES.add(key)
             res.append(t)
@@ -413,7 +424,8 @@ def _tables_for_sub(conn, sec: str, sn: str, assess: dict) -> list[dict]:
     # fill 现算顺序与 wanted 偏离时都要归位, 否则出现「表4.2-2 排在 表4.2-1 前」类错序
     def _wseq(t):
         p = _match_wanted(wanted, t["name"])
-        return p if p is not None else len(wanted)   # 稳定排序, 同位次保 fill 原序
+        # 未知变体 (p=None) 统一排尾且按名定序 — 跨项目稳定, 不吃 fill 现算的数据出现序
+        return (len(wanted), t["name"]) if p is None else (p, "")
 
     res.sort(key=_wseq)
     return res
@@ -901,7 +913,7 @@ def export_docx(project: dict, assess: dict, out_path: Path, section_states: dic
     _NUM_COUNTER = [99]
     global _NUM_ROOT
     _NUM_ROOT = None  # numbering root 重置 (防跨导出重复定义)
-    conn = connect()
+    conn = connect_ro()   # 只读: 导出全程 0 处写类 SQL (tools/db_writers.py 口径)
     doc = Document()
     # 页面 A4 + 边距
     for section in doc.sections:
@@ -1261,6 +1273,20 @@ def _write_tables_named(doc, sn: str, tables: list[dict]):
     caps = ORIG_CAPTIONS.get(sn, [])
     _m = _SUB_TABLE_MAP.get(sn)
     wanted = (_m[1] if _m else []) or []
+    # 取证节里溢出槽位的表走 else 自动编号时, 起号须接在**同编号节 (表{cap}-*) 已取证的
+    # 最大号**之后, 否则回退编号会与 ORIG 槽位号撞车 (同节两张 表X-N)。
+    if nos and cap not in _TABLE_SEQ:
+        pref = f"表{cap}-"
+        mx = 0
+        for _v in ORIG_TABLE_NOS.values():
+            for _n in _v:
+                _s = str(_n)
+                if _s.startswith(pref):
+                    try:
+                        mx = max(mx, int(_s[len(pref):]))
+                    except ValueError:
+                        pass
+        _TABLE_SEQ[cap] = mx
     # 三名单位次一一对应 (wanted[i] ↔ nos[i] ↔ caps[i]) 才可按名配对
     parallel = bool(wanted) and len(nos) == len(caps) == len(wanted)
     used: set = set()
@@ -1360,7 +1386,7 @@ def main():
     if not p:
         print("项目不存在")
         return
-    conn = connect()
+    conn = connect_ro()
     project = {"name": p["name"], "industry": p["data"].get("industry", ""),
                "equipment": p["data"].get("equipment", []),
                "detections": p["data"].get("detections", []),

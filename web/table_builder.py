@@ -24,11 +24,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from web.number_provenance import prov_llm, prov_rule  # noqa: E402
+from knowledge.paths import DATA_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
 
 TABLES_KEY = "built_tables"  # 存在 project.data 里
 
-_CACHE_PATH = Path(__file__).resolve().parent.parent / "data" / "llm_tables_cache.json"
-_REGION_FACTS_PATH = Path(__file__).resolve().parent.parent / "data" / "region_facts.json"
+_CACHE_PATH = DATA_DIR / "llm_tables_cache.json"
+_REGION_FACTS_PATH = DATA_DIR / "region_facts.json"
 
 
 def load_region_facts(region: str) -> dict:

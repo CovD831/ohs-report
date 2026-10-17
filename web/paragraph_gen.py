@@ -106,8 +106,8 @@ def fill_section_paragraphs(conn: sqlite3.Connection, sec: str, assess: dict,
 if __name__ == "__main__":
     import json
     from knowledge.project_assess import assess_project
-    from knowledge.oel import connect
-    conn = connect()
+    from knowledge.oel import connect_ro
+    conn = connect_ro()
     r = assess_project(conn, {"name": "t", "industry": "261", "equipment": ["酯化釜"]})
     for sec in ("1", "2", "3", "6"):
         print(f"=== {sec} ===")

@@ -152,7 +152,7 @@ def build_standard_tables(data: dict, conn=None,
     errs: list[str] = []
     try:
         if conn is None:
-            from knowledge.oel import connect as _c
+            from knowledge.oel import connect_ro as _c
             conn = _c()
     except Exception as e:
         print(f"[table_skeleton] 标准库连接失败: {e}")

@@ -12,10 +12,12 @@ ROOT = next((p for p in (Path("/app"), Path(__file__).resolve().parent.parent)
              if (p / "web" / "app.py").exists()), Path(__file__).resolve().parent.parent)
 sys.path.insert(0, str(ROOT))
 
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 路径走 knowledge.paths 单一产地)
+
 
 def main():
     pid = sys.argv[1] if len(sys.argv) > 1 else "c8c7ff0a4d"
-    conn = sqlite3.connect(str(ROOT / "data" / "ohs.db"))
+    conn = connect_ro()
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT data FROM project WHERE id=?", (pid,)).fetchone()
     data = json.loads(row["data"])

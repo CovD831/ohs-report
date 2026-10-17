@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from knowledge.oel import connect  # noqa: E402
+from knowledge.pdf_cells import digit_bag, nospace  # noqa: E402  (#36 同形尺子的唯一产地, 读侧复用同一份)
 from web.number_provenance import prov_rule  # noqa: E402
 
 # 可研「主要技术经济指标」表缓存 (tools/extract_tech_econ.py → data/tech_econ.json)
@@ -168,6 +168,379 @@ _PHYS_INTERVAL = (
     ("射频", 0.001, 100000.0),
     ("振动", 0.01, 1000.0),
 )
+
+
+def _det_bucket(conn, fac: str) -> tuple[str, str | None]:
+    """检测行的因素名 → (显示用 dtype, 依据)。分桶**从标准库派生**, 不写物质名清单。
+
+    修前的口径 (#34, 2026-10-16 实测): `hazard_factor WHERE name LIKE '<检测名>%'` ——
+      匹配方向是反的: 检测报告里的名字带采样方式后缀 ("滑石粉尘(呼尘)"), 标准库名才是短的
+      那一侧, 于是"标准名以检测名开头"永远落空; 落空就默认"化学毒物" → 4 个项目 11 个
+      含尘/烟的检测名里 **7 个错桶** (滑石粉尘(呼尘)、石灰石粉尘（ 总尘）、其他粉尘(树脂)、
+      其他粉尘（环氧树脂）…), 粉尘行被印进化毒物表。
+    现在的链 (每一环都是查库):
+      1) 归一后的名精确命中 hazard_factor.name;
+      2) **双向**前缀: 标准名是检测名的前缀, 或标准名以检测名开头 —— 覆盖
+         "其他粉尘" → "以上未提及的可导致职业病的其他粉尘" 这类长登记名;
+      3) 退到 oel_limit.factor_type (接触限值表本身就按 粉尘/化学因素 分类, 且"其他粉尘"
+         在那里是独立条目 '其他粉尘a' —— 表1 的脚注 a 被连名一起入库了);
+      4) 全落空 → 默认"化学毒物"并**点名** (见 _det_by_type 的日志), 不许静默。
+    返回的 basis=None 就是"第 4 档"的记号, 调用方必须让它可见。
+    """
+    from web.entity_link import name_norm
+    n = name_norm(fac)
+    ds = _ds(conn)
+    if not n:
+        return "化学毒物", None
+    row = ds.one("SELECT category FROM hazard_factor WHERE name=?", (n,))
+    if row and row[0]:
+        return _dtype_of(row[0]), f"hazard_factor.name 精确 ({row[0]})"
+    row = ds.one("SELECT category FROM hazard_factor WHERE name LIKE ? ORDER BY LENGTH(name) DESC LIMIT 1",
+                 (n + "%",))
+    if row and row[0]:
+        return _dtype_of(row[0]), "hazard_factor 标准名以检测名开头"
+    row = ds.one("SELECT category FROM hazard_factor WHERE ? LIKE name || '%' "
+                 "ORDER BY LENGTH(name) DESC LIMIT 1", (n,))
+    if row and row[0]:
+        return _dtype_of(row[0]), "检测名以 hazard_factor 标准名开头"
+    row = ds.one("SELECT factor_type FROM oel_limit WHERE factor_name=? OR factor_name LIKE ? "
+                 "ORDER BY LENGTH(factor_name) LIMIT 1", (n, n + "%"))
+    if row and row[0]:
+        return _dtype_of(row[0]), "oel_limit.factor_type (接触限值表)"
+    # 3.5) #51: 名字只差空格/下标位置 (名内多一个空格、括号限定写法不同) → 先解析成规范名再查类别
+    canon, _mode, how = _resolve_oel_name(conn, fac)
+    if canon:
+        rs = _name_index(conn)[0]["by_name"].get(canon, ())
+        if rs and rs[0][5]:
+            return _dtype_of(str(rs[0][5])), f"#51 解析 → oel_limit.factor_type ({how} → {canon})"
+    # 3.6) #37: 名字是"组名下的子条目" (官方层把它放在 conditions 列) → 用那一行自己的 factor_type
+    srows, smain, sstat = _resolve_oel_sub(conn, fac)
+    if sstat == "sub_resolved" and srows and srows[0][5]:
+        return _dtype_of(str(srows[0][5])), f"#37 子条目档 → oel_limit.factor_type ({smain})"
+    return "化学毒物", None
+
+
+def _dtype_of(category: str) -> str:
+    """标准库 category → 检测表的显示分桶名。物理类在上游已被 _is_phys_factor 分流。"""
+    return {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(category, "化学毒物")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# #51 名内空格/下标位置 → 查不到限值 → 假陈述   |   #50 非因素行被当成检测因素印上纸
+# (2026-10-17 取证, 成品逐格读字 §7.4; 判据一律从**数据/结构**派生, 无物质名白名单)
+# ════════════════════════════════════════════════════════════════════════════
+# 数值单元格谓词: 与导入侧 web/report_parser.py 的 `([<>≤≥]?\s*)?\d+(\.\d+)?` 同一形状
+# (检测表里"有没有测得值"必须由材料自己的数值列形状说, 不由物质名说)
+_NUM_CELL = re.compile(r"^[<>≤≥]?\s*\d+(?:\.\d+)?$")
+# 结尾括号限定 (总尘/呼尘/游离SiO2含量<10% …) —— 只取**最外层结尾那一对**
+_PAREN_TAIL = re.compile(r"（[^（）]*）$|\([^()]*\)$")
+# 官方层"名字"列 (判"这个名字属不属于已知因素名 namespace"的全部来源)
+_OFFICIAL_NAME_COLS = (("factor_name", "oel_limit"), ("name", "hazard_factor"),
+                       ("oel_name", "hazard_factor_alias"), ("oel_factor", "material_dictionary"),
+                       ("factor", "health_effect"))
+# #36 索引口径: 参与判同的串至少 2 个"字母/汉字" (库里有 '苯'/'氨' 这类单字名,
+# 不设这条就会让 '采样日期：2024.04.07' 这种串被某个单字名"包含命中"救活 ——
+# 同一个常量在 tools/test_oel_subscripts.py 也有, 两处同值不同源, 改动要同批)
+_MIN_LETTERS = 2
+_NAME_MEMO: list = []   # [(conn, data_version, (oel索引, hazard_cas索引, 官方名全集))]
+
+
+def _letters_only(s: str) -> str:
+    """#36 同形规则的一半: 去掉数字与**所有空白**(含全角空格 U+3000)后的字母汉字序列。
+    与 tools/fix_oel_subscripts._letters_only 是同一条表达式 —— 那侧是写 (存量迁移),
+    这侧是读 (成品查限值); 两处口径必须一致, 否则"迁移说没问题、导出还说查不到"。
+    """
+    return re.sub(r"\d", "", nospace(s))
+
+
+def _name_index(conn):
+    """官方层名字索引 (按 连接对象 + PRAGMA data_version 复用, 与 Dataset 门同一寿命口径)。
+
+    → (oel, hfcas, universe)
+      oel:      {"by_name": {factor_name: [行]}, "ns": {去空白名: {名}}, "shape": {(字母序列, 数字多重集): {名}}}
+      hfcas:    {"ns": {去空白 hazard_factor.name: cas}, "shape": {(字母序列, 数字多重集): cas}}
+      universe: 官方层全部不同名 (五列并集) —— 只用于"包含命中"这条**保行**判据 (宁留不误删)
+    """
+    dv = conn.execute("PRAGMA data_version").fetchone()[0]
+    if _NAME_MEMO and _NAME_MEMO[0][0] is conn and _NAME_MEMO[0][1] == dv:
+        return _NAME_MEMO[0][2]
+    ds = _ds(conn)
+    by_name: dict = {}
+    for r in ds.rows("SELECT factor_name, oel_type, value, unit, cas, factor_type, source_standard "
+                     "FROM oel_limit ORDER BY id"):
+        if r[0] is None:
+            continue
+        by_name.setdefault(str(r[0]), []).append(r)
+    ns: dict = {}
+    shape: dict = {}
+    for nm in by_name:
+        if len(_letters_only(nm)) >= _MIN_LETTERS:
+            ns.setdefault(nospace(nm), set()).add(nm)
+            shape.setdefault((_letters_only(nm), digit_bag(nm)), set()).add(nm)
+    hfn: dict = {}
+    hfshape: dict = {}
+    for nm, cas in ds.rows("SELECT name, cas FROM hazard_factor WHERE name IS NOT NULL"):
+        if cas and len(_letters_only(str(nm))) >= _MIN_LETTERS:
+            hfn.setdefault(nospace(str(nm)), str(cas))
+            hfshape.setdefault((_letters_only(str(nm)), digit_bag(str(nm))), str(cas))
+    universe: set = set()
+    for col, tbl in _OFFICIAL_NAME_COLS:
+        universe |= {str(r[0]) for r in ds.rows(f"SELECT DISTINCT {col} FROM {tbl} "
+                                                f"WHERE {col} IS NOT NULL")}
+    # #37 子条目档的索引 (2026-10-17): 官方层把**组名的子条目**存在 conditions 列 ——
+    #   钒 1248/1249、钼 1389/1390、铅 1404/1405、铜 1479/1480、铝尘 1618/1619、
+    #   麻尘 1620-1622、石棉 1639/1640、镍 1399/1400 (实测 conditions 非空 105 行里 22 行是这形状)。
+    #   报告里写的往往就是子条目名, 而 by_name/ns/shape 三把尺子只看 factor_name 那一侧 →
+    #   标准明明给了 1 mg/m3, 成品只能印 '—'。这里按 conditions 再建一把, 行形状与 by_name 一致。
+    sub_rows: dict = {}
+    sub_owner: dict = {}
+    for r in ds.rows("SELECT factor_name, oel_type, value, unit, cas, factor_type, source_standard, "
+                     "conditions FROM oel_limit WHERE conditions IS NOT NULL ORDER BY id"):
+        key = nospace(str(r[7]))
+        if len(_letters_only(str(r[7]))) < _MIN_LETTERS:
+            continue                       # 单字/纯数字的 conditions 是方式词或脚注, 不当名用
+        sub_rows.setdefault(key, []).append(tuple(r[:7]))
+        sub_owner.setdefault(key, set()).add(str(r[0]))
+    # 片段筛 (判据从库里推, 不写"方式词表"): 子条目名如果只是**某个已登记名的片段**, 就不许当名用
+    #   —— 否则检测表里的 '粉尘'/'纤维' 这类采样方式词会被绑到 石棉（石棉含量＞10%） 那一档。
+    #   留下来的键 (本机实测 84 个) 里确实含 '10 %≤游离SiO2含量≤50 %' 这类**区间描述** (矽尘那一族),
+    #   它们只有在"检测名字面就是这个区间"时才会命中 —— 那一刻绑到区间所在的那一行正是对的数,
+    #   所以不额外加区间词表 (加了就是白名单)。
+    _ns_names = {nospace(nm) for nm in by_name}
+    sub_ok = {k: not any(k in other for other in _ns_names if other != k) for k in sub_rows}
+    idx = ({"by_name": by_name, "ns": ns, "shape": shape,
+            "sub_rows": sub_rows, "sub_owner": sub_owner, "sub_ok": sub_ok},
+           {"ns": hfn, "shape": hfshape}, universe)
+    _NAME_MEMO.clear()
+    _NAME_MEMO.append((conn, dv, idx))
+    return idx
+
+
+def _resolve_oel_name(conn, fac: str) -> tuple[str | None, str | None, str]:
+    """检测/识别名 → (oel_limit 里的规范名, 采样方式限定, 依据/落空原因)。
+
+    为什么要在**读侧**再解析一次 (#51, 2026-10-17 生产成品逐格取证 §7.4):
+      '石灰石粉尘（ 总尘）'、'沉淀二氧 化硅（ 总尘）'、'稀土粉尘（游离SiO2含量<10%）'
+      这类名与标准库写法只差**一个空格/下标位置**, 精确匹配 0 命中 → 成品限值列印 '—'
+      且备注写"未制定职业接触限值" —— 而标准里明明给了限值。那是**假陈述**, 不是排版问题。
+    四道前提 (#36 写侧四前提的读侧版, 一条都不靠物质名清单):
+      ① 同形: 字母汉字序列相同 (_letters_only) 且 数字多重集相同 (digit_bag) —— 只许差空格/
+         下标位置, 不许换物质 ('1-硝基丙烷'/'2-硝基丙烷' 就是被 digit_bag 分开的);
+      ② 唯一命中: 该形状在 oel_limit.factor_name 上恰好对应 1 个规范名, **多命中就交人工** (不猜);
+      ③ 同行绑定的读侧替代 = 采样方式词必须在该规范名自己的 `oel_type` 列里有登记
+         (总尘/呼尘 的词表来自库, 不是这里写的), 否则不把括号限定接上;
+         CAS 交叉核对: hazard_factor 侧与 oel_limit 侧都有 CAS 时必须相等;
+      ④ 落空/被拒 → 返回 (None, None, 原因), 调用方**保留该行**并写诚实备注, 不静默。
+    ⚠ 能力边界: #36 写侧的 前提⑤ 是直接对一手 GBZ 2.1—2019 PDF 做 `row_map`/`value_in_row`
+      "名字与限值同行"绑定, 而生产容器**不带一手 PDF** (§7.6: acquire/raw 被打包排除) →
+      读侧只能用库里自己的 CAS/oel_type 交叉核对; 库内无 CAS 的粉尘行 (如 稀土粉尘) 这一环是空的,
+      只剩 ①② 的唯一命中兜住 —— 这条边界由 tools/test_det_rows.py 的"歧义变异"证明会拒判。
+    """
+    oel, hfcas, _univ = _name_index(conn)
+    n = nospace(fac)
+    if not n or len(_letters_only(fac)) < _MIN_LETTERS:
+        return None, None, "no_anchor"
+
+    def _ns_hits(key: str) -> set:
+        got = set(oel["ns"].get(key, ()))
+        got |= {nm for k, s in oel["ns"].items() if len(k) > len(key) and k.startswith(key)
+                for nm in s}
+        return got
+
+    # ③' 采样方式限定: 结尾括号里的词必须在该名的 oel_type 里登记过
+    def _with_mode(cands: set, mode: str) -> set:
+        return {nm for nm in cands
+                if any(mode in nospace(str(r[1])) for r in oel["by_name"].get(nm, ()))}
+
+    cands: set = set()
+    how = mode = None
+    if not cands:
+        cands, how = _ns_hits(n), "去空白后精确/前缀命中 oel_limit (空格族)"
+    if not cands:
+        m = _PAREN_TAIL.search(n)
+        if m:
+            head, mode = n[:m.start()], nospace(m.group(0))[1:-1]
+            cands = _with_mode(_ns_hits(head), mode) if head else set()
+            how = f"结尾括号限定「{mode}」→ oel_type 同词登记 (方式词表来自库)"
+    if not cands:
+        cands = set(oel["shape"].get((_letters_only(fac), digit_bag(fac)), ()))
+        how = "同形唯一命中 (字母汉字序列+数字多重集, #36 尺子)"
+    if not cands:
+        return None, None, "no_anchor"
+    if len(cands) > 1:
+        return None, None, f"ambiguous({len(cands)})"
+    nm = next(iter(cands))
+    a = hfcas["ns"].get(n) or hfcas["shape"].get((_letters_only(fac), digit_bag(fac)))
+    b = next((str(r[4]) for r in oel["by_name"].get(nm, ()) if r[4]), "")
+    if a and b and a.replace(" ", "") != b.replace(" ", ""):
+        return None, None, "cas_conflict"
+    return nm, mode, how
+
+
+def _resolve_oel_sub(conn, fac: str) -> tuple[list, str | None, str]:
+    """#37 子条目档: 名字是官方层放在 `conditions` 列里的**组名子条目**时, 取它自己那一行。
+
+      → (行集, 所属主名, status)   status ∈ sub_resolved | sub_ambiguous | sub_generic | no_sub
+
+    三条前提 (一条都不靠物质名清单):
+      ① 去空白后**逐字相等**才认 —— 不做前缀/包含: 同一组的子条目之间互为前缀的情况库里就有
+         ('金属镍与难溶性镍化合物' 与 '可溶性镍化合物' 共享 '镍化合物' 三个字的尾巴);
+      ② 该子名只属于 **1 个主名** (多主名 = 歧义 → 交人工, 不猜);
+      ③ 片段筛 `sub_ok`: 子名不得是某个已登记名的片段 (见 _name_index 里那段注释)。
+    ⚠ 返回的行集**已按子名筛过**, 不是整组行: 镍那一组是 金属镍与难溶性镍化合物=1 /
+      可溶性镍化合物=0.5, 把整组交给宽表会让两档互相覆盖 (后写的赢), 那就是新的错位假数。
+    """
+    oel, _hfcas, _univ = _name_index(conn)
+    n = nospace(fac)
+    if not n or n not in oel["sub_rows"]:
+        return [], None, "no_sub"
+    if not oel["sub_ok"].get(n):
+        return [], None, "sub_generic"
+    owners = oel["sub_owner"].get(n, set())
+    if len(owners) != 1:
+        return [], None, "sub_ambiguous"
+    return oel["sub_rows"][n], next(iter(owners)), "sub_resolved"
+
+
+def _oel_rows_for(conn, fac: str) -> tuple[list, str | None, str | None, str]:
+    """接触限值表/分桶的取数入口: 先走现路径, 落空再走 #51 解析, 再落空走 #37 子条目档。
+
+    → (行集, 规范名, 采样方式限定, status)
+      status ∈ exact(原路径命中) | resolved(解析命中) | ambiguous(多命中, 交人工)
+               | no_anchor(标准库无此名) | cas_conflict(CAS 对不上, 交人工)
+    """
+    oel, _hfcas, _univ = _name_index(conn)
+    rows = list(oel["by_name"].get(fac, ()))
+    if not rows:
+        rows = [r for nm, rs in oel["by_name"].items() if str(nm).startswith(fac) for r in rs]
+    if rows:
+        return rows, fac, None, "exact"
+    canon, mode, why = _resolve_oel_name(conn, fac)
+    if canon:
+        got = oel["by_name"].get(canon, [])
+        if got:
+            return got, canon, mode, "resolved"
+        return [], None, None, "no_anchor"
+    # #37: 因子名是"组名下的子条目"时 (官方层把它存在 conditions 列), factor_name 那一侧永远查不到
+    srows, smain, sstat = _resolve_oel_sub(conn, fac)
+    if sstat == "sub_resolved":
+        return srows, smain, None, "resolved"
+    # why 里可能带命中数 ('ambiguous(2)') → 归一成状态词, 调用方按状态措辞, 不解析计数串
+    status = "ambiguous" if str(why).startswith("ambiguous") else why
+    if sstat == "sub_ambiguous":
+        status = "ambiguous"          # 子名跨多个主名 → 与"多命中交人工"同一措辞, 不硬选一个
+    return [], None, None, status
+
+
+def _det_anchored(conn, fac: str) -> bool:
+    """这个名字属不属于"已知因素名"的 namespace —— 官方层五列任一方向的包含命中即算。
+
+    只做**保行**判据 (宁留不误删), 不做分桶: 包含匹配会把 '树脂' 这类尾缀也算进来,
+    用它分桶就回到 #34 之前"名字里猜"的老错。
+    """
+    n = nospace(fac)
+    if not n:
+        return False
+    _oel, _hfcas, universe = _name_index(conn)
+    for t in universe:
+        if len(_letters_only(t)) < _MIN_LETTERS:
+            continue
+        k = nospace(t)
+        if n in k or k in n:
+            return True
+    return False
+
+
+def _det_payload(d: dict) -> bool:
+    """这一行有没有**测得值** (数值单元格形状) —— 由行自己的结构说, 不由物质名说"""
+    vals = [str(d.get(k) or "") for k in ("ctwa", "cstel", "cste", "cme")]
+    vals += [str(x) for x in (d.get("results") or [])]
+    return any(_NUM_CELL.match(v.strip()) for v in vals if v.strip())
+
+
+def _det_nonfactor(conn, dets: list) -> dict:
+    """#50: 找出"不是一条检测"的行 → {因素名: 结构性依据}。
+
+    三条判据**全中**才算 (任一条不中 → 保留该行, 宁留不误删):
+      N1 官方层零锚: 分桶四级链落空 (含 #51 解析) **且** 官方层五列双向包含都不命中
+         → 它不属于任何已知因素名的 namespace;
+      N2 本行无测量载荷: ctwa/cstel/cme/results 里没有一个数值单元格 → 它不是"某因素的某个测定";
+      N3 同批同名的其它行也没有测量载荷 → 排除"同名一行有值、另一行是表头"的误伤。
+    实测形状 (2026-10-16 生产成品 §7.4, 根因在**导入侧**把表头/注释行塞进了 detections):
+      '/' (整行只有占位符) → N1+N2+N3 全中;
+      '接触的职业病危害因素' (表头文字) → N1+N2+N3 全中;
+      '采样日期 ：2024.04.07' (注释行) → N1+N2+N3 全中 (日期不是数值单元格形状)。
+    ⚠ 不用项目自己的 hazard_grid/materials 因子名当"佐证"来保行: 那些数组**同样**被导入侧混入过
+      表头串 (见本文件 类比PPE有效性表 那段 unit='评价单元' 的既有过滤) → 拿它当白名单会把表头救活。
+    ⚠ 物理/辅助检测项 (噪声/高温/照度/工频电场…) **不参与本过滤**: "零锚"判据说的是
+      GBZ 2.1 化学/粉尘限值那个 namespace, 物理项本来就不在那里 (本地实测 '照度' 5 行里
+      有 1 行只有定性判定、无数值 → 会被误判成非因素行)。它们走独立的物理因素检测结果表,
+      那张表自己要求"有实测值或 LEX 才出行" (`if not vals and not lex: continue`)。
+    ⚠ 能力边界/被排除项 (tools/test_det_rows.py 逐条对表):
+      · 有测得值的行**永不**被本过滤删 (信息不丢失) → 表头串若被解析器塞进一个数值, 就漏网;
+      · 标准库里确实登记过的名字 (哪怕它是表头词的子串) 一律保留 → 若导入侧把某个真因素名
+        写成与表头同形, 这一条保护会掩盖它 (代价是少删一行, 不是错删一行);
+      · 只处理"整行无值", 不处理"名字对但值错" —— 后者属 #40/#52 那一族。
+    """
+    out: dict = {}
+    payload_by_name: set = set()
+    for d in dets:
+        if _det_payload(d):
+            payload_by_name.add(str(d.get("factor", "") or ""))
+    for d in dets:
+        fac = str(d.get("factor", "") or "")
+        if not fac or fac in out:
+            continue
+        if _is_phys_factor(fac):
+            continue                                # 物理/辅助项: 零锚判据不适用于它们 (见 docstring)
+        if _det_payload(d) or fac in payload_by_name:
+            continue                                # N2/N3 → 保留
+        if _det_bucket(conn, fac)[1] is not None or _det_anchored(conn, fac):
+            continue                                # N1 → 保留
+        out[fac] = "官方层零锚 + 本行与同名行均无测量载荷"
+    return out
+
+
+def _det_by_type(conn, dets: list) -> dict:
+    """detections → {dtype: [行]}。两处调用点 (4 章类比 / 5 章本项目) 共用这一把尺子。
+
+    原来这两段是**复制**的 (section_filler 985 与 1182 一模一样) —— 一份改了另一份不改,
+    同一张表在两章就会用两套分桶口径。合并到这里, 判据只有一处。
+    ⚠ 分组键必须是**显示用的 dtype**而不是标准库原始 category: 原始 category 有
+      '化学因素'/'粉尘'/未命中(None) 多桶, 按原始值分桶再映射名字会产出**两张同名**
+      「检测结果表(化学毒物)」, 而导出侧按"节+表名"去重 → 整张表的行被静默丢弃
+      (实测 7 粉尘 + 13/15 两张化学毒物, 丢 15 行)。这里在分桶前就归一, 结构上不可能再犯。
+    """
+    from collections import defaultdict
+    out: dict = defaultdict(list)
+    unmatched: list = []
+    drop = _det_nonfactor(conn, dets)          # #50: 表头/注释行 (判据见该函数注释)
+    dropped: list = []
+    for d in dets:
+        fac = str(d.get("factor", "") or "")
+        if fac in drop:
+            dropped.append(fac)
+            continue
+        # h14: 物理因素 → 独立「物理因素检测结果表」, 不进化学浓度表
+        #   (噪声 ctwa=LEX,8h 非浓度; 照度/工频无浓度列; 实测值在 results —
+        #    塞进 CTWA/峰值浓度 表会全列 '—' = 数据丢失)
+        if _is_phys_factor(fac):
+            continue
+        dtype, basis = _det_bucket(conn, fac)
+        if basis is None:
+            unmatched.append(fac)
+        out[dtype].append(d)
+    if dropped:
+        # ⚠ 点名不是"静默删行"的替代物, 只是**下限**: 这些行既无测得值又不属于任何已知因素名,
+        #   印上去只会把表头文字伪装成"检测过的因素"(§7.4 实测三行)。要复算被删了什么, 看这行日志。
+        uniq = sorted(set(dropped))
+        print(f"  [det-nonfactor] {len(dropped)} 行不是一条检测 (判据: {next(iter(drop.values()))}) "
+              f"→ 不进检测结果表: {uniq[:8]}" + (" …" if len(uniq) > 8 else ""))
+    if unmatched:
+        uniq = sorted(set(unmatched))
+        print(f"  [det-bucket] {len(unmatched)} 行查不到标准库类别 → 默认化学毒物: {uniq[:8]}"
+              + (" …" if len(uniq) > 8 else ""))
+    return out
 
 
 def _is_phys_factor(fac: str) -> bool:
@@ -344,6 +717,50 @@ def _ds(conn):
     """
     from knowledge.dataset import Dataset
     return Dataset(conn)
+
+
+# GBZ 2.2—2007 表8 (高温 WBGT) 的行列键: 接触时间率 × 体力劳动强度分级
+_HEAT_RATES = ("100", "75", "50", "25")
+# ⚠ 罗马数字用码位生成, 不写字面量: Ⅲ (U+2162) 在编辑链路里会被**静默吃掉**成空串
+#   (本轮写这份代码时实测两次) → 空串当级别名 = 整列查不到数 = 印一列「待补充」。
+_HEAT_LEVELS = tuple(chr(0x2160 + i) for i in range(4))
+
+
+def _heat_wbgt_matrix(conn) -> dict:
+    """oel_limit 的高温行 → {(接触时间率, 强度级别): WBGT 限值}。
+
+    为什么从库里取而不是在这里抄一张 4×4 (2026-10-16 取证): 本函数替换掉的旧字面量与
+    **一手扫描件** `knowledge/gbz22_pages/p07.png` (= GBZ 2.2—2007 表8) 逐格比对有
+    **6 格不符**, 且 6 格全部偏松 (印出的限值高于标准 → 本该判超标的岗位被判合格):
+        75%×Ⅲ 27(应28) / 50%×Ⅲ 28(应29) / 50%×Ⅳ 27(应28)
+        25%×Ⅱ 31(应32) / 25%×Ⅲ 29(应31) / 25%×Ⅳ 28(应30)
+    而 `oel_limit` 的 16 行 (knowledge/data/gbz22_physical.json ← 300dpi 扫描视觉直读
+    + 人工核对) 与一手 16/16 一致。让成品从库里取数, 字面量就再也没有第二次漂移的机会;
+    库变了 → 成品指纹跟着变 → 主门 (tools/export_fingerprint.py) 看得见。
+    """
+    out: dict = {}
+    for cond, val in _ds(conn).rows(
+            "SELECT conditions, value FROM oel_limit WHERE factor_name='高温'"):
+        m = re.match(r"接触时间率(\d+)\s*%,\s*体力劳动强度(.)级", cond or "")
+        if m:
+            out[(m.group(1), m.group(2))] = val
+    return out
+
+
+def _noise_limit_rows(conn) -> list:
+    """GBZ 2.2—2007 表9 的三行 (接触时间 / 接触限值[dB(A)] / 备注), 数值取自 oel_limit。
+
+    旧字面量抄成 5 行 (85/85/88/91/94) 并标 "GBZ 2.2—2019 表5": 2019 号不存在
+    (catalog 核实 2026-08 在线仍为 2007 版), 而 2007 的噪声表是**表9**、只有 3 行、
+    限值全 85 —— 88/91/94 来自"接触时间减半、限值+3dB"那套**别的规范**的规则,
+    挂在本标准名下等于给标准编造内容。备注列逐字取自扫描件表9。
+    """
+    v = {t: val for t, val in _ds(conn).rows(
+        "SELECT oel_type, value FROM oel_limit WHERE factor_name='噪声'")}
+    g = lambda k: v.get(k) or "待补充"      # noqa: E731 — 缺行时印"待补充", 主门按待补充计数
+    return [["5d/w，=8h/d", g("LEX,8h"), "非稳态噪声计算8h等效声级"],
+            ["5d/w，≠8h/d", g("LEX,8h"), "计算8h等效声级"],
+            ["≠5d/w", g("LEX,40h"), "计算40h等效声级"]]
 
 
 def _ppe_matrix_table() -> dict | None:
@@ -937,23 +1354,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         # 检测结果表 (按类型分张: 毒物/粉尘/噪声/高温, 有检测数据才出)
         dets = (assess.get("_project_data") or {}).get("detections", [])
         if dets:
-            from collections import defaultdict
-            det_by_type = defaultdict(list)
-            for d in dets:
-                fac = d.get("factor", "")
-                # h14: 物理因素 → 独立「物理因素检测结果表」; 不进化学浓度表
-                # (噪声 ctwa=LEX,8h 非浓度; 照度/工频无浓度列; 实测值在 results —
-                #  塞进 CTWA/峰值浓度 表会全列 '—' = 数据丢失)
-                if _is_phys_factor(fac):
-                    continue
-                cat = conn.execute("SELECT category FROM hazard_factor WHERE name LIKE ? LIMIT 1", (fac + "%",)).fetchone()
-                ty = (cat[0] if cat else "化学毒物")
-                # ⚠ 分组键必须**先归一为显示用 dtype** 再分桶:
-                #   标准库 category 有 '化学因素'/'粉尘'/未命中(NONE→化学毒物) 多桶,
-                #   按原始 ty 分桶再映射 dtype 会产出**两张同名**「检测结果表(化学毒物)」
-                #   (实测 7 粉尘 + 13/15 两张化学毒物), 导出侧按"节+表名"去重 → 15 行被静默丢弃。
-                dtype = {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(ty, "化学毒物")
-                det_by_type[dtype].append(d)
+            det_by_type = _det_by_type(conn, dets)
             for dtype, dets_b in det_by_type.items():
                 # h11: CTWA 与峰值浓度 双列投影 — ctwa 为空的峰值行值在 cstel 键, 不得塌缩为 '—'
                 # (真实报告双浓度列: 新泰 p37 检测结果[C_TWA|峰值浓度]; 长兴 表25 CTWA|CSTEL)
@@ -1060,7 +1461,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                                "header2": ["序号", "评价单元", "岗位", "产品", "工段", "主要职业病危害因素", "个人防护用品配备", "符合性", "有效性"],
                                "merge_rect": [(0, 3, 0, 4)],
                                "rows": v9})
-        # 常见职业体力劳动强度分级 (GBZ 2.2-2019 固定 — 原报告表4.2-2 挂4.2.1)
+        # 常见职业体力劳动强度分级 (GBZ 2.2—2007 表13 的职业描述; 原报告表4.2-2 挂4.2.1)
         tables.append({"name": "劳动强度分级表",
                        "cols": ["体力劳动 强度分级", "职业描述"],
                        "rows": [
@@ -1134,23 +1535,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
         # 检测结果表 (按类型分张)
         dets = (assess.get("_project_data") or {}).get("detections", [])
         if dets:
-            from collections import defaultdict
-            det_by_type = defaultdict(list)
-            for d in dets:
-                fac = d.get("factor", "")
-                # h14: 物理因素 → 独立「物理因素检测结果表」; 不进化学浓度表
-                # (噪声 ctwa=LEX,8h 非浓度; 照度/工频无浓度列; 实测值在 results —
-                #  塞进 CTWA/峰值浓度 表会全列 '—' = 数据丢失)
-                if _is_phys_factor(fac):
-                    continue
-                cat = conn.execute("SELECT category FROM hazard_factor WHERE name LIKE ? LIMIT 1", (fac + "%",)).fetchone()
-                ty = (cat[0] if cat else "化学毒物")
-                # ⚠ 分组键必须**先归一为显示用 dtype** 再分桶:
-                #   标准库 category 有 '化学因素'/'粉尘'/未命中(NONE→化学毒物) 多桶,
-                #   按原始 ty 分桶再映射 dtype 会产出**两张同名**「检测结果表(化学毒物)」
-                #   (实测 7 粉尘 + 13/15 两张化学毒物), 导出侧按"节+表名"去重 → 15 行被静默丢弃。
-                dtype = {"粉尘": "粉尘", "噪声": "噪声", "高温": "高温"}.get(ty, "化学毒物")
-                det_by_type[dtype].append(d)
+            det_by_type = _det_by_type(conn, dets)
             for dtype, dets_b in det_by_type.items():
                 # h11: CTWA 与峰值浓度 双列投影 — ctwa 为空的峰值行值在 cstel 键, 不得塌缩为 '—'
                 # (真实报告双浓度列: 新泰 p37 检测结果[C_TWA|峰值浓度]; 长兴 表25 CTWA|CSTEL)
@@ -1189,10 +1574,15 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             tables.append({"name": "判定表", "cols": ["序号", "危害因素", "CTWA", "PC-TWA", "CSTEL", "PC-STEL", "判定"],
                            "rows": j_rows})
         # 接触限值表 (危害因素×PC-TWA×PC-STEL×PE×单位, 从 oel_limit)
-        det_factors = [d["factor"] for d in dets] + [h["factor"] for h in assess.get("hazards", [])]
+        # ⚠ #50 的"不是一条检测"判据同样管这张表: 导入侧塞进来的表头/注释行 ('/'、
+        #   '接触的职业病危害因素'、'采样日期 ：2024.04.07') 在这里也一样会领到一行限值 +
+        #   一句备注, 把"这张表列了哪些因素"变成"这些都被检测/鉴定过"。判据只有一份 (_det_nonfactor)。
+        _drop50 = _det_nonfactor(conn, dets) if dets else {}
+        det_factors = [d["factor"] for d in dets if str(d.get("factor") or "") not in _drop50] \
+            + [h["factor"] for h in assess.get("hazards", [])]
         # 原报告表5.3-1 宽表: 种类/PC-MAC/PC-TWA/PC-STEL/PE/备注 (一因素一行)
         # 列号对照 (row 数组下标 → 列): 0种类 1 PC-MAC 2 PC-TWA 3 PC-STEL 4 PE 5备注
-        _OEL_COL = {"PC-MAC": 1, "PC-TWA": 2, "PC-STEL": 3, "PE": 4}
+        #   实际落列由下面 _place 决定 (粉尘的 PC-TWA(总尘) 可以占用 2 号位), 不在这里写死
         lim_rows, seen_l, lim_prov = [], set(), {}
         for fac in det_factors:
             if not fac or fac in seen_l or ("噪声" in fac or "高温" in fac or "振动" in fac):
@@ -1201,31 +1591,96 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
             _ri = len(lim_rows)                       # 该因素在表中的行号
             # ⚠ 连同 source_standard 一起取出: 逐格记录该限值来自标准库哪一条,
             #   使"每个限值可点开看 GBZ 2.1—2019 某某 PC-TWA=N" (审计可逐行溯源)
-            recs = _ds(conn).rows(
-                "SELECT oel_type, value, source_standard FROM oel_limit "
-                "WHERE factor_name LIKE ?", (fac + "%",))
-            oels, srcs = {}, {}
+            # ⚠ #51: 原路径 (`factor_name LIKE '<检测名>%'`) 落空时先按 空格/下标/括号限定
+            #   解析成标准库规范名再取 — 名字只差一个空格就查不到 → 印 '—' + "未制定职业接触限值"
+            #   = 假陈述 (2026-10-16 生产成品 §7.4)。四道前提与能力边界见 _resolve_oel_name。
+            _r7, canon, mode, status = _oel_rows_for(conn, fac)
+            recs = [(r[1], r[2], r[3], r[6]) for r in _r7]
+            oels, srcs, units = {}, {}, {}
             for r in recs:
                 # sqlite3.Row 或 tuple 都兼容
                 try:
-                    _t, _v, _s = r["oel_type"], r["value"], r["source_standard"]
+                    _t, _v, _u, _s = r["oel_type"], r["value"], r["unit"], r["source_standard"]
                 except (TypeError, IndexError, KeyError):
-                    _t, _v, _s = r[0], r[1], r[2] if len(r) > 2 else ""
-                oels[_t] = _v
-                srcs[_t] = _s or ""
+                    _t, _v = r[0], r[1]
+                    _u = r[2] if len(r) > 2 else ""
+                    _s = r[3] if len(r) > 3 else ""
+                oels[_t], units[_t], srcs[_t] = _v, _u or "", _s or ""
+            # 粉尘 (GBZ 2.1—2019 表2) 的限值类型是 PC-TWA(总尘)/PC-TWA(呼尘), 而这张宽表 (原报告
+            # 表5.3-1) 只有 PC-MAC/PC-TWA/PC-STEL/PE 四列。修前它两样都做错的两种表现:
+            #   · 查不到行 (名字是 OCR 化石) → 备注写"未制定职业接触限值" (假陈述: 表2 明明制定了);
+            #   · 查到了行 (名字修好后) → 四列全 '—' 且备注空白 (半假陈述: 有限值但不给看)。
+            # 口径: 总尘 → 进 PC-TWA 列 (表头单位就是 mg/m3, 只有同为 mg/m3 才敢放进这一列);
+            #       单位不同 (实测 2 行是 f/mL 的石棉纤维) 或呼尘 → 落到备注, 一个数都不丢。
+            _LIM_HEAD = "mg/m3"
+            _place = {"PC-MAC": "PC-MAC", "PC-TWA": "PC-TWA", "PC-STEL": "PC-STEL", "PE": "PE"}
+            _note_bits, _noted = [], set()
+
+            def _mode_of(_t):
+                """限值类型自己的括号词 (总尘/呼尘…) —— 词表来自 oel_limit.oel_type, 不写在代码里"""
+                _m = _PAREN_TAIL.search(nospace(str(_t)))
+                return nospace(_m.group(0))[1:-1] if _m else str(_t)
+
+            def _note_val(_t, _lab=None):
+                """把一个没进四列的限值类型原样写进备注; 标签用类型自己的括号词 (呼尘/总尘)"""
+                if _t in _noted:
+                    return
+                _noted.add(_t)
+                _note_bits.append(f"{_lab or _mode_of(_t)} {oels[_t]} {units.get(_t) or _LIM_HEAD}")
+
+            _tw_keys = [t for t in oels if str(t) != "PC-TWA" and str(t).startswith("PC-TWA")]
+            _placed_tw = None
+            if "PC-TWA" not in oels and _tw_keys:
+                # #51: 检测名自带采样方式限定时 (『石灰石粉尘（ 呼尘）』) 必须进**那一档**的限值,
+                #      否则名字写呼尘、数值给总尘 = 用同一个格子印一个错数 (比 '—' 更坏)。
+                _k = next((t for t in _tw_keys if mode and mode in nospace(str(t))), None) \
+                    or ("PC-TWA(总尘)" if "PC-TWA(总尘)" in _tw_keys else None)
+                if _k and units.get(_k, _LIM_HEAD) == _LIM_HEAD:
+                    _place["PC-TWA"] = _k
+                    _placed_tw = _k
+                    _noted.add(_k)
+                elif _k:
+                    _note_val(_k)
+            for _t in _tw_keys:
+                if _t != _placed_tw:
+                    _note_val(_t)
+            # 凡是**没落进这四列**的限值类型都必须进备注 (口径: 一个数都不丢)。实测: 库里 638 行
+            # 用的是 'MAC' (GBZ 2.1 的最高允许浓度) 56 行, 一处都没写 'PC-MAC' → 原实现按 'PC-MAC'
+            # 找键, PC-MAC 列从来没印出过数, 备注还空白着 = 读的人以为"这类物质没有限值"。
+            # 列名对不上就不硬塞进列 (MAC ≠ PC-MAC, 不替标准改术语), 但数值原样进备注 + 用库里
+            # 真实的类型名标它 → 既有数也不假。
+            for _t in oels:
+                if _t not in set(_place.values()):
+                    _note_val(_t)
             # GBZ 2.1—2019 未收录的物质 (如新戊二醇/多元醇/二元酸类) 不静默丢行:
             # 行保留+值"—"+备注注明, 避免"识别表列了、限值表没有"的覆盖断裂 (缺数据不硬造)
-            lim_rows.append([fac, oels.get("PC-MAC", "—"), oels.get("PC-TWA", "—"),
-                             oels.get("PC-STEL", "—"), oels.get("PE", "—"),
-                             "" if oels else "未制定职业接触限值"])
-            # 逐格 provenance: 只给**有值**的格子盖 rule 章 + 标准出处
-            for _t, _ci in _OEL_COL.items():
-                if _t in oels:
-                    _std = srcs.get(_t) or "GBZ 2.1—2019"
+            # #41 (与 #51 同一个格子, 一次判掉): 备注必须说**我们能核实的事**。
+            #   原话"未制定职业接触限值"断言的是"标准没制定限值", 而我们只知道"库里查不到这一行"
+            #   —— 查不到有 ③ 种原因 (真没收录 / 名字是空格异形没解析动 / 多命中不敢猜),
+            #   三种都印同一句假陈述 = 打脸。改后: 只说"标准库未登记/须人工确认", 不替标准说话。
+            if oels:
+                _note = "; ".join(_note_bits)
+            elif status == "ambiguous":
+                _note = "标准库存在同名异形多命中，须人工确认"
+            elif status == "cas_conflict":
+                _note = "标准库同名记录的 CAS 不一致，须人工确认"
+            else:
+                _note = "未在标准库登记，须人工核对"
+            lim_rows.append([fac,
+                             oels.get(_place["PC-MAC"], "—"), oels.get(_place["PC-TWA"], "—"),
+                             oels.get(_place["PC-STEL"], "—"), oels.get(_place["PE"], "—"),
+                             _note])
+            # 逐格 provenance: 只给**有值**的格子盖 rule 章 + 标准出处 (章里写的是**真实的**
+            # oel_type, 例如粉尘格写 PC-TWA(总尘), 不冒充化学因素的 PC-TWA)
+            _alias = "" if canon in (None, fac) else f" [标准库名: {canon}]"
+            for _t, _ci in (("PC-MAC", 1), ("PC-TWA", 2), ("PC-STEL", 3), ("PE", 4)):
+                _key = _place[_t]
+                if _key in oels:
+                    _std = srcs.get(_key) or "GBZ 2.1—2019"
                     lim_prov[f"{_ri}_{_ci}"] = prov_rule(
                         {"file": "标准库", "table": "oel_limit",
-                         "text": f"{fac} {_t}={oels[_t]} ({_std})"},
-                        field=f"{fac}.{_t}")
+                         "text": f"{fac}{_alias} {_key}={oels[_key]} ({_std})"},
+                        field=f"{fac}.{_key}")
             # 名称列也算规则来源 (来自检测/物料识别结果)
             lim_prov[f"{_ri}_0"] = prov_rule({"file": "检测/物料识别", "text": fac},
                                              field=f"{fac}.name")
@@ -1235,9 +1690,6 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                            "header2": ["种类", "PC-MAC", "PC-TWA", "PC-STEL", "PE", "备注"],
                            "merge_rect": [(0, 1, 0, 4)],
                            "rows": lim_rows, "prov": lim_prov})
-        # 物理因素限值表 (GBZ 2.2—2019 静态标准数据, 规则生成 — 盲区修复: 原报告5.3有噪声/高温限值表)
-        _hz5 = " ".join([str(h.get("factor") or "") for h in assess.get("hazards", [])] +
-                        [str(g.get("factors") or "") for g in (assess.get("_project_data") or {}).get("hazard_grid", [])])
         # 工种×危害表 (岗位→危害, 从网格关联)
         if grid:
             gw_rows = []
@@ -1323,30 +1775,29 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                                                      "text": f"{r[0]} 健康影响 (GBZ 2.2/职业病目录)"},
                                                     field=f"{r[0]}.健康影响")
                                 for i, r in enumerate(phys_rows)}})
-        # 表5.3-2 噪声接触限值 (GBZ 2.2—2019 表5: 接触时间/限值[dB(A)]/备注)
-        _noise_rows = [["5d/w，≤8h/d", "85", "非稳态噪声计算8h等效声级"],
-                       ["5d/w，≠8h/d", "85", "计算8h等效声级"],
-                       ["5d/w，≠4h/d", "88", "计算8h等效声级"],
-                       ["5d/w，≠2h/d", "91", "计算8h等效声级"],
-                       ["5d/w，≠1h/d", "94", "计算8h等效声级"]]
+        # 表5.3-2 噪声接触限值 (GBZ 2.2—2007 **表9**) — 数值取自 oel_limit, 不再手抄
+        _noise_rows = _noise_limit_rows(conn)
         tables.append({"name": "噪声接触限值表", "cols": ["接触时间", "接触限值[dB(A)]", "备注"],
                        "rows": _noise_rows,
-                       # 静态标准数据: 逐格标 GBZ 2.2—2019 表5 (非 LLM 生成)
-                       "prov": {f"{i}_1": prov_rule({"file": "GBZ 2.2—2019", "table": "oel_limit",
-                                                     "text": f"噪声 {r[0]} → {r[1]} dB(A) (GBZ 2.2—2019 表5)"},
+                       # 逐格溯源: 表9 的三行, 数值产地 oel_limit → 库里改一个数, 成品指纹必红
+                       "prov": {f"{i}_1": prov_rule({"file": "GBZ 2.2—2007", "table": "oel_limit",
+                                                     "text": f"噪声 {r[0]} → {r[1]} dB(A) (GBZ 2.2—2007 表9)"},
                                                     field=f"噪声.{r[0]}")
                                 for i, r in enumerate(_noise_rows)}})
-        # 表5.3-3 高温接触限值 (GBZ 2.2-2019 表1: 接触时间率×体力劳动强度 WBGT 限值℃) 双层表头
-        _heat_rows = [["100%", "30", "28", "26", "25"], ["75%", "31", "29", "27", "26"],
-                      ["50%", "32", "30", "28", "27"], ["25%", "33", "31", "29", "28"]]
+        # 表5.3-3 高温接触限值 (GBZ 2.2—2007 **表8**: 接触时间率×体力劳动强度 WBGT 限值℃) 双层表头
+        #   旧版这里是手抄的 4×4, 与一手扫描件逐格比对有 6 格偏松 (见 _heat_wbgt_matrix 的取证),
+        #   且标签写成 "GBZ 2.2—2019 表1" (2019 号不存在; 2007 的表8 才是高温, 表1 是超高频辐射)。
+        _hm = _heat_wbgt_matrix(conn)
+        _heat_rows = [[f"{rate}%"] + [_hm.get((rate, lv)) or "待补充" for lv in _HEAT_LEVELS]
+                      for rate in _HEAT_RATES]
         tables.append({"name": "高温接触限值表",
                        "cols": ["接触时间率", "体力劳动强度", "体力劳动强度", "体力劳动强度", "体力劳动强度"],
                        "header2": ["接触时间率", "I", "II", "III", "IV"],
                        "merge_rect": [(0, 1, 0, 4)],
                        "rows": _heat_rows,
-                       # 静态标准数据: 逐格标 GBZ 2.2—2019 表1 (含第0列接触时间率)
-                       "prov": {f"{i}_{c}": prov_rule({"file": "GBZ 2.2—2019", "table": "oel_limit",
-                                                       "text": f"高温 接触时间率{r[0]} 强度{[None,'I','II','III','IV'][c]} → WBGT {r[c]}℃ (GBZ 2.2—2019 表1)"},
+                       # 逐格溯源 (含第0列接触时间率): 数值产地 oel_limit 的 16 行高温规则
+                       "prov": {f"{i}_{c}": prov_rule({"file": "GBZ 2.2—2007", "table": "oel_limit",
+                                                       "text": f"高温 接触时间率{r[0]} 强度{[None,'I','II','III','IV'][c]} → WBGT {r[c]}℃ (GBZ 2.2—2007 表8)"},
                                                       field=f"高温.{r[0]}.{c}")
                                 for i, r in enumerate(_heat_rows) for c in (0, 1, 2, 3, 4)}})
         # 工种×危害表 (岗位→危害, 从网格关联)
@@ -1542,7 +1993,7 @@ def fill_section(conn: sqlite3.Connection, sec: str, assess: dict) -> list[dict]
                 g = _grade.get(pf) or {}
                 rows.append([pf, str(g.get("level") or "—"),
                              str(g.get("name") or "见防护设施/PPE章节"),
-                             "GBZ 2.2—2019"])
+                             "GBZ 2.2—2007"])
         if not rows:
             return []
         rows = [[i] + r for i, r in enumerate(rows, 1)]

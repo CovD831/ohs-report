@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from knowledge.oel import connect  # noqa: E402
+from knowledge.oel import connect, connect_ro  # noqa: E402  (connect=seed 写侧, connect_ro=出表读侧)
 
 SRC = ("GB 39800.1-2020《个体防护装备配备规范 第1部分:总则》+ "
        "《江苏省劳动防护用品配备标准》(2007版) + 安监总厅安健〔2018〕3号")
@@ -117,7 +117,7 @@ def load() -> int:
 
 def matrix_from_db() -> tuple[list[str], list[str], dict[str, dict[str, str]]]:
     """→ (work_types, items, {work_type: {item: mark}}) — 供 section_filler 出表"""
-    conn = connect()
+    conn = connect_ro()
     rows = conn.execute("SELECT work_type, item, mark FROM ppe_work_matrix "
                         "ORDER BY id").fetchall()
     conn.close()

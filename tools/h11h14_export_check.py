@@ -3,9 +3,11 @@
 import sys
 from pathlib import Path
 from docx import Document
-ROOT = Path('/Users/abaaba/Projects/ohs-report')
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DATA_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
 
-for f in sorted((ROOT / 'data' / 'exports').glob('*.docx'))[-3:] if (ROOT/'data'/'exports').exists() else []:
+for f in sorted((DATA_DIR / 'exports').glob('*.docx'))[-3:] if (DATA_DIR / 'exports').exists() else []:
     print('==', f)
 for f in [Path('/tmp/test_mount_export.docx')]:
     if not f.exists():

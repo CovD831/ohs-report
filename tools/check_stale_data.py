@@ -23,11 +23,11 @@ ROOT = next((p for p in (Path("/app"), Path(__file__).resolve().parent.parent)
              if (p / "web" / "app.py").exists()), Path.cwd())
 sys.path.insert(0, str(ROOT))
 
-DB = ROOT / "data" / "ohs.db"
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 路径走 knowledge.paths 单一产地)
 
 
 def stored_dets(pid: str) -> list:
-    c = sqlite3.connect(str(DB))
+    c = connect_ro()
     c.row_factory = sqlite3.Row
     r = c.execute("SELECT data FROM project WHERE id=?", (pid,)).fetchone()
     if not r:
@@ -72,7 +72,7 @@ def main():
         print(__doc__)
         return 1
     if args[0] == "--all":
-        c = sqlite3.connect(str(DB))
+        c = connect_ro()
         c.row_factory = sqlite3.Row
         rows = c.execute("SELECT id, name FROM project ORDER BY updated DESC").fetchall()
         print(f"扫描 {len(rows)} 个项目 (材料目录需自行对照)\n")

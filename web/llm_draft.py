@@ -23,7 +23,8 @@ import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from knowledge.project_assess import assess_project  # noqa: E402
-from knowledge.oel import connect  # noqa: E402
+from knowledge.oel import connect_ro  # noqa: E402  (S1c′ D1: 成文取数是读路径)
+from knowledge.paths import MATERIALS_DIR  # noqa: E402
 from web.projects_db import get_project  # noqa: E402
 
 # provider 统一: workbuddy2api 中转 (勿改回官方直连 — 全项目单一口径)
@@ -89,7 +90,7 @@ def _build_info(project: dict, assess: dict) -> str:
     把 机械数据(危害/设备/工序/检测+限值/原料/风险) 组织成正式叙述句,
     避免 LLM 照搬【工序】【设备】等标签。
     """
-    conn = connect()
+    conn = connect_ro()
     chain = assess.get("industry_chain") or {}
     risk = assess.get("industry_risk") or {}
     hazards = assess.get("hazards", [])
@@ -166,7 +167,7 @@ def _build_info(project: dict, assess: dict) -> str:
 
     # 原料 → 叙述
     mats = []
-    f = Path(__file__).resolve().parent.parent / "data" / "materials" / "A2a_原辅材料清单.csv"
+    f = MATERIALS_DIR / "A2a_原辅材料清单.csv"
     if f.exists():
         import csv
         with open(f, encoding="utf-8-sig") as fh:
@@ -568,7 +569,7 @@ def _assess_cached(pid: str, _cache: dict | None = None):
     if _cache is not None and _cache.get("assess") is not None:
         return _cache
     p = get_project(pid)
-    conn = connect()
+    conn = connect_ro()
     d = p["data"]
     project = {"name": p["name"], "industry": d.get("industry", ""),
                "equipment": d.get("equipment", []),
@@ -630,7 +631,7 @@ FIXED_TEXTS = {
     "1.3.2": (
         "本项目的评价依据主要包括以下技术规范和标准（现行有效版本，详见评价依据标准清单表）：\n"
         "（1）基础标准：《工业企业设计卫生标准》（GBZ 1—2010）、《工作场所有害因素职业接触限值 "
-        "第1部分：化学有害因素》（GBZ 2.1—2019）、《工作场所有害因素职业接触限值 第2部分：物理因素》（GBZ 2.2—2019）；\n"
+        "第1部分：化学有害因素》（GBZ 2.1—2019）、《工作场所有害因素职业接触限值 第2部分：物理因素》（GBZ 2.2—2007）；\n"
         "（2）评价导则：《建设项目职业病危害评价通则》（GBZ/T 277）、《建设项目职业病危害预评价技术标准》（GBZ/T 196—2025）；\n"
         "（3）专项标准：职业病危害因素检测与评价（GBZ/T 160 系列工作场所空气有毒物质测定）、"
         "职业健康监护技术规范（GBZ 188—2025）、警示标识（GBZ 158）、防护设施设计与检测（GB/T 16758 排风罩、"

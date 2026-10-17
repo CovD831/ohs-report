@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from knowledge.project_assess import assess_project  # noqa: E402
-from knowledge.oel import connect  # noqa: E402
+from knowledge.oel import connect_ro  # noqa: E402
 from web.section_filler import fill_section  # noqa: E402
 from web.paragraph_gen import gen_paragraphs  # noqa: E402
 from web.advice_gen import fill_10211  # noqa: E402
@@ -46,7 +46,7 @@ def report_section_content(d: dict) -> dict:
 
 def compare_sections() -> dict:
     """逐节比对"""
-    conn = connect()
+    conn = connect_ro()
     d = json.load(open(REPORT))
     project = {
         "name": "长兴特殊材料", "industry": "261",

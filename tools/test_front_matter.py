@@ -15,6 +15,7 @@
 """
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -25,7 +26,9 @@ from docx.oxml.ns import qn
 
 from web.front_matter import add_front_matter, gen_report_no, cn_year_month
 
-OUT = ROOT / "data" / "_test_front_matter.docx"
+# 产物写到临时目录, 不再落进真实 data/ (2026-10-16): 原来写 data/_test_front_matter.docx,
+#   正是"守卫在数据目录里留下条目"的那类失效 —— 本地部署演练的条目对表会把它算成新增。
+OUT = Path(tempfile.gettempdir()) / "ohs_test_front_matter.docx"
 
 FAILS = []
 

@@ -11,16 +11,25 @@ import os
 import secrets
 import sqlite3
 import time
-from pathlib import Path
 
 from knowledge.paths import DB_PATH as DB
-SECRET_FILE = Path(__file__).resolve().parent.parent / "data" / ".secret"
+from knowledge.paths import SECRET_FILE  # 数据目录唯一产地 (S1c′ D0)
 
 
 def _secret() -> bytes:
-    """会话签名密钥 (首次生成, 持久化)"""
-    if not SECRET_FILE.exists():
-        SECRET_FILE.write_text(secrets.token_hex(32))
+    """会话签名密钥 (首次生成, 持久化)。
+
+    用 O_CREAT|O_EXCL 而不是 "先 exists() 再 write_text()": 后者是 check-then-act,
+    两个 worker (或两个 CLI 进程) 同时首用会各写一份, 后写的把先写的覆盖掉 ——
+    于是已签发的 cookie 随机失效, 症状是"刷一下就被登出"且没有日志线索。
+    抢输的一方直接读现存那份即可 (2026-10-16 与启动锁同一轮排查到的同类形状)。
+    """
+    try:
+        fd = os.open(str(SECRET_FILE), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return SECRET_FILE.read_text().encode()
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(secrets.token_hex(32))
     return SECRET_FILE.read_text().encode()
 
 
@@ -44,7 +53,12 @@ def init_users():
     if not conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
         admin_pw = os.environ.get("ADMIN_PASSWORD", "admin123")
         salt = secrets.token_hex(8)
-        conn.execute("INSERT INTO users(username,pw_hash,salt,is_admin) VALUES(?,?,?,1)",
+        # ON CONFLICT 而不是裸 INSERT: 这个"查一下再插"是 check-then-act, 两个 uvicorn
+        # worker 同时首启会都查到空表。启动期现在有 startup_lock 串行化 (web/app.py D4),
+        # 这里再要一层针对性保护, 是因为 CLI/脚本也可能与服务器首启并发跑同一张表。
+        # 用 DO NOTHING 而不用 INSERT OR IGNORE: 后者会连带吞掉 NOT NULL 之类的真错误。
+        conn.execute("INSERT INTO users(username,pw_hash,salt,is_admin) VALUES(?,?,?,1) "
+                     "ON CONFLICT(username) DO NOTHING",
                      ("admin", _hash_pw(admin_pw, salt), salt))
     conn.commit()
     conn.close()

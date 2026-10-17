@@ -22,9 +22,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from knowledge.standard_version import _base_code, norm_code, resolve_current  # noqa: E402
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 路径走 knowledge.paths 单一产地)
 
 JSON_P = ROOT / "web" / "fixed_texts_data.json"
-DB_P = ROOT / "data" / "ohs.db"
 
 # 清单条目形态: 《名称》(GB XXXX-YYYY) 或 （GB XXXX-YYYY）或裸 GB XXXX-YYYY
 _RE_CODE = re.compile(r"[（(]\s*((?:GB|GBZ|WS|HG|HGT)[A-Z/T]*\s*\d+(?:\.\d+)?(?:\s*[—\-–]\s*(?:19|20)\d{2})?)\s*[)）]")
@@ -41,7 +41,7 @@ def main() -> int:
         print("std_text 为空")
         return 1
 
-    conn = sqlite3.connect(DB_P)
+    conn = connect_ro()
     stale, unknown, fixed = [], [], []
     new_text = text
     for m in _RE_CODE.finditer(text):

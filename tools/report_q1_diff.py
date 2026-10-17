@@ -41,8 +41,9 @@ print()
 
 # ---------- B. 现有识别表 (新泰没有, 用长兴做对照说明机制) ----------
 import sqlite3  # noqa: E402
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 路径走 knowledge.paths 单一产地)
 
-c = sqlite3.connect("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+c = connect_ro()
 c.row_factory = sqlite3.Row
 d = json.loads(c.execute("SELECT data FROM project WHERE id='c8c7ff0a4d'").fetchone()["data"])
 grid = d.get("hazard_grid") or []

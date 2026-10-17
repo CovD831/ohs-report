@@ -14,9 +14,13 @@
 """
 import csv
 import json
+import sys
 from pathlib import Path
 
-MATERIALS = Path(__file__).resolve().parent.parent / "data" / "materials"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from knowledge.paths import MATERIALS_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
+
+MATERIALS = MATERIALS_DIR
 
 
 def load_equipment(path: Path) -> list[str]:

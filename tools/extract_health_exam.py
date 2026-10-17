@@ -20,8 +20,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DATA_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
 PDF = ROOT / "acquire" / "raw" / "nhc_gbz" / "pdfs" / "GBZ_188_2025.pdf"
-OUT = ROOT / "data" / "health_exam.json"
+OUT = DATA_DIR / "health_exam.json"
 
 # 分部章: 5 化学 / 6 粉尘 / 7 物理 / 8 生物 / 9 特殊作业
 CHAP_PREFIX = {

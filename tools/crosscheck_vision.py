@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, "/Users/abaaba/Projects/ohs-report")
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 路径走 knowledge.paths 单一产地)
 
 
 def num(s):
@@ -38,7 +39,7 @@ def main():
     v = json.loads(vis_path.read_text(encoding="utf-8"))
     dets = v.get("detections") or []
 
-    c = sqlite3.connect("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+    c = connect_ro()
     c.row_factory = sqlite3.Row
     row = c.execute("SELECT data FROM project WHERE id=?", (pid,)).fetchone()
     base = (json.loads(row["data"]).get("detections") or []) if row else []

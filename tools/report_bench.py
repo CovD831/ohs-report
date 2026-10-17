@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse, json, re, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地, 认 OHS_DATA_DIR)
 
 # 版本号: 每次修改评测规则(增加/收紧/放松判定)必须 bump
 BENCH_VERSION = "1.4.0"
@@ -351,7 +352,7 @@ def main():
     ap = argparse.ArgumentParser(description="报告确定性评测")
     ap.add_argument("--docx", required=True, help="报告 docx 路径")
     ap.add_argument("--pid", help="项目 id (查 data/ohs.db)")
-    ap.add_argument("--db", default="data/ohs.db", help="sqlite 数据库路径")
+    ap.add_argument("--db", default=str(DB_PATH), help="sqlite 数据库路径 (默认走 knowledge.paths.DB_PATH)")
     ap.add_argument("--reference", help="参考报告 docx (原报告, 用于结构对比)")
     ap.add_argument("--project-json", help="项目 data JSON (替代 pid)")
     args = ap.parse_args()

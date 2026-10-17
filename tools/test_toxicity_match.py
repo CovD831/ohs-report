@@ -24,7 +24,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from knowledge.oel import connect              # noqa: E402
+# S1c″ D4′: 真库只读核对 → 只读工厂 (旧版 connect() 在容器里会可写打开生产库)
+from knowledge.oel import connect_ro              # noqa: E402
 from web.section_filler import _same_substance, lookup_toxicity  # noqa: E402
 
 GRADES = ("轻度危害", "中度危害", "高度危害", "极度危害")
@@ -94,7 +95,7 @@ check("丙酮氰醇 的「剧毒」标签不进危害程度列", r == "待补充
 c.close()
 
 print("\n### 4. 真库: C 口径取值形态")
-conn = connect()
+conn = connect_ro()
 r = lookup_toxicity(conn, "丙酮")
 check("丙酮 不含异物质标签「剧毒」", "剧毒" not in r, f"实得 {r!r}")
 check("丙酮 为等级(可带注6标注)或待补充",

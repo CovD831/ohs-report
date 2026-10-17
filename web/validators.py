@@ -12,6 +12,7 @@
 """
 import json
 import re
+import sqlite3
 
 
 # ============ 数值/属性对表 (数据校验: 生成文本必须与 project data 一致) ============
@@ -137,9 +138,9 @@ def _load_factor_vocab():
         return _VOCAB_CACHE["terms"], _VOCAB_CACHE["pat"]
     terms: set[str] = set()
     non_material: set[str] = set()
+    from knowledge.oel import OfficialSchemaMissing, connect_ro
     try:
-        from knowledge.oel import connect
-        conn = connect()
+        conn = connect_ro()
         try:
             # 数据驱动的"非物料类"排除: hazard_factor 里 物理因素/放射性因素 是作业类别
             # 而非投料物质 (噪声/高温/低温/工频电磁场/紫外线/微波…), 它们天然不进物料
@@ -166,8 +167,9 @@ def _load_factor_vocab():
                             terms.add(t.lower())
         finally:
             conn.close()
-    except Exception:
+    except (OfficialSchemaMissing, sqlite3.Error, OSError):
         terms = set()  # 词表不可用 → 本条校验静默降级 (黑名单仍生效)
+        # 只收窄到"数据取不到"这一类失效; 别的异常 (代码写错) 必须响, 不许一起吞掉
     pat = re.compile("|".join(re.escape(t) for t in sorted(terms, key=len, reverse=True))) \
         if terms else None
     _VOCAB_CACHE["terms"], _VOCAB_CACHE["pat"] = terms, pat
@@ -254,17 +256,20 @@ def _suggest_standard(code: str, limit: int = 3) -> list[str]:
     匹配策略: 数字部分相同即算近似 (前缀/空格差异不影响判定)
     """
     import re as _re
-    from knowledge.oel import connect
     m = _re.search(r"(\d+(?:\.\d+)?)", code or "")
     if not m:
         return []
     num = m.group(1)
     try:
-        conn = connect()
-        rows = conn.execute(
-            "SELECT code, name, state FROM standard_db WHERE code LIKE ? LIMIT 6",
-            (f"%{num}%",)).fetchall()
-    except Exception:
+        from knowledge.oel import OfficialSchemaMissing, connect_ro
+        conn = connect_ro()
+        try:
+            rows = conn.execute(
+                "SELECT code, name, state FROM standard_db WHERE code LIKE ? LIMIT 6",
+                (f"%{num}%",)).fetchall()
+        finally:
+            conn.close()          # 旧写法这里既不 close 也不管异常类型, 每次调用漏一条连接
+    except (OfficialSchemaMissing, sqlite3.Error, OSError):
         return []
     out = []
     for c, n, st in rows:
@@ -299,9 +304,9 @@ def _check_standards(text: str) -> list[dict]:
     if not refs:
         return issues
     try:
-        from knowledge.oel import connect
-        conn = connect()
-    except Exception:
+        from knowledge.oel import OfficialSchemaMissing, connect_ro
+        conn = connect_ro()
+    except (OfficialSchemaMissing, OSError, sqlite3.Error):
         return issues
     # 库索引一次建好: 旧写法是"每条引用全表扫一遍 standard_db" (O(引用数×2222))
     db_idx = {norm_code(r[0]): r for r in
@@ -325,7 +330,12 @@ def _check_standards(text: str) -> list[dict]:
             continue
         code, name, state = hit
         # 双判据: state 标了废止, 或 库里有"代替本号"的更晚现行版 (state 漏标时兜底)
-        from knowledge.standard_version import is_superseded, resolve_current
+        from knowledge.standard_version import is_superseded, resolve_current, content_hold
+        # 内容待复核的旧号 (std_render_hold): 判据文字仍是旧版, 用户拍板保留旧标签
+        #   → V-05 不得按"引用废止号"报错, 否则与改写器(已不升级)判据不一致 →
+        #   tools/test_std_ref_parity.py 的"改写与报警同真同假"必红。来源与改写器同一份。
+        if full in content_hold(conn):
+            continue
         _sup = None if (state or "") == "废止" else is_superseded(conn, code)
         if (state or "") == "废止" or _sup:
             cur = ""

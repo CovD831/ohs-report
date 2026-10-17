@@ -48,10 +48,18 @@ def inplace_update(conn, sql: str) -> None:
 
 
 # ── 合成库: 照真实 standard_db 的行形态搭 (含 2026-10-14 事故的 state 漏标形态) ──
+# ⚠ 2.2 那一对的年份刻意是 **1999 / 2099** (2.2 这族没发过 1999, 2099 在未来) —— 2026-10-16 改。
+#   原先写 2007/2019, 等于把 #17 证伪的假事实 ("存在 2.2—2019 现行版") 焊在一支
+#   部署必跑且常绿的守卫里; 而本文件测的是**门的语义** (两出口不等价 / 记忆化 /
+#   原地改写可见), 与年份取值无关。生产那个幽灵号就是有人照着这类"看起来是事实"的
+#   夹具去写 tools/patch_missing_current_std.py 的 PATCH 造出来的 (#48)。
+#   反例记录: 9007/9019 这种"一眼假"的年份**用不了** —— `standard_version.py:76` 的
+#   `_YEAR_TAIL` 只认 (?:19|20)\d{2}$, 去年份时不认它当年份, 身份键对不上, 纠版不触发。
+#   (这条不是 bug: 连年份形态都不对的号本就不该被归一; 但它决定了夹具只能取 19xx/20xx。)
 STD = [
     # code, name, state, replace_of
-    ("GBZ2.2-2007", "工作场所有害因素职业接触限值 第2部分:物理因素", "废止", ""),
-    ("GBZ2.2-2019", "工作场所有害因素职业接触限值 第2部分:物理因素", "实施中", "GBZ 2.2—2007"),
+    ("GBZ2.2-1999", "合成·类比物理因素 旧版 (真库里 2.2 只有 2007, 无 1999/2099)", "废止", ""),
+    ("GBZ2.2-2099", "合成·类比物理因素 现行 (同上, 编号与年份都是夹具专用)", "实施中", "GBZ 2.2—1999"),
     ("GBZ188-2014", "职业健康监护技术规范", "实施中", "GBZ 188—2007"),   # ← state 漏标, 只能靠 replace_of 反查
     ("GBZ188-2025", "职业健康监护技术规范", "实施中", "GBZ 188—2014"),
     ("GBZ1-2010", "工业企业设计卫生标准", "实施中", ""),
@@ -62,7 +70,7 @@ STD = [
     ("GBZ8-2021", "变异段用 现行", "实施中", ""),
 ]
 RULES = [
-    ("高温中暑应急", "防暑降温", "高温作业场所应有防暑降温措施", "GBZ 2.2—2007", "表8"),
+    ("高温中暑应急", "防暑降温", "高温作业场所应有防暑降温措施", "GBZ 2.2—1999", "表8"),
     ("职业健康监护", "监护", "按 GBZ 188-2014 执行监护", "GBZ 1-2010", "5.2"),
     ("一般场景", "卫生设计", "按 GBZ 1-2010 执行", "GBZ 1-2010", "5.2"),
 ]
@@ -79,7 +87,7 @@ def build(tmp: Path) -> None:
               "unit TEXT, source_standard TEXT)")
     w.executemany("INSERT INTO oel_limit VALUES (?,?,?,?,?)", [
         ("苯", "PC-TWA", "6", "mg/m3", "GBZ 2.1—2019"),
-        ("噪声", "LEX8h", "85", "dB(A)", "GBZ 2.2—2007"),      # 废止号藏在限值表的依据列
+        ("噪声", "LEX8h", "85", "dB(A)", "GBZ 2.2—1999"),      # 废止号藏在限值表的依据列
     ])
     w.commit()
     w.close()
@@ -112,8 +120,8 @@ with tempfile.TemporaryDirectory() as td:
     conn = ro(tmp)
     ds = Dataset(conn)
     got = ds.rows("SELECT std_code, require FROM emergency_rule")
-    check("rows(): 依据列 'GBZ 2.2—2007' → 'GBZ 2.2—2019' (破折号形态沿用原文)",
-          got[0][0] == "GBZ 2.2—2019", "GBZ 2.2—2019", got[0][0])
+    check("rows(): 依据列 'GBZ 2.2—1999' → 'GBZ 2.2—2099' (破折号形态沿用原文)",
+          got[0][0] == "GBZ 2.2—2099", "GBZ 2.2—2099", got[0][0])
     check("rows(): 文本列里**嵌着**的废止号也纠 (require)",
           got[1][1] == "按 GBZ 188-2025 执行监护", "按 GBZ 188-2025 执行监护", got[1][1])
     check("rows(): 现行号原样不动",
@@ -121,17 +129,17 @@ with tempfile.TemporaryDirectory() as td:
     raw_got = ds.raw("SELECT std_code, require FROM emergency_rule",
                      reason="合成库: 验证 raw 出口不纠版")
     check("raw(): 同一行原样出来 (证明两出口不等价)",
-          raw_got[0][0] == "GBZ 2.2—2007" and raw_got[1][1] == "按 GBZ 188-2014 执行监护",
+          raw_got[0][0] == "GBZ 2.2—1999" and raw_got[1][1] == "按 GBZ 188-2014 执行监护",
           "不纠版", raw_got[:2])
     check("one(): 与 rows() 同判据",
           ds.one("SELECT source_standard FROM oel_limit WHERE factor_name='噪声'")[0]
-          == "GBZ 2.2—2019", "GBZ 2.2—2019", None)
+          == "GBZ 2.2—2099", "GBZ 2.2—2099", None)
     check("one(): 无行返回 None (与 fetchone 口径一致)",
           ds.one("SELECT std_code FROM emergency_rule WHERE clause=?", ("不存在",)) is None,
           True, None)
     check("fix(): 叙述文本与表格取数共用同一份判据",
-          ds.fix("依据 GBZ 2.2—2007 与 GBZ 188-2014")[0] == "依据 GBZ 2.2—2019 与 GBZ 188-2025",
-          "依据 GBZ 2.2—2019 与 GBZ 188-2025", None)
+          ds.fix("依据 GBZ 2.2—1999 与 GBZ 188-2014")[0] == "依据 GBZ 2.2—2099 与 GBZ 188-2025",
+          "依据 GBZ 2.2—2099 与 GBZ 188-2025", None)
     check("非字符串列不参与 (NULL/数字原样)",
           ds.rows("SELECT NULL, 3.14, 42 FROM emergency_rule LIMIT 1")[0] == (None, 3.14, 42),
           (None, 3.14, 42), None)
@@ -152,19 +160,19 @@ with tempfile.TemporaryDirectory() as td:
         sv.invalidate_caches()
         s = trace(c)
         d = Dataset(c)                        # 建实例才校验/建判据
-        r1 = d.fix("GBZ 2.2—2007")
+        r1 = d.fix("GBZ 2.2—1999")
         built = [x for x in s if "standard_db" in x.lower()]
         s.clear()
-        r2 = d.fix("GBZ 2.2—2007")
+        r2 = d.fix("GBZ 2.2—1999")
         return bool(built) and s == [] and r1 == r2
 
     sv.invalidate_caches()
     seen = trace(conn)
     ds3 = Dataset(conn)
-    first = ds3.fix("GBZ 2.2—2007")
+    first = ds3.fix("GBZ 2.2—1999")
     n1 = [s for s in seen if "standard_db" in s.lower()]
     seen.clear()
-    second = ds3.fix("GBZ 2.2—2007")
+    second = ds3.fix("GBZ 2.2—1999")
     check("建实例时建判据要读 standard_db", len(n1) >= 1, ">=1", n1)
     check("两次结果一致", first == second, first, second)
     check("fix() 本身不发任何 SQL (memo 生效)", seen == [], [], seen)
@@ -242,7 +250,7 @@ with tempfile.TemporaryDirectory() as td:
             return (f._rewrite(m.group(0), nc) if nc else None) or m.group(0)
         return sv.STD_REF_PAT.sub(_s, t)
 
-    samples = ["苯", "噪声 85 dB(A)", "PC-TWA=6 mg/m3", "2019 年修订", "GBZ 2.2—2007",
+    samples = ["苯", "噪声 85 dB(A)", "PC-TWA=6 mg/m3", "2019 年修订", "GBZ 2.2—1999",
                "GBZ 188-2014 版", "2007 年版 GBZ 2.2", "GB 30871—2022 8.4.2a", "WS 1-1996"]
     check("快路径 (不含 4 位年份直接返回) 与逐格 sub 同结果",
           all(f.fix(s)[0] == slow(s) for s in samples),
@@ -253,8 +261,8 @@ with tempfile.TemporaryDirectory() as td:
     check("双判据: state 漏标的 GBZ188-2014 仍解析到 2025 版",
           (f.resolve_current("GBZ188-2014") or {}).get("code") == "GBZ188-2025",
           "GBZ188-2025", None)
-    check("库里判废止的 GBZ2.2-2007 不得从纠版出口活着出来",
-          f.fix("GBZ 2.2—2007")[0] != "GBZ 2.2—2007", "已改写", None)
+    check("库里判废止的 GBZ2.2-1999 不得从纠版出口活着出来",
+          f.fix("GBZ 2.2—1999")[0] != "GBZ 2.2—1999", "已改写", None)
     check("现行版号不误改",
           f.fix("GBZ 1-2010")[0] == "GBZ 1-2010", "GBZ 1-2010", None)
     check("standard_db 快照按连接缓存 (行数=建库数)",

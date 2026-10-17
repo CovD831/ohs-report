@@ -26,7 +26,8 @@ ROOT = next((p for p in (Path("/app"), Path(__file__).resolve().parent.parent)
              if (p / "web" / "app.py").exists()), Path.cwd())
 sys.path.insert(0, str(ROOT))
 
-DB = ROOT / "data" / "ohs.db"
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
+DB = DB_PATH
 
 
 def refresh(pid: str, mdir: str, apply: bool = False,

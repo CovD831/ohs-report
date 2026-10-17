@@ -23,7 +23,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "data" / "product_plan.json"
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DATA_DIR, MATERIALS_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
+OUT = DATA_DIR / "product_plan.json"
 
 # 表头特征
 _HDR_A = "年产量"
@@ -111,7 +113,7 @@ def extract(pdf_path: str) -> dict:
 
 def main():
     write = "--write" in sys.argv
-    mat = ROOT / "data" / "materials"
+    mat = MATERIALS_DIR
     results = {}
     for mdir in sorted(mat.glob("*")):
         if not mdir.is_dir():

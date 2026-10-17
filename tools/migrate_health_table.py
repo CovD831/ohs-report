@@ -22,7 +22,10 @@ import sqlite3
 import sys
 from pathlib import Path
 
-DB = Path(__file__).resolve().parent.parent / "data" / "ohs.db"
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
+DB = DB_PATH
 
 # 旧表头指纹(现行真稿中不存在的字段名)
 STALE_FIELDS = ("毒理学资料", "临界不良健康效应")

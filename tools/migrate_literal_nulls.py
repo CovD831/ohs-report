@@ -24,7 +24,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-DB = ROOT / "data" / "ohs.db"
+from knowledge.paths import DB_PATH, MATERIALS_DIR  # noqa: E402  (数据目录单一产地; 本脚本按设计写库)
+DB = DB_PATH
 
 _NONE_RE = re.compile(r"(?<![A-Za-z])None(?![A-Za-z])")
 DATA_LIST_FIELDS = ("buildings", "equipment", "products", "materials", "ppe",
@@ -38,7 +39,7 @@ def _clean_str(s: str) -> str:
 
 def _extract_buildings_from_material(pid: str) -> list[dict] | None:
     """从材料目录的 现状评价 docx 重提取建构筑物表 (report_parser 同款列定位)"""
-    mdir = ROOT / "data" / "materials" / pid
+    mdir = MATERIALS_DIR / pid
     if not mdir.is_dir():
         return None
     cands = [p for p in mdir.rglob("*.docx") if "现状评价" in p.name]

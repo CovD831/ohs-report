@@ -5,11 +5,11 @@ import sys
 
 sys.path.insert(0, "/Users/abaaba/Projects/ohs-report")
 
-from knowledge.oel import connect  # noqa: E402
+from knowledge.oel import connect, connect_ro  # noqa: E402
 from knowledge.project_assess import assess_project  # noqa: E402
 from web.section_filler import fill_section  # noqa: E402
 
-c = sqlite3.connect("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+c = connect_ro()
 c.row_factory = sqlite3.Row
 d = json.loads(c.execute("SELECT data FROM project WHERE id=?",
                          ("c8c7ff0a4d",)).fetchone()["data"])

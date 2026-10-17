@@ -27,7 +27,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-DB = ROOT / "data" / "ohs.db"
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
+DB = DB_PATH
 
 # 精确替换表: (pid, sec, old, new)  —— old 用尽量短的完整片段, 全节唯一
 # 来源: /tmp/probe4_out.txt + /tmp/hedge_full.txt 实测上下文

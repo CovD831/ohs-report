@@ -21,7 +21,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8")
 
-from knowledge.oel import connect                                       # noqa: E402
+# S1c″ D4′: 这一段只是读 standard_db 取样, 走**只读工厂**。
+# 上一版 `connect()` 在容器里 = 对挂载进去的生产库开可写连接 (还顺手 executescript(DDL))。
+from knowledge.oel import connect_ro                                    # noqa: E402
 import web.std_guard                                                    # noqa: E402
 import knowledge.standard_version as sv                                 # noqa: E402
 import web.table_skeleton                                               # noqa: E402
@@ -69,7 +71,7 @@ check("ref_code 命中→归一", sv.ref_code(m) if m else None, "GBZ/T196-2025"
 
 # ---------- A. 行为一致性 (取样自 standard_db, 数据无关点名) ----------
 print("\n### A. 同一标准号的各种写法: 改写与报警必须同真同假")
-conn = connect()
+conn = connect_ro()
 rows = conn.execute("SELECT code, state FROM standard_db").fetchall()
 # 取样: 库里能查到且"已废止"或"state 漏标但被代替"的号 —— 两类都必须被两条护栏认出来
 targets = []

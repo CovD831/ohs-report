@@ -16,13 +16,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, "/Users/abaaba/Projects/ohs-report")
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 库路径走 knowledge.paths 单一产地)
 
 PID = "c8c7ff0a4d"
 PACK = Path.home() / "Desktop/长兴合成树脂/材料包_生成报告用"
 
 
 def main():
-    c = sqlite3.connect("/Users/abaaba/Projects/ohs-report/data/ohs.db")
+    c = connect_ro()
     c.row_factory = sqlite3.Row
     d = json.loads(c.execute("SELECT data FROM project WHERE id=?", (PID,)).fetchone()["data"])
     bt = d.get("built_tables") or {}

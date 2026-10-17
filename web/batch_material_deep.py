@@ -10,10 +10,10 @@ from web.projects_db import get_project  # noqa: E402
 
 def factors_of(pid: str) -> list[str]:
     """从项目数据取危害因素"""
-    from knowledge.oel import connect
+    from knowledge.oel import connect_ro
     from knowledge.project_assess import assess_project
     p = get_project(pid)
-    conn = connect()
+    conn = connect_ro()
     r = assess_project(conn, {"name": p["name"], "industry": p["data"].get("industry", ""),
                               "equipment": p["data"].get("equipment", []),
                               "detections": p["data"].get("detections", []),

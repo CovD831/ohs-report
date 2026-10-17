@@ -1,14 +1,14 @@
 {
-  "web/table_skeleton.py:370": {
+  "web/table_skeleton.py|_fill_assess_tables|standard_db|code|0e01b269a805|0": {
     "kind": "branch",
-    "why": "_dead_keys 只参与 `bool(... & _dead_keys)` → if _dead 判断 (骨架刷新条件), 值不上纸。附带记录: :369 是**生产函数内自开 sqlite3.connect**, 且整段被 except Exception: _dead=False 包住 —— 与 report_bench 同一味静默降级, S1a/S1b 要收掉"
+    "why": "_dead_keys 只参与 `bool({norm_code(x)…} & _dead_keys)` → `if _dead` 的骨架刷新条件, 读出的 code 集合不上纸 (打印出去的是刷新后的表内容本身, 那些内容另有 printed 站点管)。2026-10-17 复核并**删掉旧登记里那句 ':369 生产函数内自开 sqlite3.connect + except Exception 静默降级'** —— 那条已经被改掉: 现在走 `Dataset(conn).raw(..., reason=...)` 且降级只捕 `sqlite3.Error` (表缺/查询坏才不刷骨架)。键换成身份键 (不随行号漂), 旧 'file:370' 形已失配。"
   },
-  "web/validators.py:308": {
+  "web/validators.py|_check_standards|standard_db|code,name,state|ddeb73a74743|0": {
     "kind": "branch",
-    "why": "建 standard_db 索引供 V-05 校验用; 校验器是咨询性输出(面板 issue), 不写进 docx → 指纹看不见。该站点的行为由 test_std_ref_parity 守, 不靠 --check"
+    "why": "给 V-05 校验器一次建好 standard_db 索引 (旧写法是每条引用全表扫), 校验器输出的是**面板 issue** (咨询性), 不写进 docx → 成品指纹看不见它。该站点的行为由 test_std_ref_parity 守, 不靠 --check。2026-10-17 复核: 取数已走 connect_ro() (只读), 降级路径显式 return issues 不静默。"
   },
-  "knowledge/check_result_templates.py:228": {
+  "knowledge/check_result_templates.py||gbz1_rule|clause|7e168912603f|0": {
     "kind": "cli",
-    "why": "位于 if __name__ == \"__main__\" 块内 (读 clauses 只为打印命中率), 非生产路径 → 不参与迁移统计"
+    "why": "位于 `if __name__ == \"__main__\"` 块内 (读 clauses 只为打印模板命中率), 非生产路径 → 不参与迁移统计。2026-10-17 复核: 行号从 228 漂到 242 (S1a′ 的 pathsweep 把那两处硬拼路径换成了 knowledge.paths.DB_PATH), 判性不变 —— 这正是改用身份键的理由。"
   }
 }

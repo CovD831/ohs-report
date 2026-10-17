@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """守卫: 官方数据层读出的标准号必须"读出即纠版" (S1b′ 后的 Dataset 读门口径)
 
-背景 (2026-10-15): 版本戳首跑抓到生产 emergency_rule/protection_rule 仍挂废止标准号
-  (GBZ 2.2—2007 / GB/T 38144.1—2019), 本地 oel_limit.source_standard 也存着 GBZ 2.2—2007。
+背景 (2026-10-15): 版本戳首跑抓到生产 emergency_rule/protection_rule 仍挂着**库里标成废止**的
+  标准号 (GBZ 2.2—2007 / GB/T 38144.1—2019), 本地 oel_limit.source_standard 也存着 GBZ 2.2—2007。
+  ⚠ 这两个例子的"废止"身份后来各有一半被推翻 (#17, 2026-10-16): GBZ 2.2 的 2019 版**根本不存在**,
+    它是 tools/patch_missing_current_std.py 凭"别的报告这么印"造的幽灵号, 并把 2007 标成被它代替;
+    生产 5115 行已回 state='现行'。所以这条背景讲的是**当时的库状态** (判据测的是"库里说废止就纠版"
+    这条管线), 不是"2007 已废止"这个事实 —— 事实层面 2007 现行。
   部署刻意排除 data/ → 不能假设两份库都被清洗过, 所以兜底放在**读出点**:
   knowledge.dataset.Dataset.rows()/one() 是唯一纠版出口, raw()/raw_one() 是不纠版的
   诚实出口 (必须写 reason)。
@@ -33,7 +37,8 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 import knowledge.standard_version                                  # noqa: E402
 from knowledge.dataset import Dataset                              # noqa: E402
-from knowledge.oel import connect                                  # noqa: E402
+# S1c″ D4′: B 段只读真库做不变式核对 → 只读工厂 (旧版 connect() 在容器里会可写打开生产库)
+from knowledge.oel import connect_ro                          # noqa: E402
 from knowledge.standard_version import rows_of                     # noqa: E402
 
 RULE_TABLES = ("emergency_rule", "protection_rule", "management_rule",
@@ -72,22 +77,31 @@ def check(label, cond, detail=""):
 print("### A. 合成库: 规则行存废止号 → 读出即现行版")
 c = sqlite3.connect(":memory:")
 c.execute("CREATE TABLE standard_db (code TEXT, name TEXT, state TEXT, replace_of TEXT)")
+# ⚠ 夹具年份刻意用 **1999 / 2099** —— 2.2 这族从没发过 1999 版, 2099 还在未来, 一眼就是夹具
+#   (2026-10-16 改)。原先写 2007/2019 —— 那不是"随手举个例子", 而是把 #17 已经证伪的假事实
+#   ("2.2 存在 2019 现行版") 固化在一支**每次部署都跑、而且一直是绿**的守卫里。
+#   绿色守卫里的假事实比红测试更贵: 下一个人会照着它给真库加 PATCH (生产那个幽灵号
+#   正是这么来的), 而判据本身测的只是"库里说废止→读出换号"这条管线, 与年份取值无关。
+#   ⚠ 试过的反例: 9007/9019 **不能用** —— `knowledge/standard_version.py:76` 的
+#     `_YEAR_TAIL` 只认 `(?:19|20)\d{2}$`, `std_key()` 去年份时不把 9007 当年份,
+#     身份键就对不上, 纠版链直接不触发 (那是设计: 连年份形态都不对的号不该被归一)。
+
 c.executemany("INSERT INTO standard_db VALUES (?,?,?,?)", [
-    ("GBZ2.2-2007", "工作场所有害因素职业接触限值 第2部分:物理因素", "废止", ""),
-    ("GBZ2.2-2019", "工作场所有害因素职业接触限值 第2部分:物理因素", "实施中", "GBZ 2.2—2007"),
+    ("GBZ2.2-1999", "合成·类比物理因素 旧版 (真库里 2.2 只有 2007, 无 1999/2099)", "废止", ""),
+    ("GBZ2.2-2099", "合成·类比物理因素 现行 (同上, 编号与年份都是夹具专用)", "实施中", "GBZ 2.2—1999"),
     ("GBZ1-2010", "工业企业设计卫生标准", "实施中", ""),
 ])
 c.execute("CREATE TABLE emergency_rule (scenario TEXT, item TEXT, require TEXT, "
           "std_code TEXT, clause TEXT)")
 c.executemany("INSERT INTO emergency_rule VALUES (?,?,?,?,?)", [
-    ("高温中暑应急", "防暑降温", "高温作业场所应有防暑降温措施", "GBZ 2.2—2007", "表8"),
+    ("高温中暑应急", "防暑降温", "高温作业场所应有防暑降温措施", "GBZ 2.2—1999", "表8"),
     ("一般场景", "卫生设计", "按 GBZ 1-2010 执行", "GBZ 1-2010", "5.2"),
 ])
 for label, reader in (("rows_of 兼容出口", lambda sql: rows_of(c, sql)),
                       ("Dataset.rows 读门", lambda sql: Dataset(c).rows(sql))):
     rows = reader("SELECT scenario, item, require, std_code, clause FROM emergency_rule")
-    check(f"{label}: 废止号 GBZ 2.2—2007 被换成现行版", "2007" not in rows[0][3], f"实得 {rows[0][3]!r}")
-    check(f"{label}: 替换后是 GBZ 2.2—2019", rows[0][3] == "GBZ 2.2—2019", f"实得 {rows[0][3]!r}")
+    check(f"{label}: 废止号 GBZ 2.2—1999 被换成现行版", "2007" not in rows[0][3], f"实得 {rows[0][3]!r}")
+    check(f"{label}: 替换后是 GBZ 2.2—2099", rows[0][3] == "GBZ 2.2—2099", f"实得 {rows[0][3]!r}")
     check(f"{label}: 非废止号原样保留", rows[1][3] == "GBZ 1-2010", f"实得 {rows[1][3]!r}")
     check(f"{label}: 同行文本列里嵌的废止号也被纠 (require 列)",
           "GBZ 1-2010" in rows[1][2], f"实得 {rows[1][2]!r}")
@@ -96,9 +110,15 @@ check("非字符串列不被碰 (数字/None)",
 c.close()
 
 print("\n### B. 真库不变式: 受管表经读门取出后不含废止号")
-conn = connect()
+conn = connect_ro()
 dead = {(r[0] or "") for r in conn.execute("SELECT code FROM standard_db WHERE state IN ('废止','已废止')")}
 norm_dead = {re.sub(r"[\s　]", "", knowledge.standard_version.norm_code(x)) for x in dead}
+# 内容待复核的旧号 (std_render_hold): 用户拍板"保留旧标签、不升级"(GB/T 18664-2002 判据文字
+#   仍是 2002 版)。这类旧号从读门"活着出来"是**刻意**的, 不是漏纠版 → 从违反集里剔除。
+#   与改写器/V-05/std_guard 读同一份 content_hold, 保证四把尺子同真同假。剔除后仍须能
+#   抓到"未被登记"的废止号残留 (见 D 段变异用例: 注入一个非登记废止号必须红)。
+held = {re.sub(r"[\s　]", "", knowledge.standard_version.norm_code(h))
+        for h in knowledge.standard_version.content_hold(conn)}
 bad, cells, ds = [], 0, Dataset(conn)
 for t in RULE_TABLES:
     cols = [r[1] for r in conn.execute(f"PRAGMA table_info({t})")]
@@ -110,12 +130,13 @@ for t in RULE_TABLES:
             if not isinstance(v, str) or not v.strip():
                 continue
             cells += 1
-            # 逐个标准号片段判: 库里判为废止的, 不得从读门里活着出来
+            # 逐个标准号片段判: 库里判为废止的, 不得从读门里活着出来 (内容待复核的登记号除外)
             for piece in re.split(r"[,;；，、]", v):
                 p = re.sub(r"[\s　]", "", knowledge.standard_version.norm_code(piece))
-                if p and p in norm_dead:
+                if p and p in norm_dead and p not in held:
                     bad.append((t, piece))
-check(f"{cells} 个标准号单元格无废止残留", not bad, bad[:5])
+check(f"{cells} 个标准号单元格无废止残留 (未登记的)", not bad, bad[:5])
+check("内容待复核登记项确从受管表取出后被识别 (B 段豁免非空转)", bool(held), held)
 
 # 反向对照: 真库里确实**存在**废止号 (否则 B 段是空转)
 raw_dead = []
@@ -129,6 +150,37 @@ for t in RULE_TABLES:
 check("真库里确有废止号残留 (B 段不是空转)", len(raw_dead) >= 1, raw_dead[:3])
 print("    受管表里原样存着废止号的列:", sorted({f"{t}.{cn}" for t, cn, _ in raw_dead}) or "无")
 conn.close()
+
+print("\n### B'. 变异: 内容待复核豁免是「外科手术」, 不是关掉整条不变式")
+# 合成库: 两个废止号, 一个登记待复核(应豁免保留旧标签), 一个未登记(仍必须被红)
+_mc = sqlite3.connect(":memory:")
+_mc.execute("CREATE TABLE standard_db (code TEXT, name TEXT, state TEXT, replace_of TEXT)")
+_mc.executemany("INSERT INTO standard_db VALUES (?,?,?,?)", [
+    ("GB 18664-2025", "呼吸防护装备的选择、使用和维护", "现行", "GB/T 18664-2002"),
+    ("GB/T18664-2002", "呼吸防护用品的选择、使用与维护", "废止", ""),      # 登记待复核 → 保留旧标签且不判违规
+    ("GB/T7777-2001", "未登记且库里无现行后继的废止号", "废止", ""),      # 读门无从升级 → 原样存活 → 必须被抓
+])
+_mc.execute("CREATE TABLE protection_rule (std_code TEXT)")
+# 待复核登记从 2026-10-16 起是**随代码走的 JSON** (`std_render_hold.json`), 不再是官方层表:
+#   合成库里建表会让这条判据测的是"我自己造的数据", 而线上四个消费方读的是那份 JSON ——
+#   尺子就裂成两把。这里同样读真源头, 并用下面的前提检查钉住"被测项确实在登记里"。
+_mc.execute("INSERT INTO protection_rule VALUES ('GB/T 18664—2002')")
+_mc.execute("INSERT INTO protection_rule VALUES ('GB/T 7777—2001')")
+_mdead = {(r[0] or "") for r in _mc.execute("SELECT code FROM standard_db WHERE state='废止'")}
+_mnorm_dead = {re.sub(r"[\s　]", "", knowledge.standard_version.norm_code(x)) for x in _mdead}
+_mheld = {re.sub(r"[\s　]", "", knowledge.standard_version.norm_code(h))
+          for h in knowledge.standard_version.content_hold()}
+check("B' 前提对表: 真登记表里确有 GB/T18664-2002 这条待复核项 (否则下面的绿灯是空测)",
+      re.sub(r"[\s　]", "", knowledge.standard_version.norm_code("GB/T 18664-2002")) in _mheld, True)
+_mrows = Dataset(_mc).rows("SELECT std_code FROM protection_rule")
+_mviol = [v for (v,) in _mrows
+          if re.sub(r"[\s　]", "", knowledge.standard_version.norm_code(v)) in _mnorm_dead
+          and re.sub(r"[\s　]", "", knowledge.standard_version.norm_code(v)) not in _mheld]
+check("B' 登记待复核的旧号被保留 (GB/T 18664—2002 未被升级也不是违规)",
+      "GB/T 18664—2002" in [v for (v,) in _mrows], True)
+check("B' 未登记且无后继的废止号仍原样存活并被不变式抓到 (豁免没把整条门关掉)",
+      any("7777" in str(x) for x in _mviol), _mviol)
+
 
 print("\n### C. 接线: 官方表标准号列只能走读门, raw 必须表态")
 

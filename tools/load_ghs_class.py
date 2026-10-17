@@ -23,7 +23,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DB = ROOT / "data" / "ohs.db"
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
+
+DB = DB_PATH
 
 DDL = """
 CREATE TABLE IF NOT EXISTS ghs_class (

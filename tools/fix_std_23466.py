@@ -17,6 +17,11 @@ v1 的两处错 (本次自查发现):
 import sqlite3
 import sys
 import argparse
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DB_PATH  # noqa: E402  (库路径单一产地; 本脚本按设计写库, 保持可写连接)
 
 # (旧号去空格, 新号) — 权威值来自真实稿 + user 取证
 SUPERSEDE = {
@@ -31,14 +36,19 @@ SUPERSEDE = {
         "replace_of": None,
         "new_code": "GB 18664-2025",
         "new_name": "呼吸防护装备的选择、使用和维护",
+        # ⚠ standard_db 记录的是**法规事实** (2025 已实施并代替 2002), 本迁移照实写没错。
+        #   但报告**渲染期**不把 protection_rule 的 2002 判据标签等号刷成 2025 ——
+        #   因为判据文字尚未按 2025 一手文本复核 (见 knowledge/standard_version.py content_hold
+        #   与官方层表 std_render_hold)。本工具改的是 standard_db, 不是渲染策略, 两者不冲突。
     },
+
 }
 NEW_VER = {v["new_code"]: v for v in SUPERSEDE.values()}
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default="data/ohs.db")
+    ap.add_argument("--db", default=str(DB_PATH))
     ap.add_argument("--apply", action="store_true")
     args = ap.parse_args()
 

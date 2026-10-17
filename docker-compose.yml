@@ -11,6 +11,19 @@ services:
       - LLM_BASE_URL=https://workbuddy2api.henryai.top/v1/chat/completions
       - LLM_MODEL=deepseek-v4.1-flash
       - LLM_KEY_ENV=DEEPSEEK_API_KEY
+      # S1c′ D0: 生命周期回收从"import 期无条件执行"改成启动期两把**分开**的开关。
+      #   ROWS=1: 回收空项目行 (无数据、无材料目录、超 30 天) —— 与原生产行为一致。
+      #   DIRS=0: **不**自动 rmtree 孤儿材料目录。理由不是保守起见, 是产生路径:
+      #     "有目录的项目"永不被 TTL 删行, 用户删项目是行+目录一起删, 所以"目录在库里没行"
+      #     只剩"删一半崩了/换库/手改 DB"三种异常 —— 那是报警信号, 不该自动删成不可逆丢失
+      #     (data/materials 是真实企业材料, 本地实测 249MB)。要删就人判后用 --apply 批处理。
+      # ⚠ 服务器上那份 docker-compose.yml 由 quick_deploy **不上送**、独立维护:
+      #   想改回收语义必须在服务器那份里同步这几行, 否则容器读到的还是默认值。
+      - OHS_LIFECYCLE_ROWS=${OHS_LIFECYCLE_ROWS:-1}
+      - OHS_LIFECYCLE_DIRS=${OHS_LIFECYCLE_DIRS:-0}
+      # S1c′ D4: --workers 2 时两个进程各跑一遍启动准备, 所以整段用 data/.startup.lock
+      #   串行化 (knowledge/paths.py:startup_lock)。默认超时 60s, 只有排查卡死才需要调:
+      #   OHS_STARTUP_LOCK_TIMEOUT=120。实测 _bootstrap 冷卷 0.02s / 热卷 <0.01s, 排队成本可忽略。
     volumes:
       - ./data:/app/data
     restart: unless-stopped

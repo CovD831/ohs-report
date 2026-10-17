@@ -5,6 +5,11 @@
       我们算的(THI) 或 库里存的不是等级 → 按注6 出等级 + 实测项数 + 待复核;
       完全无源 → 待补充。
 
+主口径唯一 (2026-10-16 拍板"统一到注6"): rate_substance 的 thi/level/grade **恒等于**
+  *_note6; thi_zero/level_zero 只是随结果返回的复核参照。官方层里 source 含 thi 的行,
+  存值必须等于现算注6 —— 否则库里就留着上一轮"下界为主"的第二套口径 (不变式5/6 + 阳性对照)。
+  重算工具: `python tools/backfill_hazard_toxicity.py --refresh-thi --apply`。
+
 ⚠⚠ 教训 (2026-10-14): 本文件上一版直接硬读 data/ohs.db 的「苯醌」「丙酮」等具体行,
   部署到生产容器后 line 36 `row[0]` 直接 TypeError —— 生产 hazard_toxicity 比本地少一行
   (本地 104 / 生产 103)。**对本地数据过拟合的守卫 = 没有守卫**。
@@ -102,9 +107,22 @@ except Exception as e:                                    # noqa: BLE001
     check("A 段不抛异常", f"抛出 {type(e).__name__}: {e}", "无异常")
 
 # ============ B. 真库不变式: 只点名"库里确实存在的行", 不硬编码物质 ============
-DB = os.path.join(ROOT, "data", "ohs.db")
-conn = sqlite3.connect(DB)
-print(f"\n### B. 真库不变式 (DB={DB})")
+# 取数走**只读工厂** (S1c″ D4′)。上一版是 `DB = os.path.join(ROOT, "data", "ohs.db")` +
+# `sqlite3.connect(DB)`, 两个问题一起犯: ① 可写模式打开 —— 本文件在 GUARD_TESTS 里,
+# 容器里 `ROOT/data` 就是挂进去的生产库, 守卫套每跑一次就给生产库开一次可写连接
+# (WAL 辅助文件的生灭/回写); ② 路径硬编码 —— OHS_DATA_DIR 指到临时卷时它照读真实库,
+# 于是"演练/临时卷"根本测不到这一段。
+# 库或表不在 → 打印原因并 **exit 1**: 静默跳过 (旧写法 `except: pass` / `if exists() else 跳过`)
+# 会让"绿"变成"没测"。
+from knowledge.oel import OfficialSchemaMissing, connect_ro      # noqa: E402
+from knowledge.paths import DB_PATH                              # noqa: E402
+
+print(f"\n### B. 真库不变式 (DB={DB_PATH})")
+try:
+    conn = connect_ro()
+except (sqlite3.Error, OfficialSchemaMissing) as e:
+    print(f"  ✗ 官方数据层不可读, 而 B 段必须跑在它上面 ({type(e).__name__}: {e})")
+    sys.exit(1)
 
 rows = conn.execute("select factor_name, level, source from hazard_toxicity").fetchall()
 check("官方数据层可用 (有行)", len(rows) > 0, True)
@@ -135,7 +153,23 @@ except sqlite3.OperationalError:
     pass
 seen: set[str] = set()
 cands = [c for c in cands if c and not (c in seen or seen.add(c))]
-gate_viol, tested = [], 0
+
+
+def thi_row_staleness(name, level, grade):
+    """一条 hazard_toxicity 的「我们算的」行是否与现算注6 脱节 → 脱节描述 / None。
+
+    抽成函数的唯一目的: 下面的**阳性对照**要喂它一个假存值, 让它跑**同一段代码** ——
+    判据自己另写一遍比对逻辑, 测的就不是那条判据能不能红了。
+    """
+    r = rate_substance(conn, name, sf._cas_from_oel(conn, name), min_have=0)
+    if r is None:
+        return None
+    if (level, grade) != (r["level"], r["grade"]):
+        return f"{name}: 存值 {level}/{grade} != 现算注6 {r['level']}/{r['grade']} (THI {r['thi']})"
+    return None
+
+
+gate_viol, main_viol, tested = [], [], 0
 for name in cands:
     cas = sf._cas_from_oel(conn, name)
     strict = rate_substance(conn, name, cas)
@@ -143,6 +177,14 @@ for name in cands:
     if loose is None:
         continue
     tested += 1
+    # 不变式5: **主口径唯一** —— 主输出必须就是注6 值 (2026-10-16 拍板"统一到注6")。
+    #   下界 (thi_zero/level_zero) 只是随结果返回的复核参照; 谁把它接回主字段,
+    #   `hazard_toxicity` 存的、报告印的、脚本算的就又变成三套口径 (本轮实测的病灶)。
+    if (loose["thi"], loose["level"], loose["grade"]) != \
+            (loose["thi_note6"], loose["level_note6"], loose["grade_note6"]):
+        main_viol.append((name, "主输出 != 注6",
+                          (loose["thi"], loose["level"]),
+                          (loose["thi_note6"], loose["level_note6"])))
     have = loose.get("have", 0)
     want_strict_none = have < MIN_HAVE
     if (strict is None) != want_strict_none:
@@ -151,8 +193,36 @@ for name in cands:
         gate_viol.append((name, "两法结果不一致", strict.get("thi_note6"), loose.get("thi_note6")))
 if tested:
     check(f"min_have 语义 ({tested} 项实测): 严格门槛=None ⟺ have<{MIN_HAVE}", gate_viol, [])
+    check(f"主口径唯一 ({tested} 项实测): thi == thi_note6 且 level == level_note6", main_viol, [])
 else:
     skip("min_have 语义", "库中无可算出注6结果的行")
+    skip("主口径唯一", "库中无可算出注6结果的行")
+
+# 不变式6: 库里 source 含 thi 的行, 存值必须 == 现算注6 (官方层里不许留第二个口径的化石)
+thi_rows = [(n, l, g) for n, l, g, s in conn.execute(
+    "select factor_name, level, grade, source from hazard_toxicity").fetchall()
+    if "thi" in (s or "").lower()]
+stale = [m for m in (thi_row_staleness(n, l, g) for n, l, g in thi_rows) if m]
+if thi_rows:
+    check(f"存值==现算注6 ({len(thi_rows)} 行: {', '.join(n for n, _l, _g in thi_rows)})", stale, [])
+else:
+    skip("存值==现算注6", "本环境 hazard_toxicity 没有 source 含 thi 的行 "
+                         "(生产库确实可能没有) —— 该口径由上面「主口径唯一」那条兜住")
+# 阳性对照: 判据必须先证明**能红**。取本环境里算得出来的第一个物质, 喂一个必然不等于
+#   现算值的假存级 (四级里挑一个不同的) 给同一个比较函数 —— 它不点名, 就得红。
+probe = None
+for n in cands:
+    rr = rate_substance(conn, n, sf._cas_from_oel(conn, n), min_have=0)
+    if rr is not None:
+        probe = (n, rr)
+        break
+if probe is None:
+    skip("阳性对照", "本环境取样面里没有任何算得出来的物质 —— 不变式5/6 都是空转, 必须查数据层")
+else:
+    pname, pr = probe
+    fake_grade = next(g for g in GRADES if g != pr["level"])
+    check(f"阳性对照: 把 {pname} 的存值说成 {fake_grade} 必须被点名",
+          bool(thi_row_staleness(pname, fake_grade, pr["grade"])), True)
 
 conn.close()
 

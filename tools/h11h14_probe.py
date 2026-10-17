@@ -71,7 +71,10 @@ for tag, rel in (('新泰', 'data/vision_cache/a66517be268181e6.json'),
 print()
 print('########## C. 本地库 detections 分布 ##########')
 import sqlite3
-conn = sqlite3.connect(str(REPO / 'data/ohs.db'))
+import sys
+sys.path.insert(0, str(REPO))
+from knowledge.oel import connect_ro  # noqa: E402  (只读工厂: 路径走 knowledge.paths 单一产地)
+conn = connect_ro()
 tabs = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
 pt = [t for t in tabs if 'project' in t.lower() or 'data' in t.lower()]
 print('project-like tables:', pt)

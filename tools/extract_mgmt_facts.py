@@ -27,8 +27,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MAT_ROOT = ROOT / "data" / "materials"
-OUT_PATH = ROOT / "data" / "mgmt_facts.json"
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DATA_DIR, MATERIALS_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
+MAT_ROOT = MATERIALS_DIR
+OUT_PATH = DATA_DIR / "mgmt_facts.json"
 
 # C3 现状报告文件名特征
 C3_HINT = re.compile(r"现状评价|现状报告")

@@ -14,12 +14,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.stdout.reconfigure(encoding="utf-8")
 
-pid = sys.argv[1] if len(sys.argv) > 1 else "ada54603a9"
-out = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "data" / f"report_{pid}.docx"
+from knowledge.oel import connect_ro  # noqa: E402  (取证工具只读)
+from knowledge.paths import DATA_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
 
-from knowledge.oel import connect  # noqa: E402
-# 走 projects_db 而不是 web.app: import web.app 会触发 init_users/init_tasks/
-# cleanup_expired 的写库副作用 —— 取证工具必须只读 (2026-10-15)
+pid = sys.argv[1] if len(sys.argv) > 1 else "ada54603a9"
+out = Path(sys.argv[2]) if len(sys.argv) > 2 else DATA_DIR / f"report_{pid}.docx"
+# 走 projects_db 而不是 web.app: 取证工具只 import 取数所需的模块, 不整层拉起 web
+# (S1c′ D0 之后 `import web.app` 已零副作用, 但这条依赖边界仍然保留 — 2026-10-15)
 from web.projects_db import get_project_data as _get_project_data  # noqa: E402
 from knowledge.project_assess import assess_project  # noqa: E402
 
@@ -66,7 +67,7 @@ def main():
     from web.word_export import export_docx
     data = _get_project_data(pid)
     project = build_project(pid)
-    conn = connect()
+    conn = connect_ro()
     assess = assess_project(conn, project)
     assess["_project_data"] = dict(project)
     conn.close()

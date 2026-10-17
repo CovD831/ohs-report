@@ -22,8 +22,10 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = Path(__file__).resolve().parent.parent
-MAT = ROOT / "data" / "materials"
-OUT = ROOT / "data" / "analog_ppe.json"
+sys.path.insert(0, str(ROOT))
+from knowledge.paths import DATA_DIR, MATERIALS_DIR  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
+MAT = MATERIALS_DIR
+OUT = DATA_DIR / "analog_ppe.json"
 
 HEAD = ["序号", "个人防护用品名称", "规格型号", "岗位", "配备数量", "更换周期"]
 

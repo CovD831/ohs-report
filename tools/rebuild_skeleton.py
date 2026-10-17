@@ -19,7 +19,9 @@ else:
     ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-SRC = ROOT / "data" / "ohs.db"
+from knowledge.paths import DB_PATH  # noqa: E402  (数据目录唯一产地, 认 OHS_DATA_DIR)
+
+SRC = DB_PATH  # 库路径走单一产地 knowledge.paths (S1c″ D4″): 原硬拼 ROOT/"data"/"ohs.db"
 TMP = Path(tempfile.mkdtemp()) / "ohs.db"
 shutil.copy(SRC, TMP)
 for suf in ("-wal", "-shm"):
