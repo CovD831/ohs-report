@@ -370,7 +370,7 @@ with tempfile.TemporaryDirectory() as tdd:
 print("\n=== C. 生命周期回收: 默认不删 / 显式才删 / 错配拒绝 ===")
 P = lambda pid, name, data, age: (                        # noqa: E731
     pid, name, json.dumps(data), "ready", "", time.time() - age, time.time() - age)
-KEEP = P("p_keep", "长兴合成树脂", {"equipment": ["锅炉"]}, 10)
+KEEP = P("p_keep", "示例 kept 项目", {"equipment": ["锅炉"]}, 10)
 STALE = P("p_stale", "未命名报告", {}, 40 * 86400)
 
 
